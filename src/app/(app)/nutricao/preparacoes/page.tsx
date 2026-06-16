@@ -16,6 +16,7 @@ import { ChefHat, Plus, Search, Pencil, Trash2, ChevronDown, ChevronUp, RefreshC
 import { toast } from 'sonner'
 import { calcularNutrientesPreparacao, FASES_ESCOLARES, calcularPercapitaPorFase, type FaseEscolar } from '@/lib/nutricao-utils'
 import { PREPARACAO_CATEGORIAS, getCategoriaInfo, getCategoriaCor, isCategoriaEspecial, type PreparacaoCategoria } from '@/lib/preparacao-categorias'
+import { normalizeText } from '@/lib/busca-utils'
 
 interface Alimento {
   id: string
@@ -164,7 +165,8 @@ export default function PreparacoesPage() {
   }, [loadData])
 
   const filtered = preparacoes.filter((p) =>
-    p.nome.toLowerCase().includes(search.toLowerCase())
+    // v8: busca sem acento (normalizeText)
+    normalizeText(p.nome).includes(normalizeText(search))
   )
 
   function getAlimentoById(id: string): Alimento | undefined {
@@ -426,9 +428,10 @@ export default function PreparacoesPage() {
   }
 
   function getFilteredAlimentosForIng(ingIdx: number): Alimento[] {
-    const searchTerm = (ingSearches[ingIdx] || '').toLowerCase()
+    // v8: busca sem acento (normalizeText)
+    const searchTerm = normalizeText(ingSearches[ingIdx] || '')
     return alimentos.filter((a) => {
-      if (!a.nome.toLowerCase().includes(searchTerm)) return false
+      if (!normalizeText(a.nome).includes(searchTerm)) return false
       if (form.ingredientes.some((fi, fiIdx) => fiIdx !== ingIdx && fi.alimento_id === a.id)) return false
       return true
     })

@@ -34,6 +34,7 @@ import {
   type FaseEscolar,
 } from '@/lib/nutricao-utils'
 import { detectarAlergenosPreparacao, ALERGENOS_LIST } from '@/lib/alergenos-utils'
+import { normalizeText } from '@/lib/busca-utils'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -977,10 +978,10 @@ export default function CardapioEditorPage() {
       })
     }
 
-    // Busca por nome
-    const q = addPrepSearch.toLowerCase()
+    // Busca por nome (sem acento)
+    const q = normalizeText(addPrepSearch)
     if (q) {
-      list = list.filter((p) => p.nome.toLowerCase().includes(q))
+      list = list.filter((p) => normalizeText(p.nome).includes(q))
     }
 
     return list
@@ -1062,6 +1063,15 @@ export default function CardapioEditorPage() {
             <Link href={`/nutricao/cardapios/${cardapioId}/comparar`}>
               <Button variant="outline" size="sm" className="text-xs h-8 border-blue-200 text-blue-700 hover:bg-blue-50">
                 <GitCompare className="w-3 h-3 mr-1" /> Comparar c/ Base
+              </Button>
+            </Link>
+          )}
+
+          {/* Botão Clonar em Lote (somente se for base) — mantido para compat. */}
+          {!cardapio.escola_id && (
+            <Link href={`/nutricao/cardapios/${cardapioId}/clonar-lote`}>
+              <Button variant="outline" size="sm" className="text-xs h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+                <Layers className="w-3 h-3 mr-1" /> Clonar em Lote
               </Button>
             </Link>
           )}

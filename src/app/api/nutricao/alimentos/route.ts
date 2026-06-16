@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { normalizeText } from '@/lib/busca-utils'
 
 export async function GET(request: Request) {
   try {
@@ -11,12 +12,27 @@ export async function GET(request: Request) {
       ativo: true,
     }
 
-    if (busca) {
-      where.nome = { contains: busca }
-    }
-
     if (grupo) {
       where.grupo = grupo
+    }
+
+    // Busca: como o SQLite não tem LOWER/REMOVE-ACCENTS nativo fácil,
+    // fazemos contains simples (case-sensitive default) e depois filtramos
+    // no app com normalizeText para ignorar acentos.
+    if (busca) {
+      // Tenta contains primeiro (rápido, aproveita índice se houver)
+      // Depois filtra no app para garantir sem acento
+      const buscaNorm = normalizeText(busca)
+      // Busca ampla com contains case-insensitive (SQLite default é CS)
+      // Vamos buscar todas e filtrar no app (alimentos são poucos, ~600)
+      const todosAlimentos = await db.alimento.findMany({
+        where,
+        orderBy: { nome: 'asc' },
+      })
+      const filtrados = todosAlimentos.filter((a) =>
+        normalizeText(a.nome).includes(buscaNorm)
+      )
+      return NextResponse.json(filtrados)
     }
 
     const alimentos = await db.alimento.findMany({

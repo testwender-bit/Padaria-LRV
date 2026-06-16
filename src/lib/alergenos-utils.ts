@@ -129,7 +129,22 @@ const PADROES_SOJA = [
   'proteina vegetal texturizada', 'pvt',
   'leite de soja', 'tofu', 'missô', 'miso',
   'edamame', 'natto', 'tempeh',
-  'farinha de soja', 'oleo de soja', 'óleo de soja',
+  'farinha de soja',
+  // NOTA: óleo de soja NÃO é incluído aqui.
+  // Óleos vegetais refinados (soja, milho, girassol) são isentos de
+  // proteínas responsáveis pela alergia conforme RDC 26/2015 (ANVISA).
+  // Logo, óleo de soja NÃO deve ser flagado como alérgeno.
+  // Idem para margarina (que pode ter óleo de soja mas é isenta).
+]
+
+// ── Exceções: alimentos que contêm a palavra "soja" mas NÃO são alérgenos ──
+// Esta lista é usada para evitar falsos positivos. Se o nome do alimento
+// bate com algum destes padrões, NÃO marcamos como alérgeno 'S'.
+const EXCECOES_SOJA = [
+  'oleo de soja', 'óleo de soja',
+  'oleo vegetal', 'óleo vegetal',
+  'margarina', // geralmente feita com óleo de soja, mas isenta
+  'margarina sem sal', 'margarina com sal',
 ]
 
 // ── Detecção ────────────────────────────────────────────────────
@@ -196,10 +211,14 @@ export function detectarAlergenosAlimento(alimento: AlimentoBasco): AlergenoSigl
   }
 
   // ── SOJA ──
-  for (const p of PADROES_SOJA) {
-    if (nome.includes(p)) {
-      encontrado.add('S')
-      break
+  // Primeiro verifica exceções (óleo de soja, margarina, etc — isentos)
+  const ehExcecaoSoja = EXCECOES_SOJA.some((p) => nome.includes(p))
+  if (!ehExcecaoSoja) {
+    for (const p of PADROES_SOJA) {
+      if (nome.includes(p)) {
+        encontrado.add('S')
+        break
+      }
     }
   }
 

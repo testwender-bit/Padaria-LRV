@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { FASES_ESCOLARES, calcularPercapitaPorFase, type FaseEscolar } from '@/lib/nutricao-utils'
 import { detectarAlergenosPreparacao } from '@/lib/alergenos-utils'
+import { normalizeText } from '@/lib/busca-utils'
 
 export async function GET(request: Request) {
   try {
@@ -20,9 +21,6 @@ export async function GET(request: Request) {
       ativo: true,
     }
 
-    if (busca) {
-      where.nome = { contains: busca }
-    }
     if (soFavoritas) {
       where.favorita = true
     }
@@ -46,6 +44,14 @@ export async function GET(request: Request) {
       orderBy,
       ...(soRecentes ? { take: limiteRecentes } : {}),
     })
+
+    // ── Busca por nome SEM ACENTO ──
+    if (busca) {
+      const buscaNorm = normalizeText(busca)
+      preparacoes = preparacoes.filter((p) =>
+        normalizeText(p.nome).includes(buscaNorm)
+      )
+    }
 
     // Filtro por alérgenos (precisa processar ingredientes)
     if (semAlergenos.length > 0) {
@@ -110,8 +116,6 @@ export async function POST(request: Request) {
           nome: body.nome,
           descricao: body.descricao || null,
           modo_preparo: body.modo_preparo || null,
-          // v8: categoria (default PREPARACAO)
-          categoria: body.categoria || 'PREPARACAO',
           ativo: true,
         },
       })

@@ -14,6 +14,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Apple, Plus, Search, Pencil, Trash2, ChevronDown, ChevronUp, RefreshCw, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { GRUPOS_ALIMENTOS } from '@/lib/nutricao-utils'
+import { normalizeText } from '@/lib/busca-utils'
 
 interface Alimento {
   id: string
@@ -119,7 +120,8 @@ export default function AlimentosPage() {
   }, [loadAlimentos])
 
   const filtered = alimentos.filter((a) => {
-    const matchSearch = a.nome.toLowerCase().includes(search.toLowerCase())
+    // v8: busca sem acento (normalizeText)
+    const matchSearch = normalizeText(a.nome).includes(normalizeText(search))
     const matchGrupo = grupoFilter === 'all' || a.grupo === grupoFilter
     return matchSearch && matchGrupo
   })
