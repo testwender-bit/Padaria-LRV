@@ -22,6 +22,12 @@ import {
   type FaseEscolar,
   calcularPercapitaPorFase,
 } from '@/lib/nutricao-utils'
+import {
+  detectarAlergenosPreparacao,
+  ALERGENOS,
+  ALERGENOS_LIST,
+  type AlergenoSigla,
+} from '@/lib/alergenos-utils'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -112,6 +118,7 @@ interface CardapioFull {
   semestre: number
   escola?: { id: string; nome: string; categoria: string } | null
   nutricionista?: { id: string; nome: string; crn: string } | null
+  equipe_nutricionistas?: { id: string; nome: string; crn: string }[]
   semanas: CardapioSemana[]
 }
 
@@ -218,14 +225,25 @@ function SemanaPrintPage({ semana, cardapio }: { semana: CardapioSemana; cardapi
           <span className="sp-meta-divider">&#x2022;</span>
           <span className="sp-meta-item"><strong>Categoria:</strong> {cardapio.categoria_escola}</span>
           <span className="sp-meta-divider">&#x2022;</span>
-          <span className="sp-meta-item"><strong>Nutricionista:</strong> {cardapio.nutricionista?.nome || '—'} — CRN {cardapio.nutricionista?.crn || '—'}</span>
-          <span className="sp-meta-divider">&#x2022;</span>
           <span className="sp-meta-item"><strong>Fase:</strong> {getFaseLabel(cardapio.fase_escolar)}</span>
         </div>
         <div className="sp-header-week">
           <span className="sp-week-label">Semana {semana.numero}</span>
           <span className="sp-week-dates">{formatDateShort(semana.data_inicio)} — {formatDateShort(semana.data_fim)}</span>
         </div>
+      </div>
+
+      {/* ── LEGENDA DE ALÉRGENOS ── faixa horizontal compacta (P&B) */}
+      <div className="sp-legend-alergenos">
+        <span className="sp-legend-label">Alérgenos:</span>
+        {ALERGENOS_LIST.map((a) => (
+          <span key={a.sigla} className="sp-legend-item">
+            <span className="sp-alergeno-badge sp-alergeno-badge-sm">
+              {a.sigla}
+            </span>
+            <span className="sp-legend-nome">{a.nome}</span>
+          </span>
+        ))}
       </div>
 
       {/* ── MENU TABLE — Main content ── */}
@@ -255,16 +273,39 @@ function SemanaPrintPage({ semana, cardapio }: { semana: CardapioSemana; cardapi
                   <td key={dia.value} className="sp-td-dia">
                     {itens.length > 0 ? (
                       <ul className="sp-prep-list">
-                        {itens.map((item) => (
-                          <li key={item.id} className="sp-prep-item">
-                            <div className="sp-prep-nome">{item.preparacao.nome}</div>
-                            {item.preparacao.ingredientes.length > 0 && (
-                              <div className="sp-prep-ing">
-                                {item.preparacao.ingredientes.map((ing) => limparNomeIngrediente(ing.alimento.nome)).join(', ')}
+                        {itens.map((item) => {
+                          const alergenos = detectarAlergenosPreparacao(
+                            item.preparacao.ingredientes.map((ing) => ({
+                              nome: ing.alimento.nome,
+                              grupo: ing.alimento.grupo,
+                            }))
+                          )
+                          return (
+                            <li key={item.id} className="sp-prep-item">
+                              <div className="sp-prep-nome">
+                                <span className="sp-prep-nome-text">{item.preparacao.nome}</span>
+                                {alergenos.length > 0 && (
+                                  <span className="sp-prep-alergenos">
+                                    {alergenos.map((sigla: AlergenoSigla) => (
+                                      <span
+                                        key={sigla}
+                                        className="sp-alergeno-badge sp-alergeno-badge-xs"
+                                        title={`${ALERGENOS[sigla].nome}: ${ALERGENOS[sigla].descricao}`}
+                                      >
+                                        {sigla}
+                                      </span>
+                                    ))}
+                                  </span>
+                                )}
                               </div>
-                            )}
-                          </li>
-                        ))}
+                              {item.preparacao.ingredientes.length > 0 && (
+                                <div className="sp-prep-ing">
+                                  {item.preparacao.ingredientes.map((ing) => limparNomeIngrediente(ing.alimento.nome)).join(', ')}
+                                </div>
+                              )}
+                            </li>
+                          )
+                        })}
                       </ul>
                     ) : (
                       <span className="sp-prep-vazio">—</span>
@@ -310,16 +351,28 @@ function SemanaPrintPage({ semana, cardapio }: { semana: CardapioSemana; cardapi
             <div className="sp-kv"><span>Açúcar Adic.</span><strong>{resumo.percentuais.acucar_pct.toFixed(1)}%</strong></div>
             <div className="sp-kv sp-kv-total"><span>Energia Total</span><strong>{resumo.media_dia.energia_kcal.toFixed(0)} kcal</strong></div>
           </div>
-          {/* Col 4: Indicadores PNAE */}
-          <div className="sp-resumo-section">
-            <div className="sp-section-head">Indicadores PNAE</div>
-            <div className="sp-kv"><span>Ferro Heme</span><strong>{resumo.dias_com_ferro_heme} dias/sem</strong></div>
-            <div className="sp-kv"><span>Vit. A</span><strong>{resumo.dias_com_vitamina_a} dias/sem</strong></div>
-            <div className="sp-kv"><span>Açúcar Adic.</span><strong>{resumo.media_dia.acucar_adicionado_g.toFixed(1)} g/dia</strong></div>
-            <div className="sp-kv"><span>Zinco</span><strong>{resumo.media_dia.zinco_mg.toFixed(1)} mg</strong></div>
-          </div>
         </div>
       </div>
+
+      {/* ── AVISO DE ALTERAÇÃO — leve destaque ── */}
+      <div className="sp-aviso-alteracao">
+        <span>* Cardápio sujeito a alterações sem aviso prévio.</span>
+      </div>
+
+      {/* ── EQUIPE DE NUTRIÇÃO ── linha única compacta */}
+      {(cardapio.equipe_nutricionistas?.length ?? 0) > 0 && (
+        <div className="sp-equipe">
+          <span className="sp-equipe-label">Equipe de Nutrição:</span>
+          {cardapio.equipe_nutricionistas!.map((nut, idx) => (
+            <span key={nut.id} className="sp-equipe-pessoa">
+              {nut.nome} <span className="sp-equipe-crn">CRN {nut.crn}</span>
+              {idx < cardapio.equipe_nutricionistas!.length - 1 && (
+                <span className="sp-equipe-sep">·</span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* ── FOOTER ── */}
       <div className="sp-footer">

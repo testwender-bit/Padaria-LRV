@@ -110,6 +110,11 @@ export async function POST(
             },
           },
         })
+        // Incrementar contador "vezes_usada" na preparação (biblioteca inteligente)
+        await tx.preparacao.update({
+          where: { id: itemData.preparacao_id },
+          data: { vezes_usada: { increment: 1 } },
+        })
         created.push(result)
       }
 
@@ -238,6 +243,14 @@ export async function DELETE(
 
     await db.cardapioItem.delete({
       where: { id: body.item_id },
+    })
+
+    // Decrementar contador "vezes_usada" (mínimo 0)
+    await db.preparacao.update({
+      where: { id: item.preparacao_id },
+      data: { vezes_usada: { decrement: 1 } },
+    }).catch(() => {
+      // ignore if already 0 / not found
     })
 
     return NextResponse.json({ success: true })

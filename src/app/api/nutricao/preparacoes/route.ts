@@ -1,11 +1,20 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { FASES_ESCOLARES, calcularPercapitaPorFase, type FaseEscolar } from '@/lib/nutricao-utils'
+import { detectarAlergenosPreparacao } from '@/lib/alergenos-utils'
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const busca = searchParams.get('busca')
+    const soFavoritas = searchParams.get('favoritas') === 'true'
+    const soRecentes = searchParams.get('recentes') === 'true'
+    const limiteRecentes = Number(searchParams.get('limite_recentes') || 20)
+    // sem_alergenos=L,O  → exclui preparações que contenham leite ou ovo
+    const semAlergenosParam = searchParams.get('sem_alergenos')
+    const semAlergenos = semAlergenosParam
+      ? semAlergenosParam.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean)
+      : []
 
     const where: Record<string, unknown> = {
       ativo: true,
@@ -14,8 +23,17 @@ export async function GET(request: Request) {
     if (busca) {
       where.nome = { contains: busca }
     }
+    if (soFavoritas) {
+      where.favorita = true
+    }
 
-    const preparacoes = await db.preparacao.findMany({
+    let orderBy: Record<string, string> = { nome: 'asc' }
+    if (soRecentes) {
+      // Mais usadas primeiro
+      orderBy = { vezes_usada: 'desc' }
+    }
+
+    let preparacoes = await db.preparacao.findMany({
       where,
       include: {
         ingredientes: {
@@ -25,8 +43,23 @@ export async function GET(request: Request) {
           },
         },
       },
-      orderBy: { nome: 'asc' },
+      orderBy,
+      ...(soRecentes ? { take: limiteRecentes } : {}),
     })
+
+    // Filtro por alérgenos (precisa processar ingredientes)
+    if (semAlergenos.length > 0) {
+      preparacoes = preparacoes.filter((p) => {
+        const alergenos = detectarAlergenosPreparacao(
+          p.ingredientes.map((ing) => ({
+            nome: ing.alimento.nome,
+            grupo: ing.alimento.grupo,
+          }))
+        )
+        // Se a preparação tem QUALQUER alérgeno da lista de exclusão, remover
+        return !alergenos.some((a) => semAlergenos.includes(a))
+      })
+    }
 
     return NextResponse.json(preparacoes)
   } catch (error) {
@@ -77,6 +110,8 @@ export async function POST(request: Request) {
           nome: body.nome,
           descricao: body.descricao || null,
           modo_preparo: body.modo_preparo || null,
+          // v8: categoria (default PREPARACAO)
+          categoria: body.categoria || 'PREPARACAO',
           ativo: true,
         },
       })

@@ -37,6 +37,13 @@ export async function POST(request: Request) {
         ativo: body.ativo !== false,
         ordem_rota: body.ordem_rota || 0,
         obs: body.obs,
+        // ── Novos campos v6 ──
+        segmento: body.segmento || 'REGULAR',
+        alunos_parcial: body.alunos_parcial || 0,
+        alunos_integral: body.alunos_integral || 0,
+        dia_pao_frances: body.dia_pao_frances || null,
+        dia_lanche: body.dia_lanche || null,
+        mescla_parcial_integral: body.mescla_parcial_integral || false,
       },
     })
 
@@ -74,7 +81,7 @@ export async function PUT(request: Request) {
     if (body.nome !== undefined && (typeof body.nome !== 'string' || body.nome.trim().length < 2)) {
       return NextResponse.json({ error: 'Nome deve ter no mínimo 2 caracteres' }, { status: 400 })
     }
-    
+
     const escola = await db.escola.update({
       where: { id: body.id },
       data: {
@@ -89,6 +96,13 @@ export async function PUT(request: Request) {
         ativo: body.ativo,
         ordem_rota: body.ordem_rota,
         obs: body.obs,
+        // ── Novos campos v6 ──
+        segmento: body.segmento,
+        alunos_parcial: body.alunos_parcial,
+        alunos_integral: body.alunos_integral,
+        dia_pao_frances: body.dia_pao_frances,
+        dia_lanche: body.dia_lanche,
+        mescla_parcial_integral: body.mescla_parcial_integral,
       },
     })
     return NextResponse.json(escola)

@@ -6,7 +6,7 @@ import { motion } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Apple, ChefHat, BookOpen, UserCheck, ArrowRight, RefreshCw } from 'lucide-react'
+import { Apple, ChefHat, BookOpen, UserCheck, ArrowRight, RefreshCw, ShoppingCart } from 'lucide-react'
 
 interface CardapioResumo {
   id: string
@@ -77,6 +77,17 @@ const quickCards = [
     iconColor: 'text-purple-600',
     titleColor: 'text-purple-800',
     desc: 'Equipe de nutrição',
+  },
+  {
+    title: 'Lista de Compras',
+    href: '/nutricao/lista-compras',
+    icon: ShoppingCart,
+    gradient: 'from-emerald-50 to-teal-50',
+    border: 'border-emerald-200',
+    iconBg: 'bg-emerald-100',
+    iconColor: 'text-emerald-600',
+    titleColor: 'text-emerald-800',
+    desc: 'Consolidado por escola',
   },
 ]
 

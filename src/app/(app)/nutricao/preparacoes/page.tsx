@@ -11,9 +11,11 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ChefHat, Plus, Search, Pencil, Trash2, ChevronDown, ChevronUp, RefreshCw, X, Minus, Unlock, Check } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ChefHat, Plus, Search, Pencil, Trash2, ChevronDown, ChevronUp, RefreshCw, X, Minus, Unlock, Check, Star } from 'lucide-react'
 import { toast } from 'sonner'
 import { calcularNutrientesPreparacao, FASES_ESCOLARES, calcularPercapitaPorFase, type FaseEscolar } from '@/lib/nutricao-utils'
+import { PREPARACAO_CATEGORIAS, getCategoriaInfo, getCategoriaCor, isCategoriaEspecial, type PreparacaoCategoria } from '@/lib/preparacao-categorias'
 
 interface Alimento {
   id: string
@@ -73,6 +75,9 @@ interface Preparacao {
   descricao: string | null
   modo_preparo: string | null
   ativo: boolean
+  favorita: boolean
+  vezes_usada: number
+  categoria?: string  // v8: PREPARACAO | PAO | LANCHE | BEBIDA | SOBREMESA
   ingredientes: IngredienteDB[]
 }
 
@@ -80,6 +85,7 @@ interface FormState {
   nome: string
   descricao: string
   modo_preparo: string
+  categoria: PreparacaoCategoria  // v8
   ingredientes: IngredienteForm[]
 }
 
@@ -87,6 +93,7 @@ const emptyForm: FormState = {
   nome: '',
   descricao: '',
   modo_preparo: '',
+  categoria: 'PREPARACAO',
   ingredientes: [],
 }
 
@@ -206,6 +213,7 @@ export default function PreparacoesPage() {
       nome: prep.nome,
       descricao: prep.descricao || '',
       modo_preparo: prep.modo_preparo || '',
+      categoria: (prep.categoria as PreparacaoCategoria) || 'PREPARACAO',
       ingredientes: prep.ingredientes.map((ing) => ({
         alimento_id: ing.alimento_id,
         quantidade_gramas: ing.quantidade_gramas,
@@ -329,6 +337,7 @@ export default function PreparacoesPage() {
         nome: form.nome,
         descricao: form.descricao || null,
         modo_preparo: form.modo_preparo || null,
+        categoria: form.categoria,  // v8
         ingredientes: form.ingredientes.map((ing) => ({
           alimento_id: ing.alimento_id,
           quantidade_gramas: ing.quantidade_gramas,
@@ -360,6 +369,24 @@ export default function PreparacoesPage() {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function toggleFavorita(prepId: string, atual: boolean) {
+    try {
+      const res = await fetch(`/api/nutricao/preparacoes/${prepId}/favorita`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ favorita: !atual }),
+      })
+      if (!res.ok) throw new Error('Erro ao alternar favorita')
+      // Atualiza estado local
+      setPreparacoes((prev) =>
+        prev.map((p) => (p.id === prepId ? { ...p, favorita: !atual } : p))
+      )
+      toast.success(atual ? 'Desfavoritada' : 'Marcada como favorita')
+    } catch {
+      toast.error('Erro ao alternar favorita')
     }
   }
 
@@ -482,12 +509,42 @@ export default function PreparacoesPage() {
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
-                          <CardTitle className="text-sm font-semibold text-[#1A3A5C] truncate">{prep.nome}</CardTitle>
+                          <div className="flex items-center gap-1.5">
+                            {prep.favorita && (
+                              <Star className="w-3.5 h-3.5 text-[#D4A017] flex-shrink-0 fill-[#D4A017]" />
+                            )}
+                            <CardTitle className="text-sm font-semibold text-[#1A3A5C] truncate">{prep.nome}</CardTitle>
+                            {/* v8: Badge de categoria */}
+                            {prep.categoria && prep.categoria !== 'PREPARACAO' && (
+                              <Badge
+                                variant="outline"
+                                className="text-[9px] h-4 px-1 flex items-center gap-0.5"
+                                style={{
+                                  borderColor: getCategoriaCor(prep.categoria),
+                                  color: getCategoriaCor(prep.categoria),
+                                }}
+                                title={getCategoriaInfo(prep.categoria).descricao}
+                              >
+                                {getCategoriaInfo(prep.categoria).label}
+                              </Badge>
+                            )}
+                          </div>
                           {prep.descricao && (
                             <p className="text-xs text-muted-foreground mt-0.5 truncate">{prep.descricao}</p>
                           )}
                         </div>
                         <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            title={prep.favorita ? 'Desfavoritar' : 'Marcar como favorita'}
+                            onClick={() => toggleFavorita(prep.id, prep.favorita)}
+                          >
+                            <Star
+                              className={`w-3 h-3 ${prep.favorita ? 'text-[#D4A017] fill-[#D4A017]' : 'text-gray-400'}`}
+                            />
+                          </Button>
                           <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEditDialog(prep)}>
                             <Pencil className="w-3 h-3" />
                           </Button>
@@ -590,9 +647,9 @@ export default function PreparacoesPage() {
           </DialogHeader>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
-            {/* Nome, Descrição, Modo Preparo */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-1.5 sm:col-span-1">
+            {/* Nome, Descrição, Modo Preparo, Categoria (v8) */}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div className="space-y-1.5">
                 <Label className="text-sm font-medium">Nome *</Label>
                 <Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex: Arroz com frango" />
               </div>
@@ -603,6 +660,39 @@ export default function PreparacoesPage() {
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium">Modo de Preparo</Label>
                 <Input value={form.modo_preparo} onChange={(e) => setForm({ ...form, modo_preparo: e.target.value })} placeholder="Opcional" />
+              </div>
+              {/* v8: Select de Categoria */}
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium flex items-center gap-1">
+                  Categoria
+                  {isCategoriaEspecial(form.categoria) && (
+                    <span className="text-[10px] text-[#D4A017] font-normal" title="Esta categoria recebe dia fixo na replicação para escolas">
+                      (especial)
+                    </span>
+                  )}
+                </Label>
+                <Select
+                  value={form.categoria}
+                  onValueChange={(v) => setForm({ ...form, categoria: v as PreparacaoCategoria })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PREPARACAO_CATEGORIAS.map((c) => (
+                      <SelectItem key={c.value} value={c.value} className="text-xs">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-2 h-2 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: c.cor }}
+                          />
+                          <span className="font-medium">{c.label}</span>
+                          <span className="text-[10px] text-muted-foreground">— {c.descricao}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 

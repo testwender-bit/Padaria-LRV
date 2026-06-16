@@ -78,6 +78,15 @@ model Escola {
   ordem_rota    Int      @default(0)
   obs           String?
 
+  // ── NOVOS CAMPOS: lista de compras / cardápio ──
+  segmento        String  @default("REGULAR")  // CRECHE, PRE_ESCOLA, FUND_INICIAL, FUND_FINAL, REGULAR, INTEGRAL
+  alunos_parcial  Int     @default(0)  // alunos com 1 refeição/dia (regular)
+  alunos_integral Int     @default(0)  // alunos com 2 refeições/dia (integral)
+  dia_pao_frances String? // SEG, TER, QUA, QUI, SEX — dia fixo de pão francês (null = não recebe)
+  dia_lanche      String? // SEG, TER, QUA, QUI, SEX — dia fixo de lanche especial (null = não recebe)
+  // Indica se a escola mescla alunos regular + integral numa mesma refeição (afeta percapita)
+  mescla_parcial_integral Boolean @default(false)
+
   pf_quantidades    PfQuantidade[]
   pcq_quantidades   PcqQuantidade[]
   lanche_distribuicao LancheDistribuicao[]
@@ -87,6 +96,7 @@ model Escola {
   @@index([categoria])
   @@index([rota])
   @@index([ativo])
+  @@index([segmento])
 }
 
 // ── PF (Pão Francês) Quantidades por escola/tipo ────────────
@@ -320,12 +330,12 @@ model ContagemEstoque {
 // ── Nutricionista ───────────────────────────────────────────
 model Nutricionista {
   id        String  @id @default(cuid())
-  user_id   String  @unique
+  user_id   String? @unique   // opcional — nutricionista pode ser cadastrado sem login
   nome      String
   crn       String  // CRN (ex: "CRN-3 12345")
   ativo     Boolean @default(true)
 
-  user      User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user      User?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
   cardapios CardapioNutricional[]
 
   @@index([crn])
@@ -342,6 +352,7 @@ model TipoRefeicao {
   categoria_refeicoes CategoriaRefeicao[]
   cardapio_itens      CardapioItem[]
   metas               MetaNutricional[]
+  sobrescritas        SobrescritaCardapio[]
 }
 
 // ── Categoria de Escola × Refeição ──────────────────────────
@@ -399,10 +410,32 @@ model Preparacao {
   modo_preparo String?
   ativo        Boolean @default(true)
 
+  // ── NOVOS: biblioteca inteligente ──
+  favorita     Boolean @default(false)  // marcada como favorita pela nutricionista
+  vezes_usada  Int     @default(0)      // contador automático: quantas vezes entrou em cardápios
+  // Tags opcionais para busca avançada (ex.: "vegetariano", "sem_gluten", "alto_ferro")
+  tags         String  @default("")
+
+  // ── v8: categoria da preparação (define tratamento especial na replicação) ──
+  // PREPARACAO = prato normal (default)
+  // PAO        = pão francês / pão de forma (recebe dia fixo na replicação)
+  // LANCHE     = lanche especial (recebe dia fixo na replicação)
+  // BEBIDA     = bebida (suco, leite, chá)
+  // SOBREMESA  = sobremesa
+  categoria    String  @default("PREPARACAO")
+
   ingredientes   PreparacaoIngrediente[]
   cardapio_itens CardapioItem[]
 
+  // Substituições equivalentes (relação N:N)
+  substituicoes_origem    PreparacaoSubstituicao[] @relation("Subst_Origem")
+  substituicoes_destino   PreparacaoSubstituicao[] @relation("Subst_Destino")
+  // Sobrescritas de cardápio que apontam para esta preparação como substituta
+  sobrescritas_como_substituta SobrescritaCardapio[]
+
   @@index([nome])
+  @@index([favorita])
+  @@index([vezes_usada])
 }
 
 // ── Ingrediente da Preparação ───────────────────────────────
@@ -450,14 +483,33 @@ model CardapioNutricional {
   criado_em        String  @default("")
   atualizado_em    String  @default("")
 
+  // ── NOVOS: cardápio base × instância × ciclo PNAE ──
+  // Se preenchido, este cardápio é uma INSTÂNCIA do base.
+  // Permite que mudanças no base se propaguem, mas com sobrescritas por escola.
+  cardapio_base_id String?
+  // Ciclo PNAE: nº de semanas únicas (default 5). Semana X do semestre mapeia para ((X-1) % ciclo) + 1
+  ciclo_semanas    Int     @default(5)
+  // Se true, semanas além do ciclo são geradas como cópia automática da semana correspondente
+  repetir_ciclo    Boolean @default(true)
+
+  // ── v8: dia fixo de pão e lanche (override por cardápio) ──
+  // Quando o cardápio é replicado de um base, esses campos guardam em qual dia
+  // da semana a escola recebe pão e lanche (SEG, TER, QUA, QUI, SEX).
+  // null = não recebe / não aplicável para este cardápio.
+  dia_pao_frances   String?  // SEG | TER | QUA | QUI | SEX | null
+  dia_lanche        String?  // SEG | TER | QUA | QUI | SEX | null
+
   escola            Escola?        @relation(fields: [escola_id], references: [id], onDelete: SetNull)
   nutricionista     Nutricionista  @relation(fields: [nutricionista_id], references: [id])
   semanas           CardapioSemanaNutri[]
+  sobrescritas      SobrescritaCardapio[]
+  listas_compras    ListaCompras[]
 
   @@index([escola_id])
   @@index([categoria_escola])
   @@index([status])
   @@index([ano, semestre])
+  @@index([cardapio_base_id])
 }
 
 // ── Semana do Cardápio Nutricional ──────────────────────────
@@ -467,6 +519,11 @@ model CardapioSemanaNutri {
   numero       Int     // 1-22
   data_inicio  String  // YYYY-MM-DD
   data_fim     String  // YYYY-MM-DD
+
+  // ── v8: marca semanas que foram modificadas vs base após replicação ──
+  // false = semana é cópia fiel do base (default após replicar)
+  // true  = semana foi diferenciada/editada (badge "Modificada" no editor)
+  diferenciada  Boolean @default(false)
 
   cardapio     CardapioNutricional @relation(fields: [cardapio_id], references: [id], onDelete: Cascade)
   dias         CardapioDiaNutri[]
@@ -531,3 +588,72 @@ model MetaNutricional {
 
   @@unique([tipo_refeicao_id, categoria_escola])
 }
+
+// ══════════════════════════════════════════════════════════════
+//  EXTENSÕES v6 — Sistema de Cardápio-Base × Instância por Escola
+//                  + Biblioteca de Preparações + Lista de Compras
+// ══════════════════════════════════════════════════════════════
+
+// ── Sobrescrita de Cardápio por Escola ─────────────────────
+// Permite que uma escola específica altere UMA preparação
+// do cardápio base (ex.: trocar pão de quarta → terça)
+// sem precisar criar um cardápio completo separado.
+model SobrescritaCardapio {
+  id                       String  @id @default(cuid())
+  cardapio_id              String   // FK para CardapioNutricional (instância escola)
+  semana_numero            Int      // 1-22 — qual semana do semestre
+  dia_semana               String   // SEG, TER, QUA, QUI, SEX
+  tipo_refeicao_id         String   // qual refeição
+  preparacao_substituta_id String   // FK para Preparacao
+  motivo                   String?  // ex.: "Padaria não produz pão nesta data"
+  criado_em                String   @default("")
+
+  cardapio             CardapioNutricional @relation(fields: [cardapio_id], references: [id], onDelete: Cascade)
+  tipo_refeicao        TipoRefeicao        @relation(fields: [tipo_refeicao_id], references: [id])
+  preparacao_substituta Preparacao         @relation(fields: [preparacao_substituta_id], references: [id])
+
+  @@unique([cardapio_id, semana_numero, dia_semana, tipo_refeicao_id])
+  @@index([cardapio_id])
+}
+
+// ── Substituição Equivalente de Preparações ────────────────
+// Relação N:N entre preparações equivalentes nutricionalmente
+// (ex.: "Coxa de Frango" ↔ "Sobrecoxa" ↔ "Peito de Frango")
+model PreparacaoSubstituicao {
+  id                  String  @id @default(cuid())
+  preparacao_origem_id String
+  preparacao_destino_id String
+  motivo              String  @default("MESMO_GRUPO") // MESMO_GRUPO, MESMO_PERFIL_NUTRICIONAL, ALTERNATIVA_DIET
+  criado_em           String  @default("")
+
+  preparacao_origem   Preparacao @relation("Subst_Origem",  fields: [preparacao_origem_id],  references: [id], onDelete: Cascade)
+  preparacao_destino  Preparacao @relation("Subst_Destino", fields: [preparacao_destino_id], references: [id], onDelete: Cascade)
+
+  @@unique([preparacao_origem_id, preparacao_destino_id])
+  @@index([preparacao_origem_id])
+}
+
+// ── Snapshot de Lista de Compras ───────────────────────────
+// Gerada a partir de um cardápio + conjunto de escolas.
+// Cada item consolida ingrediente × quantidade total × unidade.
+model ListaCompras {
+  id              String  @id @default(cuid())
+  nome            String  // "Lista Compras 2025/1 — Semana 1-4"
+  cardapio_id     String
+  gerada_em       String  @default("")
+  // JSON com as escolas + alunos considerados no cálculo (snapshot)
+  escolas_snapshot String @default("[]")
+  // JSON com itens consolidados: [{alimento_id, nome, unidade, qtd_total, qtd_por_escola: [{escola, qtd}]}]
+  itens_json      String  @default("[]")
+  status          String  @default("GERADA")  // GERADA, ENVIADA, RECEBIDA
+
+  cardapio        CardapioNutricional @relation(fields: [cardapio_id], references: [id], onDelete: Cascade)
+
+  @@index([cardapio_id])
+  @@index([gerada_em])
+}
+
+// ── Relação extra: CardapioNutricional ↔ ListaCompras ──────
+// (Adicionada via back-relation; Prisma exige declaração explícita)
+// Para evitar conflito de schema, adicionamos a relação ao
+// CardapioNutricional abaixo como lista_compras.

@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
-import { BookOpen, Plus, Pencil, Copy, FileText, CheckCircle, Search, RefreshCw, X, Users } from 'lucide-react'
+import { BookOpen, Plus, Pencil, Copy, FileText, CheckCircle, Search, RefreshCw, X, Users, Layers, Repeat, ShoppingCart, Trash2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { CATEGORIAS_ESCOLA_NUTRI, FASES_ESCOLARES } from '@/lib/nutricao-utils'
 
@@ -36,6 +36,10 @@ interface CardapioResumo {
   status: string
   ano: number
   semestre: number
+  is_base?: boolean
+  cardapio_base_id?: string | null
+  ciclo_semanas?: number
+  repetir_ciclo?: boolean
   escola?: { id: string; nome: string } | null
   nutricionista?: { id: string; nome: string; crn: string } | null
   semanas?: { id: string }[]
@@ -131,6 +135,11 @@ export default function CardapiosPage() {
 
   const [approveId, setApproveId] = useState<string | null>(null)
   const [approving, setApproving] = useState(false)
+
+  // v8: exclusão de cardápio
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deleteCardNome, setDeleteCardNome] = useState<string>('')
+  const [deleting, setDeleting] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -267,6 +276,29 @@ export default function CardapiosPage() {
     }
   }
 
+  // v8: Excluir cardápio (chama DELETE na API)
+  async function handleDelete() {
+    if (!deleteId) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${deleteId}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Erro ao excluir cardápio')
+      }
+      toast.success('Cardápio excluído com sucesso')
+      setDeleteId(null)
+      setDeleteCardNome('')
+      loadData()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao excluir cardápio')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -299,6 +331,18 @@ export default function CardapiosPage() {
         <Button onClick={openNewDialog} className="bg-[#1A3A5C] hover:bg-[#1A3A5C]/90">
           <Plus className="w-4 h-4 mr-1" /> Novo Cardápio
         </Button>
+      </motion.div>
+
+      {/* Atalhos v6 */}
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.05 }} className="flex flex-wrap gap-2">
+        <Link href="/nutricao/lista-compras">
+          <Button variant="outline" size="sm" className="text-xs h-8 border-[#1A3A5C]/20 text-[#1A3A5C] hover:bg-[#1A3A5C]/5">
+            <ShoppingCart className="w-3 h-3 mr-1" /> Lista de Compras
+          </Button>
+        </Link>
+        <div className="text-[10px] text-muted-foreground self-center px-2">
+          💡 Dica: crie cardápios-base (sem escola) e use "Replicar p/ Escolas" para instanciar nas 24 escolas
+        </div>
       </motion.div>
 
       {/* Nutricionistas Ativos */}
@@ -374,7 +418,10 @@ export default function CardapiosPage() {
                 <Card className="border-[#1A3A5C]/10 hover:shadow-md transition-shadow">
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between">
-                      <CardTitle className="text-sm font-semibold text-[#1A3A5C] truncate flex-1">{c.nome}</CardTitle>
+                      <CardTitle className="text-sm font-semibold text-[#1A3A5C] truncate flex-1">
+                        {c.is_base && <span className="text-[#D4A017] mr-1" title="Modelo Base">⭐</span>}
+                        {c.nome}
+                      </CardTitle>
                       <div className="flex items-center gap-1 ml-2 flex-shrink-0">
                         {getStatusBadge(c.status)}
                       </div>
@@ -387,11 +434,16 @@ export default function CardapiosPage() {
                       <Badge variant="outline" className="text-[10px]">
                         {c.escola?.nome || 'Modelo base'}
                       </Badge>
+                      {c.ciclo_semanas && c.ciclo_semanas !== 5 && (
+                        <Badge variant="outline" className="text-[10px] border-purple-200 bg-purple-50 text-purple-700">
+                          Ciclo {c.ciclo_semanas}
+                        </Badge>
+                      )}
                     </div>
                     <div className="text-xs text-muted-foreground space-y-0.5">
                       <p>Nutricionista: {c.nutricionista?.nome || '—'}</p>
                       <p>Ano/Semestre: {c.ano}/{c.semestre}</p>
-                      <p>Semanas: {c.semanas?.length || 0}</p>
+                      <p>Semanas: {c.semanas?.length || 0}{c.repetir_ciclo ? ' (com ciclo)' : ''}</p>
                     </div>
                     <div className="flex flex-wrap gap-1.5 pt-1 border-t">
                       <Link href={`/nutricao/cardapios/${c.id}`}>
@@ -399,6 +451,22 @@ export default function CardapiosPage() {
                           <Pencil className="w-3 h-3 mr-1" /> Editar
                         </Button>
                       </Link>
+                      {/* v8: Replicar p/ Escolas (somente bases) — substitui "Clonar em Lote" + "Ciclo PNAE" */}
+                      {c.is_base && (
+                        <Link href={`/nutricao/cardapios/${c.id}/replicar`}>
+                          <Button variant="outline" size="sm" className="h-7 text-[11px] border-purple-200 text-purple-700 hover:bg-purple-50">
+                            <Layers className="w-3 h-3 mr-1" /> Replicar p/ Escolas
+                          </Button>
+                        </Link>
+                      )}
+                      {/* v8: Comparar c/ Base (somente instâncias de escola) */}
+                      {!c.is_base && c.cardapio_base_id && (
+                        <Link href={`/nutricao/cardapios/${c.id}/comparar`}>
+                          <Button variant="outline" size="sm" className="h-7 text-[11px] border-blue-200 text-blue-700 hover:bg-blue-50">
+                            <Copy className="w-3 h-3 mr-1" /> Comparar c/ Base
+                          </Button>
+                        </Link>
+                      )}
                       <Button variant="outline" size="sm" className="h-7 text-[11px]" onClick={() => openCloneDialog(c.id)}>
                         <Copy className="w-3 h-3 mr-1" /> Clonar
                       </Button>
@@ -412,6 +480,18 @@ export default function CardapiosPage() {
                           <CheckCircle className="w-3 h-3 mr-1" /> Aprovar
                         </Button>
                       )}
+                      {/* v8: Excluir cardápio */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[11px] text-red-600 border-red-200 hover:bg-red-50"
+                        onClick={() => {
+                          setDeleteId(c.id)
+                          setDeleteCardNome(c.nome)
+                        }}
+                      >
+                        <Trash2 className="w-3 h-3 mr-1" /> Excluir
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -549,6 +629,42 @@ export default function CardapiosPage() {
             <AlertDialogCancel disabled={approving}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleApprove} disabled={approving} className="bg-emerald-600 hover:bg-emerald-700">
               {approving ? 'Aprovando...' : 'Aprovar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* v8: AlertDialog de Exclusão */}
+      <AlertDialog open={!!deleteId} onOpenChange={() => {
+        if (!deleting) {
+          setDeleteId(null)
+          setDeleteCardNome('')
+        }
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-700">
+              <AlertTriangle className="w-5 h-5" />
+              Excluir cardápio?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir <strong>{deleteCardNome}</strong>?
+              <br />
+              <span className="text-red-600 font-medium">
+                Esta ação é irreversível e removerá TODAS as semanas, dias e itens associados a este cardápio.
+              </span>
+              <br /><br />
+              Se for um cardápio de escola, o cardápio base permanece intacto. Se for um base, as instâncias já criadas nas escolas também permanecem (mas perdem o vínculo de origem).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {deleting ? 'Excluindo...' : 'Sim, excluir'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

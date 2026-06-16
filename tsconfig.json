@@ -39,6 +39,12 @@
   "exclude": [
     "node_modules",
     "skills",
-    "agent-ctx"
+    "agent-ctx",
+    "taco_seed_nutricao.ts",
+    "taco_*.json",
+    "tabelataco*.json",
+    "nutribr.json",
+    "upload",
+    "tool-results"
   ]
 }

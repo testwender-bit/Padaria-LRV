@@ -10,13 +10,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check
+  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -32,6 +33,7 @@ import {
   type ResumoNutricionalSemana,
   type FaseEscolar,
 } from '@/lib/nutricao-utils'
+import { detectarAlergenosPreparacao, ALERGENOS_LIST } from '@/lib/alergenos-utils'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -85,6 +87,9 @@ interface Preparacao {
   id: string
   nome: string
   descricao: string | null
+  favorita: boolean
+  vezes_usada: number
+  categoria?: string  // v8: PREPARACAO | PAO | LANCHE | BEBIDA | SOBREMESA
   ingredientes: IngredienteComAlimento[]
 }
 
@@ -108,6 +113,7 @@ interface CardapioSemana {
   numero: number
   data_inicio: string
   data_fim: string
+  diferenciada?: boolean  // v8: true se a semana foi manualmente ajustada vs base
   dias: CardapioDia[]
 }
 
@@ -115,11 +121,14 @@ interface CardapioFull {
   id: string
   nome: string
   escola_id: string | null
+  cardapio_base_id?: string | null  // v8: se preenchido, é instância replicada
   categoria_escola: string
   fase_escolar: string
   status: string
   ano: number
   semestre: number
+  dia_pao_frances?: string | null    // v8: dia fixo de pão (SEG..SEX ou null)
+  dia_lanche?: string | null         // v8: dia fixo de lanche (SEG..SEX ou null)
   escola?: { id: string; nome: string } | null
   nutricionista?: { id: string; nome: string } | null
   semanas: CardapioSemana[]
@@ -218,6 +227,9 @@ export default function CardapioEditorPage() {
   const [currentSemana, setCurrentSemana] = useState(1)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  // v8: exclusão do cardápio
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   // Add preparations dialog (multi-select)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
@@ -226,6 +238,10 @@ export default function CardapioEditorPage() {
   const [addPrepSearch, setAddPrepSearch] = useState('')
   const [addSelectedPrepIds, setAddSelectedPrepIds] = useState<Set<string>>(new Set())
   const [adding, setAdding] = useState(false)
+  // Filtros do modal: todas | favoritas | recentes
+  const [addFilter, setAddFilter] = useState<'all' | 'favoritas' | 'recentes'>('all')
+  // Filtro alérgenos: exclui preparações com esses alérgenos
+  const [addSemAlergenos, setAddSemAlergenos] = useState<Set<string>>(new Set())
 
   // Fase escolar selector
   const [faseDialogOpen, setFaseDialogOpen] = useState(false)
@@ -239,16 +255,30 @@ export default function CardapioEditorPage() {
   const [copyDestinoDias, setCopyDestinoDias] = useState<Set<string>>(new Set())
   const [copying, setCopying] = useState(false)
 
+  // ── NOVOS v7: quick-add chips, drag-and-drop, mobile day picker, porções editing ──
+  // Top 6 preparações mais usadas (para botões 1-clique)
+  const [topPreparacoes, setTopPreparacoes] = useState<Preparacao[]>([])
+  // Item sendo arrastado (drag-and-drop)
+  const [draggedItem, setDraggedItem] = useState<CardapioItem | null>(null)
+  const [dragOverSlot, setDragOverSlot] = useState<string | null>(null)
+  // Modo mobile: mostra apenas 1 dia por vez (picker no topo)
+  const [mobileDayView, setMobileDayView] = useState<string>('segunda')
+  // Porções com edição inline em andamento (item_id)
+  const [editingPorcoesId, setEditingPorcoesId] = useState<string | null>(null)
+  // Versão mobile (sidebar sempre colapsável)
+  const [isMobile, setIsMobile] = useState(false)
+
   const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [cardRes, prepRes, tipoRes, catRes, metaRes] = await Promise.all([
+      const [cardRes, prepRes, tipoRes, catRes, metaRes, topRes] = await Promise.all([
         fetch(`/api/nutricao/cardapios/${cardapioId}`),
         fetch('/api/nutricao/preparacoes'),
         fetch('/api/nutricao/tipos-refeicao'),
         fetch('/api/nutricao/categorias-refeicao'),
         fetch('/api/nutricao/metas'),
+        fetch('/api/nutricao/preparacoes?recentes=true&limite_recentes=6'),
       ])
       if (!cardRes.ok) throw new Error('Erro ao carregar cardápio')
       const cardData = await cardRes.json()
@@ -256,12 +286,14 @@ export default function CardapioEditorPage() {
       const tipoData = tipoRes.ok ? await tipoRes.json() : []
       const catData = catRes.ok ? await catRes.json() : []
       const metaData = metaRes.ok ? await metaRes.json() : []
+      const topData = topRes.ok ? await topRes.json() : []
       setCardapio(cardData)
       setSelectedFase(cardData.fase_escolar || 'FUND_FINAL')
       setPreparacoes(Array.isArray(prepData) ? prepData : [])
       setTiposRefeicao(Array.isArray(tipoData) ? tipoData : [])
       setCategoriasRefeicao(Array.isArray(catData) ? catData : [])
       setMetas(Array.isArray(metaData) ? metaData : [])
+      setTopPreparacoes(Array.isArray(topData) ? topData : [])
     } catch (err) {
       console.error(err)
       setError('Não foi possível carregar o cardápio.')
@@ -270,9 +302,45 @@ export default function CardapioEditorPage() {
     }
   }, [cardapioId])
 
+  // Detecta mobile/tablet para mudar layout
+  useEffect(() => {
+    function checkMobile() {
+      setIsMobile(window.innerWidth < 1024)
+    }
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  // ── Atalhos de teclado (F4) ──
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      // Ignora se modal aberto ou foco em input
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
+      if (addDialogOpen || copyDialogOpen || faseDialogOpen) return
+
+      // Alt+Seta esquerda/direita → navega semanas
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault()
+        setCurrentSemana((s) => Math.max(1, s - 1))
+      } else if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault()
+        setCurrentSemana((s) => Math.min(cardapio?.semanas.length || 22, s + 1))
+      }
+      // Alt+1..5 → ir para semana 1..5 (ciclo base)
+      else if (e.altKey && /^[1-5]$/.test(e.key)) {
+        e.preventDefault()
+        setCurrentSemana(Number(e.key))
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [addDialogOpen, copyDialogOpen, faseDialogOpen, cardapio])
 
   // Refeições for the current category (with schedule info)
   const refeicoesForCategoria = useMemo(() => {
@@ -363,6 +431,8 @@ export default function CardapioEditorPage() {
     setAddTipoRefeicaoId(tipoRefeicaoId)
     setAddPrepSearch('')
     setAddSelectedPrepIds(new Set())
+    setAddFilter('all')
+    setAddSemAlergenos(new Set())
     setAddDialogOpen(true)
   }
 
@@ -397,9 +467,25 @@ export default function CardapioEditorPage() {
         const errData = await res.json().catch(() => ({}))
         throw new Error(errData.error || 'Erro ao adicionar preparações')
       }
+      const itensCriados = await res.json()
       toast.success(`${addSelectedPrepIds.size} preparação(ões) adicionada(s)`)
       setAddDialogOpen(false)
-      loadData()
+
+      // ── ATUALIZAÇÃO OTIMISTA (sem refresh) ──
+      const novosItens = (Array.isArray(itensCriados) ? itensCriados : [itensCriados]) as CardapioItem[]
+      setCardapio(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          semanas: prev.semanas.map(s => ({
+            ...s,
+            dias: s.dias.map(d => {
+              if (d.id !== addDiaId) return d
+              return { ...d, itens: [...d.itens, ...novosItens] }
+            }),
+          })),
+        }
+      })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao adicionar preparações')
     } finally {
@@ -416,7 +502,26 @@ export default function CardapioEditorPage() {
       })
       if (!res.ok) throw new Error('Erro ao remover preparação')
       toast.success('Preparação removida')
-      loadData()
+
+      // ── ATUALIZAÇÃO OTIMISTA (sem refresh) ──
+      setCardapio(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          semanas: prev.semanas.map(s => ({
+            ...s,
+            dias: s.dias.map(d => ({
+              ...d,
+              itens: d.itens.filter(i => i.id !== itemId),
+            })),
+          })),
+        }
+      })
+
+      // v8: marca semana atual como diferenciada (se for cardápio de escola)
+      if (cardapio?.escola_id && cardapio?.cardapio_base_id) {
+        handleDiferenciarSemana(currentSemana, true)
+      }
     } catch {
       toast.error('Erro ao remover preparação')
     }
@@ -439,10 +544,250 @@ export default function CardapioEditorPage() {
         })
       ))
       toast.success('Refeição limpa')
-      loadData()
+
+      // ── ATUALIZAÇÃO OTIMISTA (sem refresh) ──
+      const itemIds = new Set(itens.map(i => i.id))
+      setCardapio(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          semanas: prev.semanas.map(s => ({
+            ...s,
+            dias: s.dias.map(d => ({
+              ...d,
+              itens: d.itens.filter(i => !itemIds.has(i.id)),
+            })),
+          })),
+        }
+      })
+
+      // v8: marca semana atual como diferenciada
+      if (cardapio?.escola_id && cardapio?.cardapio_base_id) {
+        handleDiferenciarSemana(currentSemana, true)
+      }
     } catch {
       toast.error('Erro ao limpar refeição')
     }
+  }
+
+  // ── NOVO v7: Quick-add (1-clique) para preparação universal ──
+  async function handleQuickAdd(prepId: string, diaId: string, tipoRefeicaoId: string, prepNome?: string) {
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/item`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dia_id: diaId,
+          tipo_refeicao_id: tipoRefeicaoId,
+          preparacao_id: prepId,
+          porcoes: 1,
+        }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || 'Erro ao adicionar')
+      }
+      const itemCriado = await res.json()
+      toast.success(`${prepNome || 'Preparação'} adicionada`)
+
+      // ── ATUALIZAÇÃO OTIMISTA (sem refresh) ──
+      // Encontra a preparação completa no estado `preparacoes` (já carregada)
+      const prepCompleta = preparacoes.find(p => p.id === prepId)
+      if (prepCompleta) {
+        setCardapio(prev => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            semanas: prev.semanas.map(s => ({
+              ...s,
+              dias: s.dias.map(d => {
+                if (d.id !== diaId) return d
+                // Adiciona o novo item (ou atualiza porções se já existia)
+                const existente = d.itens.find(i => i.tipo_refeicao_id === tipoRefeicaoId && i.preparacao_id === prepId)
+                if (existente) {
+                  return {
+                    ...d,
+                    itens: d.itens.map(i => i.id === existente.id ? { ...i, porcoes: i.porcoes + 1 } : i),
+                  }
+                }
+                return {
+                  ...d,
+                  itens: [...d.itens, {
+                    id: itemCriado.id || `temp-${Date.now()}`,
+                    tipo_refeicao_id: tipoRefeicaoId,
+                    preparacao_id: prepId,
+                    porcoes: 1,
+                    tipo_refeicao: tiposRefeicao.find(t => t.id === tipoRefeicaoId) || { id: tipoRefeicaoId, nome: '', horario: '', ordem: 0, codigo: '' },
+                    preparacao: prepCompleta,
+                  }],
+                }
+              }),
+            })),
+          }
+        })
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao adicionar preparação')
+    }
+  }
+
+  // v8: Porções não são mais editáveis inline — definidas no cadastro da preparação.
+  // Função handleUpdatePorcoes removida.
+
+  // ── NOVO v8: Marcar semana como diferenciada (manualmente ajustada vs base) ──
+  async function handleDiferenciarSemana(semanaNumero: number, marcarComoDiferenciada?: boolean) {
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/diferenciar-semana`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          semana_numero: semanaNumero,
+          diferenciada: marcarComoDiferenciada,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Erro ao marcar semana')
+      }
+      const data = await res.json()
+      // Atualização otimista local
+      setCardapio(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          semanas: prev.semanas.map(s =>
+            s.numero === semanaNumero
+              ? { ...s, diferenciada: data.diferenciada }
+              : s
+          ),
+        }
+      })
+      toast.success(data.message)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao diferenciar semana')
+    }
+  }
+
+  // ── NOVO v7: Mover item via drag-and-drop ──
+  async function handleMoveItem(item: CardapioItem, destinoSemana: number, destinoDia: string, destinoTipoRefeicaoId: string) {
+    // Não faz nada se for o mesmo slot
+    const semanaOrigem = cardapio?.semanas.find(s => s.dias.some(d => d.itens.some(i => i.id === item.id)))
+    const diaOrigem = semanaOrigem?.dias.find(d => d.itens.some(i => i.id === item.id))
+    if (semanaOrigem?.numero === destinoSemana && diaOrigem?.dia_semana === destinoDia && item.tipo_refeicao_id === destinoTipoRefeicaoId) {
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/mover-item`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item_id: item.id,
+          destino: {
+            semana_numero: destinoSemana,
+            dia_semana: destinoDia,
+            tipo_refeicao_id: destinoTipoRefeicaoId,
+          },
+        }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || 'Erro ao mover')
+      }
+      const data = await res.json()
+      toast.success(`Movido para ${destinoDia}, semana ${destinoSemana}${data.action === 'merged' ? ' (mesclada com item existente)' : ''}`)
+
+      // ── ATUALIZAÇÃO OTIMISTA (sem refresh) ──
+      // IMPORTANTE: a API DELETE o item original e CRIA um novo item no destino
+      // (com NOVO id). Precisamos usar o novo id retornado em data.item.id,
+      // senão na próxima vez que o usuário tentar mover o mesmo item, o front
+      // vai enviar o id ANTIGO (que não existe mais) → 404.
+      const novoItemId = data.item?.id || item.id
+      const novoItem: CardapioItem = {
+        ...item,
+        id: novoItemId,
+        tipo_refeicao_id: destinoTipoRefeicaoId,
+      }
+
+      setCardapio(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          semanas: prev.semanas.map(s => {
+            const isSemanaDestino = s.numero === destinoSemana
+
+            return {
+              ...s,
+              dias: s.dias.map(d => {
+                // Remove o item de qualquer dia onde ele esteja (origem) — usa id antigo
+                const filteredItens = d.itens.filter(i => i.id !== item.id)
+
+                // Se este é o dia destino, adiciona o item com novo id
+                if (isSemanaDestino && d.dia_semana === destinoDia) {
+                  if (data.action === 'merged') {
+                    // Mesclou com item existente — não re-adiciona (origem já foi removida)
+                    return { ...d, itens: filteredItens }
+                  }
+                  return {
+                    ...d,
+                    itens: [...filteredItens, novoItem],
+                  }
+                }
+                return { ...d, itens: filteredItens }
+              }),
+            }
+          }),
+        }
+      })
+
+      // v8: marca a semana destino e origem como diferenciadas (se for cardápio de escola)
+      if (cardapio?.escola_id && cardapio?.cardapio_base_id) {
+        handleDiferenciarSemana(destinoSemana, true)
+        if (semanaOrigem && semanaOrigem.numero !== destinoSemana) {
+          handleDiferenciarSemana(semanaOrigem.numero, true)
+        }
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao mover preparação')
+    }
+  }
+
+  // ── NOVO v7: Resumo nutricional por dia (para mini-painel) ──
+  function getResumoDia(diaSemana: string): { energia: number; ferro_heme: boolean; vit_a: boolean; alertas: number } {
+    if (!semanaAtual || !cardapio) return { energia: 0, ferro_heme: false, vit_a: false, alertas: 0 }
+    const dia = semanaAtual.dias.find(d => d.dia_semana === diaSemana)
+    if (!dia || dia.itens.length === 0) return { energia: 0, ferro_heme: false, vit_a: false, alertas: 0 }
+
+    const diaNutri = dia.itens.reduce<NutrienteDia>((acc, item) => {
+      const refeicaoNutri = calcularNutrientesRefeicao([{
+        preparacao: {
+          ingredientes: item.preparacao.ingredientes.map((ing) => ({
+            quantidade_gramas: getGramasForFase(ing),
+            alimento: ing.alimento,
+          })),
+        },
+        porcoes: item.porcoes,
+      }])
+      return somarNutrientes(acc, refeicaoNutri)
+    }, emptyNutrienteDia())
+
+    return {
+      energia: diaNutri.energia_kcal,
+      ferro_heme: diaNutri.ferro_heme_mg > 0,
+      vit_a: diaNutri.vitamina_a_mcg > 0,
+      alertas: 0,  // simplificado para o mini-resumo
+    }
+  }
+
+  // Semáforo do dia baseado na energia vs meta
+  function getDiaTrafficLight(energia: number): 'gray' | 'red' | 'amber' | 'green' {
+    if (energia === 0) return 'gray'
+    const meta = metas.find(m => m.categoria_escola === cardapio?.categoria_escola)
+    if (!meta) return 'gray'
+    if (energia < meta.energia_kcal_min * 0.7) return 'red'
+    if (energia < meta.energia_kcal_min) return 'amber'
+    if (energia > meta.energia_kcal_max) return 'amber'
+    return 'green'
   }
 
   async function handleSaveFase() {
@@ -500,6 +845,27 @@ export default function CardapioEditorPage() {
       toast.error('Erro ao salvar cardápio')
     } finally {
       setSaving(false)
+    }
+  }
+
+  // v8: Excluir cardápio
+  async function handleDeleteCardapio() {
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Erro ao excluir')
+      }
+      toast.success('Cardápio excluído')
+      router.push('/nutricao/cardapios')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao excluir cardápio')
+    } finally {
+      setDeleting(false)
+      setDeleteDialogOpen(false)
     }
   }
 
@@ -587,12 +953,38 @@ export default function CardapioEditorPage() {
     }
   }
 
-  const filteredPreparacoes = useMemo(() =>
-    preparacoes.filter((p) =>
-      p.nome.toLowerCase().includes(addPrepSearch.toLowerCase())
-    ),
-    [preparacoes, addPrepSearch]
-  )
+  const filteredPreparacoes = useMemo(() => {
+    let list = preparacoes
+
+    // Filtro por aba
+    if (addFilter === 'favoritas') {
+      list = list.filter((p) => p.favorita)
+    } else if (addFilter === 'recentes') {
+      list = [...list].sort((a, b) => (b.vezes_usada || 0) - (a.vezes_usada || 0)).slice(0, 30)
+    }
+
+    // Filtro por alérgenos (excluir)
+    if (addSemAlergenos.size > 0) {
+      list = list.filter((p) => {
+        const alergenos = detectarAlergenosPreparacao(
+          p.ingredientes.map((ing) => ({
+            nome: ing.alimento.nome,
+            grupo: ing.alimento.grupo,
+          }))
+        )
+        // Se tem QUALQUER alérgeno da lista de exclusão, remover
+        return !alergenos.some((a) => addSemAlergenos.has(a))
+      })
+    }
+
+    // Busca por nome
+    const q = addPrepSearch.toLowerCase()
+    if (q) {
+      list = list.filter((p) => p.nome.toLowerCase().includes(q))
+    }
+
+    return list
+  }, [preparacoes, addFilter, addSemAlergenos, addPrepSearch])
 
   if (loading) {
     return (
@@ -656,6 +1048,24 @@ export default function CardapioEditorPage() {
             <span className="text-[10px] opacity-70">({faseInfo?.faixa || '—'})</span>
           </button>
 
+          {/* Botão Replicar p/ Escolas (somente se for base) */}
+          {!cardapio.escola_id && (
+            <Link href={`/nutricao/cardapios/${cardapioId}/replicar`}>
+              <Button variant="outline" size="sm" className="text-xs h-8 border-purple-200 text-purple-700 hover:bg-purple-50">
+                <Copy className="w-3 h-3 mr-1" /> Replicar p/ Escolas
+              </Button>
+            </Link>
+          )}
+
+          {/* Botão Comparar com Base (somente se for instância de escola) */}
+          {cardapio.escola_id && (
+            <Link href={`/nutricao/cardapios/${cardapioId}/comparar`}>
+              <Button variant="outline" size="sm" className="text-xs h-8 border-blue-200 text-blue-700 hover:bg-blue-50">
+                <GitCompare className="w-3 h-3 mr-1" /> Comparar c/ Base
+              </Button>
+            </Link>
+          )}
+
           <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setSidebarOpen(!sidebarOpen)}>
             {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
             <span className="ml-1 text-xs">Resumo</span>
@@ -673,6 +1083,15 @@ export default function CardapioEditorPage() {
           <Button size="sm" onClick={handleSave} disabled={saving} className="bg-[#1A3A5C] hover:bg-[#1A3A5C]/90 text-xs">
             <Save className="w-3 h-3 mr-1" /> Salvar
           </Button>
+          <Button
+            size="sm"
+            onClick={() => setDeleteDialogOpen(true)}
+            disabled={deleting}
+            className="bg-red-600 hover:bg-red-700 text-xs"
+            title="Excluir este cardápio permanentemente"
+          >
+            <Trash2 className="w-3 h-3 mr-1" /> Excluir
+          </Button>
         </div>
       </motion.div>
 
@@ -688,11 +1107,40 @@ export default function CardapioEditorPage() {
         </Button>
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-[#1A3A5C]">Semana {currentSemana}</span>
+          {/* v8: Badge "Modificada" quando semana foi diferenciada vs base */}
+          {semanaAtual?.diferenciada && (
+            <Badge className="bg-[#D4A017]/10 text-[#D4A017] border-[#D4A017]/30 text-[9px]" title="Esta semana foi manualmente ajustada vs o cardápio base">
+              <Unlock className="w-2.5 h-2.5 mr-0.5" /> Modificada
+            </Badge>
+          )}
           {semanaAtual && (
             <span className="text-xs text-muted-foreground">
               ({formatDate(semanaAtual.data_inicio)} — {formatDate(semanaAtual.data_fim)})
             </span>
           )}
+          {/* v8: Botão "Diferenciar Semana" — só para cardápios de escola (instâncias de base) */}
+          {cardapio.escola_id && cardapio.cardapio_base_id && semanaAtual && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[10px] text-[#D4A017] hover:bg-[#D4A017]/10 ml-2"
+              onClick={() => handleDiferenciarSemana(currentSemana)}
+              title={semanaAtual.diferenciada
+                ? "Restaurar como cópia do base (mas mantém as alterações feitas)"
+                : "Marcar esta semana como modificada vs o cardápio base"
+              }
+            >
+              <Unlock className="w-3 h-3 mr-0.5" />
+              {semanaAtual.diferenciada ? 'Restaurar' : 'Diferenciar'}
+            </Button>
+          )}
+          {/* Legenda semáforo */}
+          <div className="hidden md:flex items-center gap-2 ml-3 pl-3 border-l border-gray-200">
+            <span className="text-[9px] text-muted-foreground">Semáforo:</span>
+            <span className="flex items-center gap-1 text-[9px]"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> OK</span>
+            <span className="flex items-center gap-1 text-[9px]"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Abaixo/Acima</span>
+            <span className="flex items-center gap-1 text-[9px]"><span className="w-1.5 h-1.5 rounded-full bg-red-400" /> Crítico</span>
+          </div>
         </div>
         <Button variant="ghost" size="sm" onClick={() => setCurrentSemana(Math.min(totalSemanas, currentSemana + 1))} disabled={currentSemana >= totalSemanas}>
           <ChevronRight className="w-4 h-4" />
@@ -727,19 +1175,110 @@ export default function CardapioEditorPage() {
       <div className="flex gap-3">
         {/* Grid: 5 columns for days */}
         <div className="flex-1 min-w-0">
+          {/* ── NOVO v7: Mobile day picker (apenas 1 dia por vez em telas pequenas) ── */}
+          {isMobile && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="lg:hidden mb-2 bg-white p-1.5 rounded-xl border border-[#1A3A5C]/10 flex items-center gap-1 overflow-x-auto"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-[#1A3A5C] flex-shrink-0 ml-1" />
+              {DIAS_SEMANA_NUTRI.map((d) => {
+                const isActive = mobileDayView === d.value
+                const resumo = getResumoDia(d.value)
+                const semaforo = getDiaTrafficLight(resumo.energia)
+                return (
+                  <button
+                    key={d.value}
+                    onClick={() => setMobileDayView(d.value)}
+                    className={`px-2.5 py-1 rounded-md text-[10px] font-medium flex items-center gap-1 flex-shrink-0 transition-colors ${
+                      isActive
+                        ? 'bg-[#1A3A5C] text-white'
+                        : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      semaforo === 'green' ? 'bg-emerald-400' :
+                      semaforo === 'amber' ? 'bg-amber-400' :
+                      semaforo === 'red' ? 'bg-red-400' : 'bg-gray-300'
+                    }`} />
+                    {d.label}
+                  </button>
+                )
+              })}
+            </motion.div>
+          )}
+
+          {/* ── NOVO v7: Quick-add chips bar (top 6 mais usadas) ── */}
+          {topPreparacoes.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-2 bg-white p-2 rounded-xl border border-[#1A3A5C]/10"
+            >
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1 text-[10px] font-semibold text-[#1A3A5C] flex-shrink-0">
+                  <Zap className="w-3 h-3 text-[#D4A017]" />
+                  1-clique:
+                </div>
+                {topPreparacoes.map((p) => {
+                  // Dia alvo: no mobile usa mobileDayView, no desktop usa a primeira refeição da primeira segunda
+                  const diaAlvo = isMobile ? mobileDayView : 'segunda'
+                  const diaDataAlvo = semanaAtual?.dias.find(d => d.dia_semana === diaAlvo)
+                  const primeiraRefeicao = refeicoesForCategoria[0]
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => {
+                        if (diaDataAlvo && primeiraRefeicao) {
+                          handleQuickAdd(p.id, diaDataAlvo.id, primeiraRefeicao.tipo_refeicao_id, p.nome)
+                          if (!isMobile) {
+                            toast.info(`Adicionado em ${diaAlvo}/${primeiraRefeicao.tipo_refeicao.nome} — arraste para mover`)
+                          }
+                        } else {
+                          toast.error('Semana sem dias configurados')
+                        }
+                      }}
+                      className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#1A3A5C]/5 border border-[#1A3A5C]/20 text-[#1A3A5C] hover:bg-[#1A3A5C]/10 transition-colors flex items-center gap-1"
+                      title={`Adicionar "${p.nome}" em ${diaAlvo}/${primeiraRefeicao?.tipo_refeicao.nome || ''} — depois arraste para o dia desejado`}
+                    >
+                      <Plus className="w-2.5 h-2.5" />
+                      {p.nome}
+                      {p.vezes_usada > 0 && (
+                        <span className="text-[8px] text-muted-foreground">({p.vezes_usada}×)</span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </motion.div>
+          )}
+
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="grid grid-cols-1 md:grid-cols-5 gap-2"
+            className={`grid gap-2 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-5'}`}
           >
-            {DIAS_SEMANA_NUTRI.map((dia) => {
+            {DIAS_SEMANA_NUTRI.filter(d => !isMobile || d.value === mobileDayView).map((dia) => {
               const diaData = semanaAtual?.dias.find((d) => d.dia_semana === dia.value)
+              const resumoDia = getResumoDia(dia.value)
+              const semaforo = getDiaTrafficLight(resumoDia.energia)
               return (
-                <div key={dia.value} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  {/* Day Header with Copy button */}
+                <div
+                  key={dia.value}
+                  className="bg-white rounded-xl border border-gray-200 overflow-hidden"
+                >
+                  {/* Day Header with Copy button + traffic-light dot */}
                   <div className="bg-[#1A3A5C] text-white py-1.5 px-2 flex items-center justify-between">
-                    <span className="text-xs font-semibold">{dia.label}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full ${
+                        semaforo === 'green' ? 'bg-emerald-400' :
+                        semaforo === 'amber' ? 'bg-amber-400' :
+                        semaforo === 'red' ? 'bg-red-400' : 'bg-gray-400'
+                      }`} title={`Energia: ${resumoDia.energia.toFixed(0)} kcal`} />
+                      <span className="text-xs font-semibold">{dia.label}</span>
+                    </div>
                     <button
                       onClick={() => openCopyDialog(dia.value, currentSemana)}
                       className="text-white/70 hover:text-white transition-colors"
@@ -753,8 +1292,33 @@ export default function CardapioEditorPage() {
                   <div className="p-1.5 space-y-1.5">
                     {refeicoesForCategoria.map((cr) => {
                       const itens = getItensForSlot(dia.value, cr.tipo_refeicao_id)
+                      const slotKey = `${dia.value}-${cr.tipo_refeicao_id}`
+                      const isDragOver = dragOverSlot === slotKey
                       return (
-                        <div key={cr.tipo_refeicao_id} className="border border-gray-100 rounded-lg p-1.5 bg-gray-50/50">
+                        <div
+                          key={cr.tipo_refeicao_id}
+                          className={`border rounded-lg p-1.5 bg-gray-50/50 transition-colors ${
+                            isDragOver
+                              ? 'border-[#D4A017] bg-[#D4A017]/5 ring-1 ring-[#D4A017]/30'
+                              : 'border-gray-100'
+                          }`}
+                          onDragOver={(e) => {
+                            e.preventDefault()
+                            e.dataTransfer.dropEffect = 'move'
+                            if (!isDragOver) setDragOverSlot(slotKey)
+                          }}
+                          onDragLeave={() => {
+                            if (dragOverSlot === slotKey) setDragOverSlot(null)
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault()
+                            setDragOverSlot(null)
+                            if (draggedItem) {
+                              handleMoveItem(draggedItem, currentSemana, dia.value, cr.tipo_refeicao_id)
+                              setDraggedItem(null)
+                            }
+                          }}
+                        >
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-[10px] font-semibold text-[#1A3A5C] truncate">{cr.tipo_refeicao.nome}</span>
                             <div className="flex items-center gap-1">
@@ -770,10 +1334,35 @@ export default function CardapioEditorPage() {
                               )}
                             </div>
                           </div>
-                          {/* Preparações list — no porção display */}
+                          {/* Preparações list com drag handle + porções inline */}
                           {itens.map((item) => (
-                            <div key={item.id} className="flex items-center gap-1 mb-1 p-1 rounded bg-white border border-gray-100 text-[10px] group">
+                            <div
+                              key={item.id}
+                              draggable
+                              onDragStart={(e) => {
+                                setDraggedItem(item)
+                                e.dataTransfer.effectAllowed = 'move'
+                              }}
+                              onDragEnd={() => {
+                                setDraggedItem(null)
+                                setDragOverSlot(null)
+                              }}
+                              className={`flex items-center gap-1 mb-1 p-1 rounded bg-white border border-gray-100 text-[10px] group cursor-grab active:cursor-grabbing ${
+                                draggedItem?.id === item.id ? 'opacity-50' : ''
+                              }`}
+                              title="Arraste para mover para outro dia/refeição"
+                            >
+                              <GripVertical className="w-2.5 h-2.5 text-gray-300 flex-shrink-0 group-hover:text-gray-400" />
                               <span className="flex-1 truncate font-medium">{item.preparacao.nome}</span>
+                              {/* Porções (display estático — definidas no cadastro da preparação) */}
+                              {item.porcoes > 1 && (
+                                <span
+                                  className="px-1.5 py-0.5 rounded border border-gray-200 text-[9px] font-bold text-[#1A3A5C] flex-shrink-0"
+                                  title={`${item.porcoes} porções`}
+                                >
+                                  {item.porcoes}×
+                                </span>
+                              )}
                               <button
                                 onClick={() => handleRemoveItem(item.id)}
                                 className="text-red-300 hover:text-red-500 ml-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -800,6 +1389,23 @@ export default function CardapioEditorPage() {
                       )
                     })}
                   </div>
+
+                  {/* ── NOVO v7: Mini-resumo do dia (energia + indicadores) ── */}
+                  {resumoDia.energia > 0 && (
+                    <div className="px-2 py-1 border-t border-gray-100 bg-gray-50/30 flex items-center justify-between text-[9px]">
+                      <span className="text-muted-foreground">
+                        {resumoDia.energia.toFixed(0)} kcal
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {resumoDia.ferro_heme && (
+                          <span title="Contém ferro heme" className="px-1 py-0.5 rounded bg-red-50 text-red-700 text-[8px] font-bold border border-red-100">Fe-H</span>
+                        )}
+                        {resumoDia.vit_a && (
+                          <span title="Contém Vitamina A" className="px-1 py-0.5 rounded bg-orange-50 text-orange-700 text-[8px] font-bold border border-orange-100">Vit-A</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -922,6 +1528,34 @@ export default function CardapioEditorPage() {
             <DialogTitle className="text-[#1A3A5C] text-sm">Adicionar Preparações</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
+            {/* Abas de filtro rápido */}
+            <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-md">
+              <button
+                onClick={() => setAddFilter('all')}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
+                  addFilter === 'all' ? 'bg-white text-[#1A3A5C] shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Search className="w-3 h-3" /> Todas
+              </button>
+              <button
+                onClick={() => setAddFilter('favoritas')}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
+                  addFilter === 'favoritas' ? 'bg-white text-[#D4A017] shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Star className="w-3 h-3" /> Favoritas
+              </button>
+              <button
+                onClick={() => setAddFilter('recentes')}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
+                  addFilter === 'recentes' ? 'bg-white text-[#1A3A5C] shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Zap className="w-3 h-3" /> + Usadas
+              </button>
+            </div>
+
             {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
@@ -932,6 +1566,35 @@ export default function CardapioEditorPage() {
                 className="pl-8 h-8 text-xs"
                 autoFocus
               />
+            </div>
+
+            {/* Filtro alérgenos (excluir) */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] text-muted-foreground">Sem alérgeno:</span>
+              {ALERGENOS_LIST.map((a) => {
+                const active = addSemAlergenos.has(a.sigla)
+                return (
+                  <button
+                    key={a.sigla}
+                    onClick={() => {
+                      setAddSemAlergenos(prev => {
+                        const next = new Set(prev)
+                        if (next.has(a.sigla)) next.delete(a.sigla)
+                        else next.add(a.sigla)
+                        return next
+                      })
+                    }}
+                    className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-colors ${
+                      active
+                        ? 'bg-red-50 border-red-300 text-red-700'
+                        : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}
+                    title={`Excluir preparações com ${a.nome}`}
+                  >
+                    {a.sigla} {a.nome}
+                  </button>
+                )
+              })}
             </div>
 
             {/* Selected count */}
@@ -956,26 +1619,55 @@ export default function CardapioEditorPage() {
                     {addPrepSearch ? 'Nenhuma preparação encontrada' : 'Nenhuma preparação cadastrada'}
                   </p>
                 ) : (
-                  filteredPreparacoes.map((p) => (
-                    <label
-                      key={p.id}
-                      className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors text-xs ${
-                        addSelectedPrepIds.has(p.id)
-                          ? 'bg-[#1A3A5C]/10 border border-[#1A3A5C]/20'
-                          : 'hover:bg-gray-50 border border-transparent'
-                      }`}
-                    >
-                      <Checkbox
-                        checked={addSelectedPrepIds.has(p.id)}
-                        onCheckedChange={() => togglePrepSelection(p.id)}
-                        className="flex-shrink-0"
-                      />
-                      <span className="font-medium truncate">{p.nome}</span>
-                      <span className="text-[10px] text-muted-foreground ml-auto flex-shrink-0">
-                        {p.ingredientes.length} ingred.
-                      </span>
-                    </label>
-                  ))
+                  filteredPreparacoes.map((p) => {
+                    const alergenos = detectarAlergenosPreparacao(
+                      p.ingredientes.map((ing) => ({
+                        nome: ing.alimento.nome,
+                        grupo: ing.alimento.grupo,
+                      }))
+                    )
+                    return (
+                      <label
+                        key={p.id}
+                        className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors text-xs ${
+                          addSelectedPrepIds.has(p.id)
+                            ? 'bg-[#1A3A5C]/10 border border-[#1A3A5C]/20'
+                            : 'hover:bg-gray-50 border border-transparent'
+                        }`}
+                      >
+                        <Checkbox
+                          checked={addSelectedPrepIds.has(p.id)}
+                          onCheckedChange={() => togglePrepSelection(p.id)}
+                          className="flex-shrink-0"
+                        />
+                        {p.favorita && (
+                          <Star className="w-3 h-3 text-[#D4A017] flex-shrink-0 fill-[#D4A017]" />
+                        )}
+                        <span className="font-medium truncate flex-1">{p.nome}</span>
+                        {alergenos.length > 0 && (
+                          <div className="flex items-center gap-0.5 flex-shrink-0">
+                            {alergenos.map((sigla) => (
+                              <span
+                                key={sigla}
+                                className="inline-flex items-center justify-center w-4 h-4 rounded-sm border border-gray-300 text-[8px] font-bold text-gray-600"
+                                title={sigla}
+                              >
+                                {sigla}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {p.vezes_usada > 0 && (
+                          <span className="text-[9px] text-muted-foreground flex-shrink-0">
+                            {p.vezes_usada}× usada
+                          </span>
+                        )}
+                        <span className="text-[10px] text-muted-foreground ml-1 flex-shrink-0">
+                          {p.ingredientes.length} ingred.
+                        </span>
+                      </label>
+                    )
+                  })
                 )}
               </div>
             </ScrollArea>
@@ -1222,6 +1914,37 @@ export default function CardapioEditorPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* v8: AlertDialog de Exclusão do Cardápio */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={(v) => !deleting && setDeleteDialogOpen(v)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-700">
+              <AlertTriangle className="w-5 h-5" />
+              Excluir este cardápio?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir <strong>{cardapio?.nome}</strong>?
+              <br />
+              <span className="text-red-600 font-medium">
+                Esta ação é irreversível e removerá TODAS as semanas, dias e itens deste cardápio.
+              </span>
+              <br /><br />
+              Se for um cardápio de escola, o cardápio base permanece intacto. Se for um base, as instâncias já criadas nas escolas também permanecem (mas perdem o vínculo de origem).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteCardapio}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {deleting ? 'Excluindo...' : 'Sim, excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -584,7 +584,7 @@
   }
   .sp-resumo-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 16px;
   }
   .sp-resumo-section {
@@ -592,6 +592,120 @@
     padding-left: 10px;
   }
   .sp-resumo-section:first-child { border-left: none; }
+  .sp-aviso-alteracao {
+    padding: 5px 20px;
+    background: #fff8e1;
+    border-top: 1px solid #f5d97a;
+    border-bottom: 1px solid #f5d97a;
+    font-size: 7.5px;
+    font-style: italic;
+    font-weight: 600;
+    color: #8a6d10;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  /* ── Alérgenos: badges P&B (borda preta + letra preta) ── */
+  .sp-alergeno-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #000;
+    border-radius: 2px;
+    font-weight: 700;
+    line-height: 1;
+    color: #000;
+    background: #fff;
+    flex-shrink: 0;
+    user-select: none;
+    box-sizing: border-box;
+  }
+  .sp-alergeno-badge-sm {  /* usado na legenda */
+    width: 12px;
+    height: 12px;
+    font-size: 7px;
+  }
+  .sp-alergeno-badge-xs {  /* usado ao lado da preparação */
+    width: 10px;
+    height: 10px;
+    font-size: 6px;
+  }
+  .sp-legend-alergenos {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 20px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 7px;
+    color: #475569;
+    flex-shrink: 0;
+  }
+  .sp-legend-label {
+    font-weight: 700;
+    color: #1A3A5C;
+  }
+  .sp-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .sp-legend-nome {
+    font-size: 6.5px;
+    color: #475569;
+  }
+
+  /* Badges ao lado da preparação */
+  .sp-prep-nome {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .sp-prep-nome-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .sp-prep-alergenos {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  /* ── Equipe de Nutrição — linha única ── */
+  .sp-equipe {
+    padding: 4px 20px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 7px;
+    color: #475569;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    flex-shrink: 0;
+  }
+  .sp-equipe-label {
+    font-weight: 700;
+    color: #1A3A5C;
+    margin-right: 2px;
+  }
+  .sp-equipe-pessoa {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #1A3A5C;
+  }
+  .sp-equipe-crn {
+    font-size: 6.5px;
+    color: #64748b;
+    font-style: italic;
+  }
+  .sp-equipe-sep {
+    color: #94a3b8;
+    margin: 0 2px;
+  }
   .sp-section-head {
     font-size: 6.5px;
     font-weight: 700;
@@ -792,7 +906,7 @@
   }
   .sp-resumo-grid {
     display: grid !important;
-    grid-template-columns: 1fr 1fr 1fr 1fr !important;
+    grid-template-columns: 1fr 1fr 1fr !important;
     gap: 3mm !important;
   }
   .sp-resumo-section {
@@ -800,6 +914,123 @@
     padding-left: 2mm !important;
   }
   .sp-resumo-section:first-child { border-left: none !important; }
+  .sp-aviso-alteracao {
+    padding: 1mm 5mm !important;
+    background: #fff8e1 !important;
+    border-top: 0.5pt solid #f5d97a !important;
+    border-bottom: 0.5pt solid #f5d97a !important;
+    font-size: 5.5pt !important;
+    font-style: italic !important;
+    font-weight: 600 !important;
+    color: #8a6d10 !important;
+    text-align: center !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* ── Alérgenos: badges P&B (print) ── */
+  .sp-alergeno-badge {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 0.5pt solid #000 !important;
+    border-radius: 0.5pt !important;
+    font-weight: 700 !important;
+    line-height: 1 !important;
+    color: #000 !important;
+    background: #fff !important;
+    flex-shrink: 0 !important;
+    box-sizing: border-box !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .sp-alergeno-badge-sm {
+    width: 3mm !important;
+    height: 3mm !important;
+    font-size: 5pt !important;
+  }
+  .sp-alergeno-badge-xs {
+    width: 2.6mm !important;
+    height: 2.6mm !important;
+    font-size: 4.2pt !important;
+  }
+  .sp-legend-alergenos {
+    display: flex !important;
+    align-items: center !important;
+    gap: 2.5mm !important;
+    padding: 1mm 5mm !important;
+    background: #f8fafc !important;
+    border-bottom: 0.5pt solid #ccc !important;
+    font-size: 5pt !important;
+    color: #475569 !important;
+    flex-shrink: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .sp-legend-label {
+    font-weight: 700 !important;
+    color: #1A3A5C !important;
+  }
+  .sp-legend-item {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 1mm !important;
+  }
+  .sp-legend-nome {
+    font-size: 4.5pt !important;
+    color: #475569 !important;
+  }
+  .sp-prep-nome {
+    display: flex !important;
+    align-items: center !important;
+    gap: 1mm !important;
+    flex-wrap: wrap !important;
+  }
+  .sp-prep-nome-text {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+  }
+  .sp-prep-alergenos {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.5mm !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* ── Equipe de Nutrição — linha única (print) ── */
+  .sp-equipe {
+    padding: 1mm 5mm !important;
+    background: #f8fafc !important;
+    border-bottom: 0.5pt solid #ccc !important;
+    font-size: 5pt !important;
+    color: #475569 !important;
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 1mm 1.5mm !important;
+    flex-shrink: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .sp-equipe-label {
+    font-weight: 700 !important;
+    color: #1A3A5C !important;
+    margin-right: 0.5mm !important;
+  }
+  .sp-equipe-pessoa {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 1mm !important;
+    color: #1A3A5C !important;
+  }
+  .sp-equipe-crn {
+    font-size: 4.5pt !important;
+    color: #64748b !important;
+    font-style: italic !important;
+  }
+  .sp-equipe-sep {
+    color: #94a3b8 !important;
+    margin: 0 0.5mm !important;
+  }
   .sp-section-head {
     font-size: 4.5pt !important;
     font-weight: 700 !important;

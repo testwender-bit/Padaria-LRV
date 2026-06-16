@@ -48,12 +48,16 @@ export async function GET(request: Request) {
       semestre: cardapio.semestre,
       status: cardapio.status,
       origem_id: cardapio.origem_id,
+      cardapio_base_id: cardapio.cardapio_base_id,
+      ciclo_semanas: cardapio.ciclo_semanas,
+      repetir_ciclo: cardapio.repetir_ciclo,
       criado_em: cardapio.criado_em,
       atualizado_em: cardapio.atualizado_em,
       escola: cardapio.escola,
       nutricionista: cardapio.nutricionista,
       semanas: cardapio.semanas,
       semanas_count: cardapio.semanas.length,
+      is_base: cardapio.escola_id === null,
     }))
 
     return NextResponse.json(result)

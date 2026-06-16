@@ -22,11 +22,11 @@ interface User {
 
 interface Nutricionista {
   id: string
-  user_id: string
+  user_id: string | null
   nome: string
   crn: string
   ativo: boolean
-  user: User
+  user: User | null
 }
 
 interface FormState {
@@ -104,11 +104,15 @@ export default function NutricionistasPage() {
   const filtered = nutricionistas.filter((n) =>
     n.nome.toLowerCase().includes(search.toLowerCase()) ||
     n.crn.toLowerCase().includes(search.toLowerCase()) ||
-    n.user.email.toLowerCase().includes(search.toLowerCase())
+    (n.user?.email || '').toLowerCase().includes(search.toLowerCase())
   )
 
-  const linkedUserIds = new Set(nutricionistas.map((n) => n.user_id))
-  const availableUsers = users.filter((u) => !linkedUserIds.has(u.id) || (editingId && nutricionistas.find((n) => n.id === editingId)?.user_id === u.id))
+  const linkedUserIds = new Set(
+    nutricionistas.filter((n) => n.user_id).map((n) => n.user_id as string)
+  )
+  const availableUsers = users.filter(
+    (u) => !linkedUserIds.has(u.id) || (editingId && nutricionistas.find((n) => n.id === editingId)?.user_id === u.id)
+  )
 
   function openNewDialog() {
     setEditingId(null)
@@ -119,7 +123,7 @@ export default function NutricionistasPage() {
   function openEditDialog(nut: Nutricionista) {
     setEditingId(nut.id)
     setForm({
-      user_id: nut.user_id,
+      user_id: nut.user_id || '',
       nome: nut.nome,
       crn: nut.crn,
     })
@@ -136,8 +140,9 @@ export default function NutricionistasPage() {
   }
 
   async function handleSave() {
-    if (!form.user_id) {
-      toast.error('Selecione um usuário')
+    // user_id é OPCIONAL — só nome + CRN são obrigatórios
+    if (!form.nome.trim()) {
+      toast.error('Nome é obrigatório')
       return
     }
     if (!form.crn.trim()) {
@@ -270,7 +275,9 @@ export default function NutricionistasPage() {
                         <TableCell>
                           <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">{nut.crn}</span>
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{nut.user.email}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">
+                          {nut.user?.email || <span className="italic text-muted-foreground/70">— sem login vinculado</span>}
+                        </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEditDialog(nut)}>
@@ -301,27 +308,60 @@ export default function NutricionistasPage() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>Vincular Usuário *</Label>
-              <Select value={form.user_id} onValueChange={handleUserSelect}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecionar usuário" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableUsers.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.name} — {u.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Nome</Label>
-              <Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Preenchido automaticamente" />
+              <Label>Nome *</Label>
+              <Input
+                value={form.nome}
+                onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                placeholder="Nome completo do nutricionista"
+              />
             </div>
             <div className="space-y-2">
               <Label>CRN *</Label>
-              <Input value={form.crn} onChange={(e) => setForm({ ...form, crn: e.target.value })} placeholder="Ex: CRN-3 12345" />
+              <Input
+                value={form.crn}
+                onChange={(e) => setForm({ ...form, crn: e.target.value })}
+                placeholder="Ex: CRN-3 12345"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Vincular Usuário (opcional)</Label>
+              <div className="flex gap-2">
+                <Select
+                  value={form.user_id || undefined}
+                  onValueChange={handleUserSelect}
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="— sem vínculo de login —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableUsers.length === 0 ? (
+                      <SelectItem value="_empty" disabled>
+                        Nenhum usuário disponível
+                      </SelectItem>
+                    ) : (
+                      availableUsers.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.name} — {u.email}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {form.user_id && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setForm({ ...form, user_id: '' })}
+                    title="Remover vínculo"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Vincular é opcional. Útil apenas se o nutricionista também acessa o sistema.
+              </p>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancelar</Button>

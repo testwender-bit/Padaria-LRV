@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client'
 import path from 'path'
 import fs from 'fs'
 import tacoData from '../taco_complete.json'
+import { estimarFerroHeme } from '../src/lib/ferro-heme-utils'
 
 // Resolve path do banco (relativo à raiz do projeto)
 const dbPath = path.resolve(process.cwd(), 'db', 'custom.db')
@@ -64,7 +65,7 @@ async function upsertAlimento(item: TacoItem) {
     fibra_alimentar_g: item.fibra_alimentar_g,
     sodio_mg: item.sodio_mg,
     ferro_mg: item.ferro_mg,
-    ferro_heme_mg: 0,
+    ferro_heme_mg: estimarFerroHeme(item),
     vitamina_a_mcg: item.vitamina_a_mcg,
     vitamina_c_mg: item.vitamina_c_mg,
     calcio_mg: item.calcio_mg,

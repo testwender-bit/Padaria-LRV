@@ -41,6 +41,8 @@ export async function PUT(
             nome: body.nome !== undefined ? body.nome : undefined,
             descricao: body.descricao !== undefined ? body.descricao : undefined,
             modo_preparo: body.modo_preparo !== undefined ? body.modo_preparo : undefined,
+            // v8: categoria (default PREPARACAO)
+            categoria: body.categoria !== undefined ? body.categoria : undefined,
           },
         })
 
@@ -117,6 +119,8 @@ export async function PUT(
         nome: body.nome !== undefined ? body.nome : undefined,
         descricao: body.descricao !== undefined ? body.descricao : undefined,
         modo_preparo: body.modo_preparo !== undefined ? body.modo_preparo : undefined,
+        // v8: categoria (default PREPARACAO)
+        categoria: body.categoria !== undefined ? body.categoria : undefined,
       },
       include: {
         ingredientes: {

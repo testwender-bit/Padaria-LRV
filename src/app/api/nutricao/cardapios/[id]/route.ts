@@ -40,6 +40,12 @@ export async function GET(
           },
           orderBy: { numero: 'asc' },
         },
+        sobrescritas: {
+          include: {
+            tipo_refeicao: true,
+            preparacao_substituta: { select: { id: true, nome: true } },
+          },
+        },
       },
     })
 
@@ -47,7 +53,20 @@ export async function GET(
       return NextResponse.json({ error: 'Cardápio não encontrado' }, { status: 404 })
     }
 
-    return NextResponse.json(cardapio)
+    // Busca equipe completa de nutricionistas ativos para exibir no PDF
+    // (até ~5 membros — o limite é apenas para dimensionamento do layout)
+    const equipeNutricionistas = await db.nutricionista.findMany({
+      where: { ativo: true },
+      select: {
+        id: true,
+        nome: true,
+        crn: true,
+      },
+      orderBy: { nome: 'asc' },
+      take: 5,
+    })
+
+    return NextResponse.json({ ...cardapio, equipe_nutricionistas: equipeNutricionistas })
   } catch (error) {
     console.error('Erro ao buscar cardápio:', error)
     return NextResponse.json({ error: 'Erro ao buscar cardápio' }, { status: 500 })
@@ -106,6 +125,8 @@ export async function PATCH(
         nome: body.nome !== undefined ? body.nome : undefined,
         status: body.status !== undefined ? body.status : undefined,
         fase_escolar: body.fase_escolar !== undefined ? body.fase_escolar : undefined,
+        ciclo_semanas: body.ciclo_semanas !== undefined ? body.ciclo_semanas : undefined,
+        repetir_ciclo: body.repetir_ciclo !== undefined ? body.repetir_ciclo : undefined,
         atualizado_em: atualizadoEm,
       },
     })
