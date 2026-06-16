@@ -1,0 +1,1016 @@
+     1→  80   try {
+     2→→ 81     const existing = await prisma.alimento.findFirst(
+     3→Error querying the database: Error code 14: Unable to open the database file
+     4→  ✗ Erro #497 "Tabule": 
+     5→Invalid `prisma.alimento.findFirst()` invocation in
+     6→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+     7→
+     8→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+     9→  79 for (const item of batch) {
+    10→  80   try {
+    11→→ 81     const existing = await prisma.alimento.findFirst(
+    12→Error querying the database: Error code 14: Unable to open the database file
+    13→  ✗ Erro #498 "Baba ganoush": 
+    14→Invalid `prisma.alimento.findFirst()` invocation in
+    15→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+    16→
+    17→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+    18→  79 for (const item of batch) {
+    19→  80   try {
+    20→→ 81     const existing = await prisma.alimento.findFirst(
+    21→Error querying the database: Error code 14: Unable to open the database file
+    22→  ✗ Erro #499 "Caldo de cana": 
+    23→Invalid `prisma.alimento.findFirst()` invocation in
+    24→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+    25→
+    26→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+    27→  79 for (const item of batch) {
+    28→  80   try {
+    29→→ 81     const existing = await prisma.alimento.findFirst(
+    30→Error querying the database: Error code 14: Unable to open the database file
+    31→  ✗ Erro #500 "Chimarrão": 
+    32→Invalid `prisma.alimento.findFirst()` invocation in
+    33→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+    34→
+    35→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+    36→  79 for (const item of batch) {
+    37→  80   try {
+    38→→ 81     const existing = await prisma.alimento.findFirst(
+    39→Error querying the database: Error code 14: Unable to open the database file
+    40→  ✗ Erro #501 "Caldo de cana": 
+    41→Invalid `prisma.alimento.findFirst()` invocation in
+    42→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+    43→
+    44→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+    45→  79 for (const item of batch) {
+    46→  80   try {
+    47→→ 81     const existing = await prisma.alimento.findFirst(
+    48→Error querying the database: Error code 14: Unable to open the database file
+    49→  ✗ Erro #502 "Chimarrão": 
+    50→Invalid `prisma.alimento.findFirst()` invocation in
+    51→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+    52→
+    53→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+    54→  79 for (const item of batch) {
+    55→  80   try {
+    56→→ 81     const existing = await prisma.alimento.findFirst(
+    57→Error querying the database: Error code 14: Unable to open the database file
+    58→  ✗ Erro #503 "Tereré": 
+    59→Invalid `prisma.alimento.findFirst()` invocation in
+    60→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+    61→
+    62→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+    63→  79 for (const item of batch) {
+    64→  80   try {
+    65→→ 81     const existing = await prisma.alimento.findFirst(
+    66→Error querying the database: Error code 14: Unable to open the database file
+    67→  ✗ Erro #504 "Cappuccino": 
+    68→Invalid `prisma.alimento.findFirst()` invocation in
+    69→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+    70→
+    71→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+    72→  79 for (const item of batch) {
+    73→  80   try {
+    74→→ 81     const existing = await prisma.alimento.findFirst(
+    75→Error querying the database: Error code 14: Unable to open the database file
+    76→  ✗ Erro #505 "Chocolate quente": 
+    77→Invalid `prisma.alimento.findFirst()` invocation in
+    78→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+    79→
+    80→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+    81→  79 for (const item of batch) {
+    82→  80   try {
+    83→→ 81     const existing = await prisma.alimento.findFirst(
+    84→Error querying the database: Error code 14: Unable to open the database file
+    85→  ✗ Erro #506 "Vitamina de banana": 
+    86→Invalid `prisma.alimento.findFirst()` invocation in
+    87→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+    88→
+    89→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+    90→  79 for (const item of batch) {
+    91→  80   try {
+    92→→ 81     const existing = await prisma.alimento.findFirst(
+    93→Error querying the database: Error code 14: Unable to open the database file
+    94→  ✗ Erro #507 "Vitamina de abacate": 
+    95→Invalid `prisma.alimento.findFirst()` invocation in
+    96→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+    97→
+    98→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+    99→  79 for (const item of batch) {
+   100→  80   try {
+   101→→ 81     const existing = await prisma.alimento.findFirst(
+   102→Error querying the database: Error code 14: Unable to open the database file
+   103→  ✗ Erro #508 "Achocolatado": 
+   104→Invalid `prisma.alimento.findFirst()` invocation in
+   105→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   106→
+   107→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   108→  79 for (const item of batch) {
+   109→  80   try {
+   110→→ 81     const existing = await prisma.alimento.findFirst(
+   111→Error querying the database: Error code 14: Unable to open the database file
+   112→  ✗ Erro #509 "Mingau de arroz": 
+   113→Invalid `prisma.alimento.findFirst()` invocation in
+   114→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   115→
+   116→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   117→  79 for (const item of batch) {
+   118→  80   try {
+   119→→ 81     const existing = await prisma.alimento.findFirst(
+   120→Error querying the database: Error code 14: Unable to open the database file
+   121→  ✗ Erro #510 "Papinha de legumes": 
+   122→Invalid `prisma.alimento.findFirst()` invocation in
+   123→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   124→
+   125→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   126→  79 for (const item of batch) {
+   127→  80   try {
+   128→→ 81     const existing = await prisma.alimento.findFirst(
+   129→Error querying the database: Error code 14: Unable to open the database file
+   130→  ✗ Erro #511 "Risoto de camarão": 
+   131→Invalid `prisma.alimento.findFirst()` invocation in
+   132→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   133→
+   134→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   135→  79 for (const item of batch) {
+   136→  80   try {
+   137→→ 81     const existing = await prisma.alimento.findFirst(
+   138→Error querying the database: Error code 14: Unable to open the database file
+   139→  ✗ Erro #512 "Lasanha de legumes": 
+   140→Invalid `prisma.alimento.findFirst()` invocation in
+   141→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   142→
+   143→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   144→  79 for (const item of batch) {
+   145→  80   try {
+   146→→ 81     const existing = await prisma.alimento.findFirst(
+   147→Error querying the database: Error code 14: Unable to open the database file
+   148→  ✗ Erro #513 "Pizza margherita": 
+   149→Invalid `prisma.alimento.findFirst()` invocation in
+   150→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   151→
+   152→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   153→  79 for (const item of batch) {
+   154→  80   try {
+   155→→ 81     const existing = await prisma.alimento.findFirst(
+   156→Error querying the database: Error code 14: Unable to open the database file
+   157→  ✗ Erro #514 "Pizza de calabresa": 
+   158→Invalid `prisma.alimento.findFirst()` invocation in
+   159→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   160→
+   161→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   162→  79 for (const item of batch) {
+   163→  80   try {
+   164→→ 81     const existing = await prisma.alimento.findFirst(
+   165→Error querying the database: Error code 14: Unable to open the database file
+   166→  ✗ Erro #515 "Pastel de queijo": 
+   167→Invalid `prisma.alimento.findFirst()` invocation in
+   168→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   169→
+   170→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   171→  79 for (const item of batch) {
+   172→  80   try {
+   173→→ 81     const existing = await prisma.alimento.findFirst(
+   174→Error querying the database: Error code 14: Unable to open the database file
+   175→  ✗ Erro #516 "Bolinha de queijo": 
+   176→Invalid `prisma.alimento.findFirst()` invocation in
+   177→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   178→
+   179→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   180→  79 for (const item of batch) {
+   181→  80   try {
+   182→→ 81     const existing = await prisma.alimento.findFirst(
+   183→Error querying the database: Error code 14: Unable to open the database file
+   184→  ✗ Erro #517 "Rissole de camarão": 
+   185→Invalid `prisma.alimento.findFirst()` invocation in
+   186→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   187→
+   188→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   189→  79 for (const item of batch) {
+   190→  80   try {
+   191→→ 81     const existing = await prisma.alimento.findFirst(
+   192→Error querying the database: Error code 14: Unable to open the database file
+   193→  ✗ Erro #518 "Empadinha de palmito": 
+   194→Invalid `prisma.alimento.findFirst()` invocation in
+   195→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   196→
+   197→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   198→  79 for (const item of batch) {
+   199→  80   try {
+   200→→ 81     const existing = await prisma.alimento.findFirst(
+   201→Error querying the database: Error code 14: Unable to open the database file
+   202→  ✗ Erro #519 "Kibe assado": 
+   203→Invalid `prisma.alimento.findFirst()` invocation in
+   204→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   205→
+   206→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   207→  79 for (const item of batch) {
+   208→  80   try {
+   209→→ 81     const existing = await prisma.alimento.findFirst(
+   210→Error querying the database: Error code 14: Unable to open the database file
+   211→  ✗ Erro #520 "Esfirra de queijo": 
+   212→Invalid `prisma.alimento.findFirst()` invocation in
+   213→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   214→
+   215→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   216→  79 for (const item of batch) {
+   217→  80   try {
+   218→→ 81     const existing = await prisma.alimento.findFirst(
+   219→Error querying the database: Error code 14: Unable to open the database file
+   220→  ✗ Erro #521 "Pão de batata": 
+   221→Invalid `prisma.alimento.findFirst()` invocation in
+   222→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   223→
+   224→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   225→  79 for (const item of batch) {
+   226→  80   try {
+   227→→ 81     const existing = await prisma.alimento.findFirst(
+   228→Error querying the database: Error code 14: Unable to open the database file
+   229→  ✗ Erro #522 "Croissant": 
+   230→Invalid `prisma.alimento.findFirst()` invocation in
+   231→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   232→
+   233→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   234→  79 for (const item of batch) {
+   235→  80   try {
+   236→→ 81     const existing = await prisma.alimento.findFirst(
+   237→Error querying the database: Error code 14: Unable to open the database file
+   238→  ✗ Erro #523 "Sanduíche de presunto e queijo": 
+   239→Invalid `prisma.alimento.findFirst()` invocation in
+   240→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   241→
+   242→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   243→  79 for (const item of batch) {
+   244→  80   try {
+   245→→ 81     const existing = await prisma.alimento.findFirst(
+   246→Error querying the database: Error code 14: Unable to open the database file
+   247→  ✗ Erro #524 "Bauru": 
+   248→Invalid `prisma.alimento.findFirst()` invocation in
+   249→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   250→
+   251→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   252→  79 for (const item of batch) {
+   253→  80   try {
+   254→→ 81     const existing = await prisma.alimento.findFirst(
+   255→Error querying the database: Error code 14: Unable to open the database file
+   256→  ✗ Erro #525 "X-bacon": 
+   257→Invalid `prisma.alimento.findFirst()` invocation in
+   258→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   259→
+   260→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   261→  79 for (const item of batch) {
+   262→  80   try {
+   263→→ 81     const existing = await prisma.alimento.findFirst(
+   264→Error querying the database: Error code 14: Unable to open the database file
+   265→  ✗ Erro #526 "X-tudo": 
+   266→Invalid `prisma.alimento.findFirst()` invocation in
+   267→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   268→
+   269→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   270→  79 for (const item of batch) {
+   271→  80   try {
+   272→→ 81     const existing = await prisma.alimento.findFirst(
+   273→Error querying the database: Error code 14: Unable to open the database file
+   274→  ✗ Erro #527 "Abará": 
+   275→Invalid `prisma.alimento.findFirst()` invocation in
+   276→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   277→
+   278→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   279→  79 for (const item of batch) {
+   280→  80   try {
+   281→→ 81     const existing = await prisma.alimento.findFirst(
+   282→Error querying the database: Error code 14: Unable to open the database file
+   283→  ✗ Erro #528 "Açaí puro": 
+   284→Invalid `prisma.alimento.findFirst()` invocation in
+   285→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   286→
+   287→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   288→  79 for (const item of batch) {
+   289→  80   try {
+   290→→ 81     const existing = await prisma.alimento.findFirst(
+   291→Error querying the database: Error code 14: Unable to open the database file
+   292→  ✗ Erro #529 "Polpa de cupuaçu": 
+   293→Invalid `prisma.alimento.findFirst()` invocation in
+   294→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   295→
+   296→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   297→  79 for (const item of batch) {
+   298→  80   try {
+   299→→ 81     const existing = await prisma.alimento.findFirst(
+   300→Error querying the database: Error code 14: Unable to open the database file
+   301→  ✗ Erro #530 "Carré suíno": 
+   302→Invalid `prisma.alimento.findFirst()` invocation in
+   303→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   304→
+   305→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   306→  79 for (const item of batch) {
+   307→  80   try {
+   308→→ 81     const existing = await prisma.alimento.findFirst(
+   309→Error querying the database: Error code 14: Unable to open the database file
+   310→  ✗ Erro #531 "Lombo suíno assado": 
+   311→Invalid `prisma.alimento.findFirst()` invocation in
+   312→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   313→
+   314→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   315→  79 for (const item of batch) {
+   316→  80   try {
+   317→→ 81     const existing = await prisma.alimento.findFirst(
+   318→Error querying the database: Error code 14: Unable to open the database file
+   319→  ✗ Erro #532 "Bacon frito": 
+   320→Invalid `prisma.alimento.findFirst()` invocation in
+   321→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   322→
+   323→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   324→  79 for (const item of batch) {
+   325→  80   try {
+   326→→ 81     const existing = await prisma.alimento.findFirst(
+   327→Error querying the database: Error code 14: Unable to open the database file
+   328→  ✗ Erro #533 "Torresmo crocante": 
+   329→Invalid `prisma.alimento.findFirst()` invocation in
+   330→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   331→
+   332→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   333→  79 for (const item of batch) {
+   334→  80   try {
+   335→→ 81     const existing = await prisma.alimento.findFirst(
+   336→Error querying the database: Error code 14: Unable to open the database file
+   337→  ✗ Erro #534 "Galinhada caipira": 
+   338→Invalid `prisma.alimento.findFirst()` invocation in
+   339→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   340→
+   341→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   342→  79 for (const item of batch) {
+   343→  80   try {
+   344→→ 81     const existing = await prisma.alimento.findFirst(
+   345→Error querying the database: Error code 14: Unable to open the database file
+   346→  ✗ Erro #535 "Moqueca capixaba": 
+   347→Invalid `prisma.alimento.findFirst()` invocation in
+   348→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   349→
+   350→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   351→  79 for (const item of batch) {
+   352→  80   try {
+   353→→ 81     const existing = await prisma.alimento.findFirst(
+   354→Error querying the database: Error code 14: Unable to open the database file
+   355→  ✗ Erro #536 "Ensopado de camarão": 
+   356→Invalid `prisma.alimento.findFirst()` invocation in
+   357→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   358→
+   359→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   360→  79 for (const item of batch) {
+   361→  80   try {
+   362→→ 81     const existing = await prisma.alimento.findFirst(
+   363→Error querying the database: Error code 14: Unable to open the database file
+   364→  ✗ Erro #537 "Risoto de funghi": 
+   365→Invalid `prisma.alimento.findFirst()` invocation in
+   366→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   367→
+   368→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   369→  79 for (const item of batch) {
+   370→  80   try {
+   371→→ 81     const existing = await prisma.alimento.findFirst(
+   372→Error querying the database: Error code 14: Unable to open the database file
+   373→  ✗ Erro #538 "Risoto caipira": 
+   374→Invalid `prisma.alimento.findFirst()` invocation in
+   375→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   376→
+   377→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   378→  79 for (const item of batch) {
+   379→  80   try {
+   380→→ 81     const existing = await prisma.alimento.findFirst(
+   381→Error querying the database: Error code 14: Unable to open the database file
+   382→  ✗ Erro #539 "Nhoque de espinafre": 
+   383→Invalid `prisma.alimento.findFirst()` invocation in
+   384→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   385→
+   386→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   387→  79 for (const item of batch) {
+   388→  80   try {
+   389→→ 81     const existing = await prisma.alimento.findFirst(
+   390→Error querying the database: Error code 14: Unable to open the database file
+   391→  ✗ Erro #540 "Chester assado": 
+   392→Invalid `prisma.alimento.findFirst()` invocation in
+   393→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   394→
+   395→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   396→  79 for (const item of batch) {
+   397→  80   try {
+   398→→ 81     const existing = await prisma.alimento.findFirst(
+   399→Error querying the database: Error code 14: Unable to open the database file
+   400→  ✗ Erro #541 "Tender assado": 
+   401→Invalid `prisma.alimento.findFirst()` invocation in
+   402→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   403→
+   404→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   405→  79 for (const item of batch) {
+   406→  80   try {
+   407→→ 81     const existing = await prisma.alimento.findFirst(
+   408→Error querying the database: Error code 14: Unable to open the database file
+   409→  ✗ Erro #542 "Risoto de camarão": 
+   410→Invalid `prisma.alimento.findFirst()` invocation in
+   411→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   412→
+   413→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   414→  79 for (const item of batch) {
+   415→  80   try {
+   416→→ 81     const existing = await prisma.alimento.findFirst(
+   417→Error querying the database: Error code 14: Unable to open the database file
+   418→  ✗ Erro #543 "Lasanha de legumes": 
+   419→Invalid `prisma.alimento.findFirst()` invocation in
+   420→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   421→
+   422→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   423→  79 for (const item of batch) {
+   424→  80   try {
+   425→→ 81     const existing = await prisma.alimento.findFirst(
+   426→Error querying the database: Error code 14: Unable to open the database file
+   427→  ✗ Erro #544 "Pizza margherita": 
+   428→Invalid `prisma.alimento.findFirst()` invocation in
+   429→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   430→
+   431→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   432→  79 for (const item of batch) {
+   433→  80   try {
+   434→→ 81     const existing = await prisma.alimento.findFirst(
+   435→Error querying the database: Error code 14: Unable to open the database file
+   436→  ✗ Erro #545 "Pizza de calabresa": 
+   437→Invalid `prisma.alimento.findFirst()` invocation in
+   438→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   439→
+   440→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   441→  79 for (const item of batch) {
+   442→  80   try {
+   443→→ 81     const existing = await prisma.alimento.findFirst(
+   444→Error querying the database: Error code 14: Unable to open the database file
+   445→  ✗ Erro #546 "Abará": 
+   446→Invalid `prisma.alimento.findFirst()` invocation in
+   447→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   448→
+   449→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   450→  79 for (const item of batch) {
+   451→  80   try {
+   452→→ 81     const existing = await prisma.alimento.findFirst(
+   453→Error querying the database: Error code 14: Unable to open the database file
+   454→  ✗ Erro #547 "Açaí puro": 
+   455→Invalid `prisma.alimento.findFirst()` invocation in
+   456→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   457→
+   458→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   459→  79 for (const item of batch) {
+   460→  80   try {
+   461→→ 81     const existing = await prisma.alimento.findFirst(
+   462→Error querying the database: Error code 14: Unable to open the database file
+   463→  ✗ Erro #548 "Queijo coalho grelhado": 
+   464→Invalid `prisma.alimento.findFirst()` invocation in
+   465→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   466→
+   467→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   468→  79 for (const item of batch) {
+   469→  80   try {
+   470→→ 81     const existing = await prisma.alimento.findFirst(
+   471→Error querying the database: Error code 14: Unable to open the database file
+   472→  ✗ Erro #549 "Coalhada seca": 
+   473→Invalid `prisma.alimento.findFirst()` invocation in
+   474→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   475→
+   476→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   477→  79 for (const item of batch) {
+   478→  80   try {
+   479→→ 81     const existing = await prisma.alimento.findFirst(
+   480→Error querying the database: Error code 14: Unable to open the database file
+   481→  ✗ Erro #550 "Presunto parma": 
+   482→Invalid `prisma.alimento.findFirst()` invocation in
+   483→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   484→
+   485→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   486→  79 for (const item of batch) {
+   487→  80   try {
+   488→→ 81     const existing = await prisma.alimento.findFirst(
+   489→Error querying the database: Error code 14: Unable to open the database file
+   490→  ✗ Erro #551 "Salaminho": 
+   491→Invalid `prisma.alimento.findFirst()` invocation in
+   492→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   493→
+   494→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   495→  79 for (const item of batch) {
+   496→  80   try {
+   497→→ 81     const existing = await prisma.alimento.findFirst(
+   498→Error querying the database: Error code 14: Unable to open the database file
+   499→  ✗ Erro #552 "Pastrami": 
+   500→Invalid `prisma.alimento.findFirst()` invocation in
+   501→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   502→
+   503→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   504→  79 for (const item of batch) {
+   505→  80   try {
+   506→→ 81     const existing = await prisma.alimento.findFirst(
+   507→Error querying the database: Error code 14: Unable to open the database file
+   508→  ✗ Erro #553 "Linguiça defumada": 
+   509→Invalid `prisma.alimento.findFirst()` invocation in
+   510→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   511→
+   512→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   513→  79 for (const item of batch) {
+   514→  80   try {
+   515→→ 81     const existing = await prisma.alimento.findFirst(
+   516→Error querying the database: Error code 14: Unable to open the database file
+   517→  ✗ Erro #554 "Costelinha suína grelhada": 
+   518→Invalid `prisma.alimento.findFirst()` invocation in
+   519→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   520→
+   521→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   522→  79 for (const item of batch) {
+   523→  80   try {
+   524→→ 81     const existing = await prisma.alimento.findFirst(
+   525→Error querying the database: Error code 14: Unable to open the database file
+   526→  ✗ Erro #555 "Bruschetta": 
+   527→Invalid `prisma.alimento.findFirst()` invocation in
+   528→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   529→
+   530→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   531→  79 for (const item of batch) {
+   532→  80   try {
+   533→→ 81     const existing = await prisma.alimento.findFirst(
+   534→Error querying the database: Error code 14: Unable to open the database file
+   535→  ✗ Erro #556 "Antepasto berinjela": 
+   536→Invalid `prisma.alimento.findFirst()` invocation in
+   537→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   538→
+   539→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   540→  79 for (const item of batch) {
+   541→  80   try {
+   542→→ 81     const existing = await prisma.alimento.findFirst(
+   543→Error querying the database: Error code 14: Unable to open the database file
+   544→  ✗ Erro #557 "Babaganoush": 
+   545→Invalid `prisma.alimento.findFirst()` invocation in
+   546→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   547→
+   548→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   549→  79 for (const item of batch) {
+   550→  80   try {
+   551→→ 81     const existing = await prisma.alimento.findFirst(
+   552→Error querying the database: Error code 14: Unable to open the database file
+   553→  ✗ Erro #558 "Macarrão com brócolis": 
+   554→Invalid `prisma.alimento.findFirst()` invocation in
+   555→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   556→
+   557→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   558→  79 for (const item of batch) {
+   559→  80   try {
+   560→→ 81     const existing = await prisma.alimento.findFirst(
+   561→Error querying the database: Error code 14: Unable to open the database file
+   562→  ✗ Erro #559 "Espaguete à carbonara": 
+   563→Invalid `prisma.alimento.findFirst()` invocation in
+   564→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   565→
+   566→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   567→  79 for (const item of batch) {
+   568→  80   try {
+   569→→ 81     const existing = await prisma.alimento.findFirst(
+   570→Error querying the database: Error code 14: Unable to open the database file
+   571→  ✗ Erro #560 "Arroz de forno": 
+   572→Invalid `prisma.alimento.findFirst()` invocation in
+   573→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   574→
+   575→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   576→  79 for (const item of batch) {
+   577→  80   try {
+   578→→ 81     const existing = await prisma.alimento.findFirst(
+   579→Error querying the database: Error code 14: Unable to open the database file
+   580→  ✗ Erro #561 "Arroz à piemontese": 
+   581→Invalid `prisma.alimento.findFirst()` invocation in
+   582→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   583→
+   584→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   585→  79 for (const item of batch) {
+   586→  80   try {
+   587→→ 81     const existing = await prisma.alimento.findFirst(
+   588→Error querying the database: Error code 14: Unable to open the database file
+   589→  ✗ Erro #562 "Feijão tropeiro com ovo": 
+   590→Invalid `prisma.alimento.findFirst()` invocation in
+   591→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   592→
+   593→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   594→  79 for (const item of batch) {
+   595→  80   try {
+   596→→ 81     const existing = await prisma.alimento.findFirst(
+   597→Error querying the database: Error code 14: Unable to open the database file
+   598→  ✗ Erro #563 "Tutu à mineira": 
+   599→Invalid `prisma.alimento.findFirst()` invocation in
+   600→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   601→
+   602→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   603→  79 for (const item of batch) {
+   604→  80   try {
+   605→→ 81     const existing = await prisma.alimento.findFirst(
+   606→Error querying the database: Error code 14: Unable to open the database file
+   607→  ✗ Erro #564 "Virado à paulista": 
+   608→Invalid `prisma.alimento.findFirst()` invocation in
+   609→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   610→
+   611→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   612→  79 for (const item of batch) {
+   613→  80   try {
+   614→→ 81     const existing = await prisma.alimento.findFirst(
+   615→Error querying the database: Error code 14: Unable to open the database file
+   616→  ✗ Erro #565 "Paella": 
+   617→Invalid `prisma.alimento.findFirst()` invocation in
+   618→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   619→
+   620→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   621→  79 for (const item of batch) {
+   622→  80   try {
+   623→→ 81     const existing = await prisma.alimento.findFirst(
+   624→Error querying the database: Error code 14: Unable to open the database file
+   625→  ✗ Erro #566 "Risoto milanês": 
+   626→Invalid `prisma.alimento.findFirst()` invocation in
+   627→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   628→
+   629→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   630→  79 for (const item of batch) {
+   631→  80   try {
+   632→→ 81     const existing = await prisma.alimento.findFirst(
+   633→Error querying the database: Error code 14: Unable to open the database file
+   634→  ✗ Erro #567 "Bacalhau à portuguesa": 
+   635→Invalid `prisma.alimento.findFirst()` invocation in
+   636→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   637→
+   638→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   639→  79 for (const item of batch) {
+   640→  80   try {
+   641→→ 81     const existing = await prisma.alimento.findFirst(
+   642→Error querying the database: Error code 14: Unable to open the database file
+   643→  ✗ Erro #568 "Bacalhau à Gomes de Sá": 
+   644→Invalid `prisma.alimento.findFirst()` invocation in
+   645→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   646→
+   647→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   648→  79 for (const item of batch) {
+   649→  80   try {
+   650→→ 81     const existing = await prisma.alimento.findFirst(
+   651→Error querying the database: Error code 14: Unable to open the database file
+   652→  ✗ Erro #569 "Polenta com ragu": 
+   653→Invalid `prisma.alimento.findFirst()` invocation in
+   654→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   655→
+   656→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   657→  79 for (const item of batch) {
+   658→  80   try {
+   659→→ 81     const existing = await prisma.alimento.findFirst(
+   660→Error querying the database: Error code 14: Unable to open the database file
+   661→  ✗ Erro #570 "Omelete espanhola": 
+   662→Invalid `prisma.alimento.findFirst()` invocation in
+   663→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   664→
+   665→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   666→  79 for (const item of batch) {
+   667→  80   try {
+   668→→ 81     const existing = await prisma.alimento.findFirst(
+   669→Error querying the database: Error code 14: Unable to open the database file
+   670→  ✗ Erro #571 "Tortilha de batatas": 
+   671→Invalid `prisma.alimento.findFirst()` invocation in
+   672→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   673→
+   674→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   675→  79 for (const item of batch) {
+   676→  80   try {
+   677→→ 81     const existing = await prisma.alimento.findFirst(
+   678→Error querying the database: Error code 14: Unable to open the database file
+   679→  ✗ Erro #572 "Churrasco misto": 
+   680→Invalid `prisma.alimento.findFirst()` invocation in
+   681→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   682→
+   683→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   684→  79 for (const item of batch) {
+   685→  80   try {
+   686→→ 81     const existing = await prisma.alimento.findFirst(
+   687→Error querying the database: Error code 14: Unable to open the database file
+   688→  ✗ Erro #573 "Picanha grelhada": 
+   689→Invalid `prisma.alimento.findFirst()` invocation in
+   690→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   691→
+   692→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   693→  79 for (const item of batch) {
+   694→  80   try {
+   695→→ 81     const existing = await prisma.alimento.findFirst(
+   696→Error querying the database: Error code 14: Unable to open the database file
+   697→  ✗ Erro #574 "Maminha grelhada": 
+   698→Invalid `prisma.alimento.findFirst()` invocation in
+   699→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   700→
+   701→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   702→  79 for (const item of batch) {
+   703→  80   try {
+   704→→ 81     const existing = await prisma.alimento.findFirst(
+   705→Error querying the database: Error code 14: Unable to open the database file
+   706→  ✗ Erro #575 "Frango à passarinho": 
+   707→Invalid `prisma.alimento.findFirst()` invocation in
+   708→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   709→
+   710→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   711→  79 for (const item of batch) {
+   712→  80   try {
+   713→→ 81     const existing = await prisma.alimento.findFirst(
+   714→Error querying the database: Error code 14: Unable to open the database file
+   715→  ✗ Erro #576 "Asa de frango frita": 
+   716→Invalid `prisma.alimento.findFirst()` invocation in
+   717→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   718→
+   719→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   720→  79 for (const item of batch) {
+   721→  80   try {
+   722→→ 81     const existing = await prisma.alimento.findFirst(
+   723→Error querying the database: Error code 14: Unable to open the database file
+   724→  ✗ Erro #577 "Isca de frango": 
+   725→Invalid `prisma.alimento.findFirst()` invocation in
+   726→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   727→
+   728→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   729→  79 for (const item of batch) {
+   730→  80   try {
+   731→→ 81     const existing = await prisma.alimento.findFirst(
+   732→Error querying the database: Error code 14: Unable to open the database file
+   733→  ✗ Erro #578 "Isca de peixe": 
+   734→Invalid `prisma.alimento.findFirst()` invocation in
+   735→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   736→
+   737→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   738→  79 for (const item of batch) {
+   739→  80   try {
+   740→→ 81     const existing = await prisma.alimento.findFirst(
+   741→Error querying the database: Error code 14: Unable to open the database file
+   742→  ✗ Erro #579 "Picanha grelhada": 
+   743→Invalid `prisma.alimento.findFirst()` invocation in
+   744→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   745→
+   746→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   747→  79 for (const item of batch) {
+   748→  80   try {
+   749→→ 81     const existing = await prisma.alimento.findFirst(
+   750→Error querying the database: Error code 14: Unable to open the database file
+   751→  ✗ Erro #580 "Maminha grelhada": 
+   752→Invalid `prisma.alimento.findFirst()` invocation in
+   753→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   754→
+   755→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   756→  79 for (const item of batch) {
+   757→  80   try {
+   758→→ 81     const existing = await prisma.alimento.findFirst(
+   759→Error querying the database: Error code 14: Unable to open the database file
+   760→  ✗ Erro #581 "Frango à passarinho": 
+   761→Invalid `prisma.alimento.findFirst()` invocation in
+   762→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   763→
+   764→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   765→  79 for (const item of batch) {
+   766→  80   try {
+   767→→ 81     const existing = await prisma.alimento.findFirst(
+   768→Error querying the database: Error code 14: Unable to open the database file
+   769→  ✗ Erro #582 "Asa de frango frita": 
+   770→Invalid `prisma.alimento.findFirst()` invocation in
+   771→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   772→
+   773→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   774→  79 for (const item of batch) {
+   775→  80   try {
+   776→→ 81     const existing = await prisma.alimento.findFirst(
+   777→Error querying the database: Error code 14: Unable to open the database file
+   778→  ✗ Erro #583 "Isca de frango": 
+   779→Invalid `prisma.alimento.findFirst()` invocation in
+   780→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   781→
+   782→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   783→  79 for (const item of batch) {
+   784→  80   try {
+   785→→ 81     const existing = await prisma.alimento.findFirst(
+   786→Error querying the database: Error code 14: Unable to open the database file
+   787→  ✗ Erro #584 "Isca de peixe": 
+   788→Invalid `prisma.alimento.findFirst()` invocation in
+   789→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   790→
+   791→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   792→  79 for (const item of batch) {
+   793→  80   try {
+   794→→ 81     const existing = await prisma.alimento.findFirst(
+   795→Error querying the database: Error code 14: Unable to open the database file
+   796→  ✗ Erro #585 "Filé de peixe empanado": 
+   797→Invalid `prisma.alimento.findFirst()` invocation in
+   798→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   799→
+   800→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   801→  79 for (const item of batch) {
+   802→  80   try {
+   803→→ 81     const existing = await prisma.alimento.findFirst(
+   804→Error querying the database: Error code 14: Unable to open the database file
+   805→  ✗ Erro #586 "Bolinho de aipim": 
+   806→Invalid `prisma.alimento.findFirst()` invocation in
+   807→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   808→
+   809→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   810→  79 for (const item of batch) {
+   811→  80   try {
+   812→→ 81     const existing = await prisma.alimento.findFirst(
+   813→Error querying the database: Error code 14: Unable to open the database file
+   814→  ✗ Erro #587 "Bolinho de mandioca com queijo": 
+   815→Invalid `prisma.alimento.findFirst()` invocation in
+   816→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   817→
+   818→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   819→  79 for (const item of batch) {
+   820→  80   try {
+   821→→ 81     const existing = await prisma.alimento.findFirst(
+   822→Error querying the database: Error code 14: Unable to open the database file
+   823→  ✗ Erro #588 "Acarajé com vatapá": 
+   824→Invalid `prisma.alimento.findFirst()` invocation in
+   825→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   826→
+   827→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   828→  79 for (const item of batch) {
+   829→  80   try {
+   830→→ 81     const existing = await prisma.alimento.findFirst(
+   831→Error querying the database: Error code 14: Unable to open the database file
+   832→  ✗ Erro #589 "Moqueca baiana": 
+   833→Invalid `prisma.alimento.findFirst()` invocation in
+   834→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   835→
+   836→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   837→  79 for (const item of batch) {
+   838→  80   try {
+   839→→ 81     const existing = await prisma.alimento.findFirst(
+   840→Error querying the database: Error code 14: Unable to open the database file
+   841→  ✗ Erro #590 "Caruru baiano": 
+   842→Invalid `prisma.alimento.findFirst()` invocation in
+   843→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   844→
+   845→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   846→  79 for (const item of batch) {
+   847→  80   try {
+   848→→ 81     const existing = await prisma.alimento.findFirst(
+   849→Error querying the database: Error code 14: Unable to open the database file
+   850→  ✗ Erro #591 "Vatapá baiano": 
+   851→Invalid `prisma.alimento.findFirst()` invocation in
+   852→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   853→
+   854→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   855→  79 for (const item of batch) {
+   856→  80   try {
+   857→→ 81     const existing = await prisma.alimento.findFirst(
+   858→Error querying the database: Error code 14: Unable to open the database file
+   859→  ✗ Erro #592 "Xinxim de galinha": 
+   860→Invalid `prisma.alimento.findFirst()` invocation in
+   861→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   862→
+   863→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   864→  79 for (const item of batch) {
+   865→  80   try {
+   866→→ 81     const existing = await prisma.alimento.findFirst(
+   867→Error querying the database: Error code 14: Unable to open the database file
+   868→  ✗ Erro #593 "Vaca atolada": 
+   869→Invalid `prisma.alimento.findFirst()` invocation in
+   870→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   871→
+   872→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   873→  79 for (const item of batch) {
+   874→  80   try {
+   875→→ 81     const existing = await prisma.alimento.findFirst(
+   876→Error querying the database: Error code 14: Unable to open the database file
+   877→  ✗ Erro #594 "Canjiquinha com costela": 
+   878→Invalid `prisma.alimento.findFirst()` invocation in
+   879→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   880→
+   881→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   882→  79 for (const item of batch) {
+   883→  80   try {
+   884→→ 81     const existing = await prisma.alimento.findFirst(
+   885→Error querying the database: Error code 14: Unable to open the database file
+   886→  ✗ Erro #595 "Dobradinha com grão": 
+   887→Invalid `prisma.alimento.findFirst()` invocation in
+   888→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   889→
+   890→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   891→  79 for (const item of batch) {
+   892→  80   try {
+   893→→ 81     const existing = await prisma.alimento.findFirst(
+   894→Error querying the database: Error code 14: Unable to open the database file
+   895→  ✗ Erro #596 "Panelada": 
+   896→Invalid `prisma.alimento.findFirst()` invocation in
+   897→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   898→
+   899→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   900→  79 for (const item of batch) {
+   901→  80   try {
+   902→→ 81     const existing = await prisma.alimento.findFirst(
+   903→Error querying the database: Error code 14: Unable to open the database file
+   904→  ✗ Erro #597 "Arroz de carreteiro": 
+   905→Invalid `prisma.alimento.findFirst()` invocation in
+   906→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:81:48
+   907→
+   908→  78 const batch = tacoData.slice(i, i + batchSize) as TacoItem[]
+   909→  79 for (const item of batch) {
+   910→  80   try {
+   911→→ 81     const existing = await prisma.alimento.findFirst(
+   912→Error querying the database: Error code 14: Unable to open the database file
+   913→  → 597/597 processados
+   914→  ✓ 0 criados, 0 atualizados, 597 erros
+   915→  ✓ Total no banco: 0 alimentos
+   916→Erro no seed TACO: PrismaClientInitializationError: 
+   917→Invalid `prisma.alimento.count()` invocation in
+   918→/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:104:39
+   919→
+   920→  101 console.log(`  ✓ Total no banco: ${created + updated} alimentos`)
+   921→  102 
+   922→  103 // Verify
+   923→→ 104 const total = await prisma.alimento.count(
+   924→Error querying the database: Error code 14: Unable to open the database file
+   925→    at ei.handleRequestError (/workspaces/Padaria-LRV/node_modules/@prisma/client/src/runtime/RequestHandler.ts:242:13)
+   926→    at ei.handleAndLogRequestError (/workspaces/Padaria-LRV/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+   927→    at ei.request (/workspaces/Padaria-LRV/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+   928→    at async a (/workspaces/Padaria-LRV/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+   929→    at async main (/workspaces/Padaria-LRV/prisma/seed-taco-alimentos.ts:104:17) {
+   930→  clientVersion: '6.19.2',
+   931→  errorCode: undefined,
+   932→  retryable: undefined
+   933→}
+   934→🌱 Iniciando seed-nutricao...
+   935→  → TipoRefeicao...
+   936→Erro no seed-nutricao: PrismaClientInitializationError: 
+   937→Invalid `prisma.tipoRefeicao.upsert()` invocation in
+   938→/workspaces/Padaria-LRV/prisma/seed-nutricao.ts:108:31
+   939→
+   940→  105 ]
+   941→  106 
+   942→  107 for (const tr of tiposRefeicaoData) {
+   943→→ 108   await prisma.tipoRefeicao.upsert(
+   944→Error querying the database: Error code 14: Unable to open the database file
+   945→    at ei.handleRequestError (/workspaces/Padaria-LRV/node_modules/@prisma/client/src/runtime/RequestHandler.ts:242:13)
+   946→    at ei.handleAndLogRequestError (/workspaces/Padaria-LRV/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+   947→    at ei.request (/workspaces/Padaria-LRV/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+   948→    at async a (/workspaces/Padaria-LRV/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+   949→    at async main (/workspaces/Padaria-LRV/prisma/seed-nutricao.ts:108:5) {
+   950→  clientVersion: '6.19.2',
+   951→  errorCode: undefined,
+   952→  retryable: undefined
+   953→}
+   954→
+   955→> padaria-municipal@0.2.0 dev
+   956→> next dev -p 3000 2>&1 | tee dev.log
+   957→
+   958→▲ Next.js 16.1.3 (Turbopack)
+   959→- Local:         http://localhost:3000
+   960→- Network:       http://10.0.12.138:3000
+   961→- Environments: .env
+   962→
+   963→✓ Starting...
+   964→Attention: Next.js now collects completely anonymous telemetry regarding usage.
+   965→This information is used to shape Next.js' roadmap and prioritize features.
+   966→You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+   967→https://nextjs.org/telemetry
+   968→
+   969→✓ Ready in 3.5s
+   970→[auth][error] MissingSecret: Please define a `secret`. Read more at https://errors.authjs.dev#missingsecret
+   971→    at assertConfig (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_e9fe03cd._.js:513:16)
+   972→    at Auth (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_e9fe03cd._.js:5344:202)
+   973→○ Compiling / ...
+   974→ GET / 200 in 5.7s (compile: 5.2s, proxy.ts: 196ms, render: 259ms)
+   975→[auth][error] MissingSecret: Please define a `secret`. Read more at https://errors.authjs.dev#missingsecret
+   976→    at assertConfig (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_e9fe03cd._.js:513:16)
+   977→    at Auth (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_e9fe03cd._.js:5344:202)
+   978→[auth][error] MissingSecret: Please define a `secret`. Read more at https://errors.authjs.dev#missingsecret
+   979→    at assertConfig (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_36df0127._.js:513:16)
+   980→    at Auth (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_36df0127._.js:5344:204)
+   981→    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+   982→    at async AppRouteRouteModule.do (/workspaces/Padaria-LRV/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:37866)
+   983→ GET /api/auth/session 500 in 3.5s (compile: 3.4s, proxy.ts: 11ms, render: 30ms)
+   984→[auth][error] MissingSecret: Please define a `secret`. Read more at https://errors.authjs.dev#missingsecret
+   985→    at assertConfig (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_e9fe03cd._.js:513:16)
+   986→    at Auth (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_e9fe03cd._.js:5344:202)
+   987→[auth][error] MissingSecret: Please define a `secret`. Read more at https://errors.authjs.dev#missingsecret
+   988→    at assertConfig (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_36df0127._.js:513:16)
+   989→    at Auth (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_36df0127._.js:5344:204)
+   990→    at async AppRouteRouteModule.do (/workspaces/Padaria-LRV/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:37866)
+   991→ GET /api/auth/session 500 in 120ms (compile: 53ms, proxy.ts: 6ms, render: 62ms)
+   992→[auth][error] MissingSecret: Please define a `secret`. Read more at https://errors.authjs.dev#missingsecret
+   993→    at assertConfig (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_e9fe03cd._.js:513:16)
+   994→    at Auth (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_e9fe03cd._.js:5344:202)
+   995→[auth][error] MissingSecret: Please define a `secret`. Read more at https://errors.authjs.dev#missingsecret
+   996→    at assertConfig (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_e9fe03cd._.js:513:16)
+   997→    at Auth (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_e9fe03cd._.js:5344:202)
+   998→[auth][error] MissingSecret: Please define a `secret`. Read more at https://errors.authjs.dev#missingsecret
+   999→    at assertConfig (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_36df0127._.js:513:16)
+  1000→    at Auth (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_36df0127._.js:5344:204)
+  1001→    at async AppRouteRouteModule.do (/workspaces/Padaria-LRV/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:37866)
+  1002→ GET /api/auth/session 500 in 52ms (compile: 19ms, proxy.ts: 16ms, render: 17ms)
+  1003→[auth][error] MissingSecret: Please define a `secret`. Read more at https://errors.authjs.dev#missingsecret
+  1004→    at assertConfig (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_e9fe03cd._.js:513:16)
+  1005→    at Auth (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_e9fe03cd._.js:5344:202)
+  1006→[auth][error] MissingSecret: Please define a `secret`. Read more at https://errors.authjs.dev#missingsecret
+  1007→    at assertConfig (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_e9fe03cd._.js:513:16)
+  1008→    at Auth (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_e9fe03cd._.js:5344:202)
+  1009→[auth][error] MissingSecret: Please define a `secret`. Read more at https://errors.authjs.dev#missingsecret
+  1010→    at assertConfig (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_36df0127._.js:513:16)
+  1011→    at Auth (/workspaces/Padaria-LRV/.next/dev/server/chunks/node_modules_@auth_core_36df0127._.js:5344:204)
+  1012→    at async AppRouteRouteModule.do (/workspaces/Padaria-LRV/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:37866)
+  1013→ GET /api/auth/session 500 in 48ms (compile: 10ms, proxy.ts: 14ms, render: 25ms)
+  1014→○ Compiling /dashboard ...
+  1015→ GET /dashboard 200 in 7.6s (compile: 7.5s, proxy.ts: 28ms, render: 48ms)
+  1016→

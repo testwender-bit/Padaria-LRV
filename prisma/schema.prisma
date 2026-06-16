@@ -1,0 +1,533 @@
+// ============================================================
+// PADARIA MUNICIPAL DE LUCAS DO RIO VERDE - MT
+// Sistema de Planejamento de Produção Escolar
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── Autenticação (NextAuth) ─────────────────────────────────
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  password      String    // hashed with bcryptjs
+  role          String    @default("user") // admin, user, nutricionista
+  ativo         Boolean   @default(true)
+  createdAt     String    @default("")
+
+  accounts      Account[]
+  sessions      Session[]
+  nutricionista Nutricionista?
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    String
+
+  @@unique([identifier, token])
+}
+
+// ── Escolas ──────────────────────────────────────────────────
+model Escola {
+  id            String   @id @default(cuid())
+  nome          String
+  nome_curto    String
+  categoria     String   // REGULAR, INTEGRAL, BIFASICA, CRECHE, INTERIOR, OUTROS
+  rota          String   // JOSE, AROLDO, BUSCA_PROPRIA
+  busca_propria Boolean  @default(false)
+  recebe_pf     Boolean  @default(true)
+  recebe_pcq    Boolean  @default(true)
+  recebe_lanche Boolean  @default(true)
+  ativo         Boolean  @default(true)
+  ordem_rota    Int      @default(0)
+  obs           String?
+
+  pf_quantidades    PfQuantidade[]
+  pcq_quantidades   PcqQuantidade[]
+  lanche_distribuicao LancheDistribuicao[]
+  ajustes           Ajuste[]
+  cardapio_nutricional CardapioNutricional[]
+
+  @@index([categoria])
+  @@index([rota])
+  @@index([ativo])
+}
+
+// ── PF (Pão Francês) Quantidades por escola/tipo ────────────
+model PfQuantidade {
+  id         String  @id @default(cuid())
+  escola_id  String
+  tipo_pao   String  // PADRAO, PROTEINA, SEMPAO
+  segunda    Int     @default(0)
+  terca      Int     @default(0)
+  quarta     Int     @default(0)
+  quinta     Int     @default(0)
+  sexta      Int     @default(0)
+
+  escola Escola @relation(fields: [escola_id], references: [id], onDelete: Cascade)
+
+  @@unique([escola_id, tipo_pao])
+}
+
+// ── PCQ (Pão de Cachorro Quente) Quantidades ────────────────
+model PcqQuantidade {
+  id              String  @id @default(cuid())
+  escola_id       String
+  prod_segunda    Int     @default(0)
+  prod_quarta     Int     @default(0)
+  prod_sexta      Int     @default(0)
+  pf_comp_segunda Int     @default(0)
+  pf_comp_quarta  Int     @default(0)
+  pf_comp_sexta   Int     @default(0)
+
+  escola Escola @relation(fields: [escola_id], references: [id], onDelete: Cascade)
+
+  @@unique([escola_id])
+}
+
+// ── Lanches ──────────────────────────────────────────────────
+model Lanche {
+  id      String  @id @default(cuid())
+  nome    String
+  unidade String  @default("un")
+  ativo   Boolean @default(true)
+  obs     String?
+
+  distribuicao      LancheDistribuicao[]
+  cardapio_regular  CardapioSemestral[] @relation("CardapioRegular")
+  cardapio_bifasica CardapioSemestral[] @relation("CardapioBifasica")
+}
+
+// ── Lanche Distribuição (escola × dia × quantidade) ─────────
+model LancheDistribuicao {
+  id         String  @id @default(cuid())
+  lanche_id  String
+  escola_id  String
+  dia_semana String  // segunda, terca, quarta, quinta, sexta
+  quantidade Int     @default(0)
+  obs        String?
+
+  lanche Lanche @relation(fields: [lanche_id], references: [id], onDelete: Cascade)
+  escola Escola @relation(fields: [escola_id], references: [id], onDelete: Cascade)
+
+  @@unique([lanche_id, escola_id, dia_semana])
+}
+
+// ── Cardápio Semestral (22 semanas) ─────────────────────────
+model CardapioSemestral {
+  id                 String  @id @default(cuid())
+  ano                Int
+  semana             Int     // número da semana letiva (1-22)
+  numero_semana_iso  Int     // semana ISO do calendário
+  data_inicio        String  // YYYY-MM-DD
+  data_fim           String  // YYYY-MM-DD
+  tipo_pao           String  @default("PADRAO") // PADRAO, PROTEINA, SEMPAO
+  nome_pao           String  @default("Pão Francês")
+  lanche_regular_id  String?
+  lanche_bifasica_id String?
+  obs                String?
+
+  lanche_regular  Lanche? @relation("CardapioRegular", fields: [lanche_regular_id], references: [id], onDelete: SetNull)
+  lanche_bifasica Lanche? @relation("CardapioBifasica", fields: [lanche_bifasica_id], references: [id], onDelete: SetNull)
+
+  @@unique([ano, semana])
+}
+
+// ── Feriados ─────────────────────────────────────────────────
+model Feriado {
+  id                String  @id @default(cuid())
+  data              String  // YYYY-MM-DD
+  nome              String
+  tipo              String  @default("NACIONAL") // NACIONAL, ESTADUAL, MUNICIPAL, ESCOLAR
+  escolas_afetadas  String  @default("TODAS") // TODAS, REGULARES, INTEGRAIS, CRECHES, BIFASICA, INTERIOR, OUTROS
+  acao              String  @default("zerar_dia") // zerar_dia, zerar_pf, zerar_pcq, zerar_lanche, apenas_observacao
+  obs               String?
+
+  @@unique([data, escolas_afetadas])
+}
+
+// ── Ajustes Semanais ─────────────────────────────────────────
+model Ajuste {
+  id           String  @id @default(cuid())
+  ano          Int
+  semana       Int
+  escola_id    String
+  dia_semana   String  // segunda, terca, quarta, quinta, sexta
+  produto      String  // PF, PCQ, LANCHE, PF_COMP
+  qtd_original Int     @default(0)
+  ajuste       Int     @default(0) // delta (+/-)
+  qtd_final   Int     @default(0)
+  motivo       String?
+
+  escola Escola @relation(fields: [escola_id], references: [id], onDelete: Cascade)
+
+  @@unique([ano, semana, escola_id, dia_semana, produto])
+}
+
+// ── Histórico de Semanas (snapshot) ──────────────────────────
+model HistoricoSemana {
+  id              String  @id @default(cuid())
+  ano             Int
+  semana          Int
+  data_inicio     String  // YYYY-MM-DD
+  data_fim        String  // YYYY-MM-DD
+  tipo_pao        String
+  nome_pao        String
+  lanche_regular  String? // nome do lanche
+  lanche_bifasica String?
+  total_pf        Int     @default(0)
+  total_pcq       Int     @default(0)
+  total_lanche    Int     @default(0)
+  ajustes_count   Int     @default(0)
+  gerado_por      String  @default("Sistema")
+  gerado_em       String  // YYYY-MM-DD HH:mm
+  snapshot_json   String  // JSON completo
+
+  @@unique([ano, semana])
+}
+
+// ── Insumos ──────────────────────────────────────────────────
+model Insumo {
+  id             String   @id @default(cuid())
+  nome           String
+  unidade        String   @default("kg")
+  preco_unitario Float    @default(0)
+  estoque_atual  Float    @default(0)
+  estoque_minimo Float    @default(0)
+  fornecedor     String?
+  ativo          Boolean  @default(true)
+
+  receitas        Receita[]
+  movimentacoes   MovimentacaoEstoque[]
+  pedidos_itens   ItemPedidoCompra[]
+  contagens       ContagemEstoque[]
+}
+
+// ── Receitas (composição por unidade de produto) ─────────────
+model Receita {
+  id                   String  @id @default(cuid())
+  produto_tipo         String  // PF, PCQ, LANCHE
+  insumo_id            String
+  quantidade_por_unidade Float  @default(0) // qtd de insumo por unidade de produto
+
+  insumo Insumo @relation(fields: [insumo_id], references: [id], onDelete: Cascade)
+
+  @@unique([produto_tipo, insumo_id])
+}
+
+// ── Movimentações de Estoque ─────────────────────────────────
+model MovimentacaoEstoque {
+  id            String  @id @default(cuid())
+  insumo_id     String
+  tipo          String  // ENTRADA, SAIDA
+  quantidade    Float   @default(0)
+  preco_unitario Float  @default(0)
+  preco_total   Float   @default(0)
+  data          String  // YYYY-MM-DD
+  obs           String?
+
+  insumo Insumo @relation(fields: [insumo_id], references: [id], onDelete: Cascade)
+}
+
+// ── Pedidos de Compra ─────────────────────────────────────────
+model PedidoCompra {
+  id            String   @id @default(cuid())
+  fornecedor    String
+  data_pedido   String   // YYYY-MM-DD
+  data_prevista String?  // YYYY-MM-DD
+  status        String   @default("PENDENTE") // PENDENTE, EM_ANDAMENTO, RECEBIDO, CANCELADO
+  obs           String?
+  criado_em     String   @default("now()")
+
+  itens         ItemPedidoCompra[]
+
+  @@map("pedidos_compra")
+}
+
+// ── Itens do Pedido de Compra ─────────────────────────────────
+model ItemPedidoCompra {
+  id              String   @id @default(cuid())
+  pedido_id       String
+  insumo_id       String
+  quantidade      Float   @default(0)
+  preco_unitario  Float   @default(0)
+  preco_total     Float   @default(0)
+  recebido        Boolean @default(false)
+
+  pedido  PedidoCompra @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
+  insumo  Insumo       @relation(fields: [insumo_id], references: [id], onDelete: Cascade)
+
+  @@map("itens_pedido_compra")
+}
+
+// ── Contagem Física de Estoque ──────────────────────────────
+model ContagemEstoque {
+  id              String   @id @default(cuid())
+  data_contagem   String   // YYYY-MM-DD
+  insumo_id       String
+  quantidade      Float    // physical count quantity
+  estoque_sistema Float    @default(0) // system stock at time of count (snapshot)
+  diferenca       Float    @default(0) // estoque_sistema - quantidade
+  obs             String?
+  criado_em       String   @default("") // YYYY-MM-DD HH:mm
+
+  insumo Insumo @relation(fields: [insumo_id], references: [id], onDelete: Cascade)
+
+  @@index([data_contagem])
+  @@index([insumo_id])
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MÓDULO DE NUTRIÇÃO — Cardápio Nutricional PNAE
+// ══════════════════════════════════════════════════════════════
+
+// ── Nutricionista ───────────────────────────────────────────
+model Nutricionista {
+  id        String  @id @default(cuid())
+  user_id   String  @unique
+  nome      String
+  crn       String  // CRN (ex: "CRN-3 12345")
+  ativo     Boolean @default(true)
+
+  user      User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  cardapios CardapioNutricional[]
+
+  @@index([crn])
+}
+
+// ── Tipo de Refeição ────────────────────────────────────────
+model TipoRefeicao {
+  id       String  @id @default(cuid())
+  codigo   String  @unique // CAFE_MANHA, FRUTA_MANHA, ALMOCO, LANCHE, HIDRATACAO, JANTAR, LANCHE_1, LANCHE_2
+  nome     String  // "Café da Manhã"
+  horario  String  // "07h30min"
+  ordem    Int     @default(0)
+
+  categoria_refeicoes CategoriaRefeicao[]
+  cardapio_itens      CardapioItem[]
+  metas               MetaNutricional[]
+}
+
+// ── Categoria de Escola × Refeição ──────────────────────────
+model CategoriaRefeicao {
+  id                 String  @id @default(cuid())
+  categoria_escola   String  // REGULAR, INTEGRAL, BIFASICA, CRECHE, INTERIOR
+  tipo_refeicao_id   String
+  percentual_energia Float   @default(0) // % de energia diária para esta refeição
+
+  tipo_refeicao      TipoRefeicao @relation(fields: [tipo_refeicao_id], references: [id], onDelete: Cascade)
+
+  @@unique([categoria_escola, tipo_refeicao_id])
+  @@index([categoria_escola])
+}
+
+// ── Alimento (Base TACO) ───────────────────────────────────
+model Alimento {
+  id                  String  @id @default(cuid())
+  codigo_taco         Int?
+  nome                String
+  grupo               String  // Cereais e derivados, Leguminosas, Verduras, Frutas, Carnes, Leite e derivados, etc.
+  medida_caseira      String  // "1 colher de sopa", "1 unidade média"
+  gramas_por_medida   Float   @default(0)
+
+  // Valores nutricionais por 100g
+  energia_kcal        Float   @default(0)
+  carboidratos_g      Float   @default(0)
+  proteinas_g         Float   @default(0)
+  lipidios_g          Float   @default(0)
+  fibra_alimentar_g   Float   @default(0)
+  sodio_mg            Float   @default(0)
+  ferro_mg            Float   @default(0)
+  ferro_heme_mg       Float   @default(0)
+  vitamina_a_mcg      Float   @default(0)
+  vitamina_c_mg       Float   @default(0)
+  calcio_mg           Float   @default(0)
+  magnesio_mg         Float   @default(0)
+  zinco_mg            Float   @default(0)
+  acucar_adicionado_g Float   @default(0)
+
+  ativo               Boolean @default(true)
+
+  ingredientes        PreparacaoIngrediente[]
+
+  @@index([nome])
+  @@index([grupo])
+  @@index([ativo])
+}
+
+// ── Preparação (Receita do Nutricionista) ───────────────────
+model Preparacao {
+  id           String  @id @default(cuid())
+  nome         String
+  descricao    String?
+  modo_preparo String?
+  ativo        Boolean @default(true)
+
+  ingredientes   PreparacaoIngrediente[]
+  cardapio_itens CardapioItem[]
+
+  @@index([nome])
+}
+
+// ── Ingrediente da Preparação ───────────────────────────────
+model PreparacaoIngrediente {
+  id                  String  @id @default(cuid())
+  preparacao_id       String
+  alimento_id         String
+  quantidade_gramas   Float   @default(0) // percapita base (Ens. Fund. Final = 100%)
+  mesma_percapita     Boolean @default(false) // se true, mesma qtd para todas as fases (ex: fruta)
+
+  preparacao          Preparacao @relation(fields: [preparacao_id], references: [id], onDelete: Cascade)
+  alimento            Alimento   @relation(fields: [alimento_id], references: [id], onDelete: Cascade)
+
+  percapitas          PreparacaoPercapita[]
+
+  @@unique([preparacao_id, alimento_id])
+}
+
+// ── Percapita por Fase Escolar ──────────────────────────────
+model PreparacaoPercapita {
+  id                  String  @id @default(cuid())
+  ingrediente_id      String  // FK para PreparacaoIngrediente
+  fase_escolar        String  // BERCARIO, CRECHE, ED_INFANTIL, FUND_INICIAL, FUND_FINAL
+  quantidade_gramas   Float   @default(0) // percapita em gramas para esta fase
+  auto_calculado      Boolean @default(true) // se true, foi calculado pelo percentual padrão
+
+  ingrediente         PreparacaoIngrediente @relation(fields: [ingrediente_id], references: [id], onDelete: Cascade)
+
+  @@unique([ingrediente_id, fase_escolar])
+  @@index([fase_escolar])
+}
+
+// ── Cardápio Nutricional (semestre) ─────────────────────────
+model CardapioNutricional {
+  id               String  @id @default(cuid())
+  nome             String  // "Cardápio Regular 2025/1"
+  escola_id        String? // null = modelo base, preenchido = escola específica
+  nutricionista_id String
+  categoria_escola String  // REGULAR, INTEGRAL, BIFASICA, CRECHE, INTERIOR
+  fase_escolar     String  @default("FUND_FINAL") // BERCARIO, CRECHE, ED_INFANTIL, FUND_INICIAL, FUND_FINAL
+  ano              Int
+  semestre         Int     @default(1) // 1 ou 2
+  status           String  @default("RASCUNHO") // RASCUNHO, APROVADO
+  origem_id        String? // ID do cardápio que foi clonado
+  criado_em        String  @default("")
+  atualizado_em    String  @default("")
+
+  escola            Escola?        @relation(fields: [escola_id], references: [id], onDelete: SetNull)
+  nutricionista     Nutricionista  @relation(fields: [nutricionista_id], references: [id])
+  semanas           CardapioSemanaNutri[]
+
+  @@index([escola_id])
+  @@index([categoria_escola])
+  @@index([status])
+  @@index([ano, semestre])
+}
+
+// ── Semana do Cardápio Nutricional ──────────────────────────
+model CardapioSemanaNutri {
+  id           String  @id @default(cuid())
+  cardapio_id  String
+  numero       Int     // 1-22
+  data_inicio  String  // YYYY-MM-DD
+  data_fim     String  // YYYY-MM-DD
+
+  cardapio     CardapioNutricional @relation(fields: [cardapio_id], references: [id], onDelete: Cascade)
+  dias         CardapioDiaNutri[]
+
+  @@unique([cardapio_id, numero])
+  @@index([cardapio_id])
+}
+
+// ── Dia do Cardápio Nutricional ─────────────────────────────
+model CardapioDiaNutri {
+  id          String  @id @default(cuid())
+  semana_id   String
+  dia_semana  String  // segunda, terca, quarta, quinta, sexta
+
+  semana      CardapioSemanaNutri @relation(fields: [semana_id], references: [id], onDelete: Cascade)
+  itens       CardapioItem[]
+
+  @@unique([semana_id, dia_semana])
+  @@index([semana_id])
+}
+
+// ── Item do Cardápio (refeição × preparação) ───────────────
+model CardapioItem {
+  id                String  @id @default(cuid())
+  dia_id            String
+  tipo_refeicao_id  String
+  preparacao_id     String
+  porcoes           Int     @default(1)
+
+  dia               CardapioDiaNutri @relation(fields: [dia_id], references: [id], onDelete: Cascade)
+  tipo_refeicao     TipoRefeicao     @relation(fields: [tipo_refeicao_id], references: [id])
+  preparacao        Preparacao       @relation(fields: [preparacao_id], references: [id])
+
+  @@unique([dia_id, tipo_refeicao_id, preparacao_id])
+  @@index([dia_id])
+  @@index([tipo_refeicao_id])
+}
+
+// ── Meta Nutricional PNAE ──────────────────────────────────
+model MetaNutricional {
+  id                     String  @id @default(cuid())
+  tipo_refeicao_id       String
+  categoria_escola       String
+  energia_kcal_min       Float   @default(0)
+  energia_kcal_max       Float   @default(0)
+  carboidratos_pct_min   Float   @default(0)
+  carboidratos_pct_max   Float   @default(0)
+  proteinas_pct_min      Float   @default(0)
+  proteinas_pct_max      Float   @default(0)
+  lipidios_pct_min       Float   @default(0)
+  lipidios_pct_max       Float   @default(0)
+  sodio_mg_max           Float   @default(0)
+  ferro_mg_min           Float   @default(0)
+  ferro_heme_dias_semana Int     @default(4)
+  vitamina_a_mcg_min     Float   @default(0)
+  vitamina_a_dias_semana Int     @default(3)
+  vitamina_c_mg_min      Float   @default(0)
+  acucar_pct_max         Float   @default(7)
+  acucar_proibido_menor3 Boolean @default(true)
+
+  tipo_refeicao         TipoRefeicao @relation(fields: [tipo_refeicao_id], references: [id])
+
+  @@unique([tipo_refeicao_id, categoria_escola])
+}

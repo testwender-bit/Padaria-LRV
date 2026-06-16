@@ -1,0 +1,464 @@
+'use client'
+
+import { useEffect, useState, useCallback } from 'react'
+import { useParams } from 'next/navigation'
+import Link from 'next/link'
+import { motion } from 'framer-motion'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  ArrowLeft, Printer, RefreshCw, FileText, Calendar, BookOpen
+} from 'lucide-react'
+import {
+  DIAS_SEMANA_NUTRI,
+  FASES_ESCOLARES,
+  calcularNutrientesRefeicao,
+  calcularPercentualEnergia,
+  dividirNutrientes,
+  emptyNutrienteDia,
+  somarNutrientes,
+  limparNomeIngrediente,
+  type NutrienteDia,
+  type FaseEscolar,
+  calcularPercapitaPorFase,
+} from '@/lib/nutricao-utils'
+
+// ── Types ──────────────────────────────────────────────────────
+
+interface TipoRefeicao {
+  id: string
+  codigo: string
+  nome: string
+  horario: string
+  ordem: number
+}
+
+interface Alimento {
+  id: string
+  nome: string
+  grupo: string
+  medida_caseira: string
+  gramas_por_medida: number
+  energia_kcal: number
+  carboidratos_g: number
+  proteinas_g: number
+  lipidios_g: number
+  fibra_alimentar_g: number
+  sodio_mg: number
+  ferro_mg: number
+  ferro_heme_mg: number
+  vitamina_a_mcg: number
+  vitamina_c_mg: number
+  calcio_mg: number
+  magnesio_mg: number
+  zinco_mg: number
+  acucar_adicionado_g: number
+}
+
+interface PercapitaData {
+  id: string
+  ingrediente_id: string
+  fase_escolar: string
+  quantidade_gramas: number
+  auto_calculado: boolean
+}
+
+interface IngredienteComAlimento {
+  id: string
+  quantidade_gramas: number
+  mesma_percapita: boolean
+  alimento: Alimento
+  percapitas: PercapitaData[]
+}
+
+interface Preparacao {
+  id: string
+  nome: string
+  descricao: string | null
+  ingredientes: IngredienteComAlimento[]
+}
+
+interface CardapioItem {
+  id: string
+  tipo_refeicao_id: string
+  preparacao_id: string
+  porcoes: number
+  tipo_refeicao: TipoRefeicao
+  preparacao: Preparacao
+}
+
+interface CardapioDia {
+  id: string
+  dia_semana: string
+  itens: CardapioItem[]
+}
+
+interface CardapioSemana {
+  id: string
+  numero: number
+  data_inicio: string
+  data_fim: string
+  dias: CardapioDia[]
+}
+
+interface CardapioFull {
+  id: string
+  nome: string
+  escola_id: string | null
+  categoria_escola: string
+  fase_escolar: string
+  status: string
+  ano: number
+  semestre: number
+  escola?: { id: string; nome: string; categoria: string } | null
+  nutricionista?: { id: string; nome: string; crn: string } | null
+  semanas: CardapioSemana[]
+}
+
+interface ResumoSemana {
+  media_dia: NutrienteDia
+  percentuais: {
+    carboidratos_pct: number
+    proteinas_pct: number
+    lipidios_pct: number
+    acucar_pct: number
+  }
+  dias_com_ferro_heme: number
+  dias_com_vitamina_a: number
+}
+
+// ── Helpers ────────────────────────────────────────────────────
+
+function formatDateShort(dateStr: string) {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr + 'T12:00:00')
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+}
+
+function getFaseLabel(fase: string) {
+  const f = FASES_ESCOLARES.find(fs => fs.value === fase)
+  return f ? `${f.label} (${f.faixa})` : fase
+}
+
+function getGramasForFase(ing: IngredienteComAlimento, faseEscolar: string): number {
+  if (ing.mesma_percapita) return ing.quantidade_gramas
+  const percapita = ing.percapitas?.find(p => p.fase_escolar === faseEscolar)
+  if (percapita) return percapita.quantidade_gramas
+  return calcularPercapitaPorFase(ing.quantidade_gramas, faseEscolar as FaseEscolar)
+}
+
+function calcularResumoSemanaPDF(
+  semana: CardapioSemana,
+  faseEscolar: string
+): ResumoSemana {
+  let totalSemana = emptyNutrienteDia()
+  let diasComDados = 0
+  let diasComFerroHeme = 0
+  let diasComVitA = 0
+
+  for (const dia of semana.dias) {
+    if (dia.itens.length === 0) continue
+    const diaNutri = dia.itens.reduce<NutrienteDia>((acc, item) => {
+      const refeicaoNutri = calcularNutrientesRefeicao([{
+        preparacao: {
+          ingredientes: item.preparacao.ingredientes.map((ing) => ({
+            quantidade_gramas: getGramasForFase(ing, faseEscolar),
+            alimento: ing.alimento,
+          })),
+        },
+        porcoes: item.porcoes,
+      }])
+      return somarNutrientes(acc, refeicaoNutri)
+    }, emptyNutrienteDia())
+
+    totalSemana = somarNutrientes(totalSemana, diaNutri)
+    diasComDados++
+    if (diaNutri.ferro_heme_mg > 0) diasComFerroHeme++
+    if (diaNutri.vitamina_a_mcg > 0) diasComVitA++
+  }
+
+  const mediaDia = diasComDados > 0 ? dividirNutrientes(totalSemana, diasComDados) : emptyNutrienteDia()
+  const percentuais = calcularPercentualEnergia(mediaDia)
+
+  return { media_dia: mediaDia, percentuais, dias_com_ferro_heme: diasComFerroHeme, dias_com_vitamina_a: diasComVitA }
+}
+
+// ── Week Page Component (LANDSCAPE A4 — B&W Optimized) ────────
+
+function SemanaPrintPage({ semana, cardapio }: { semana: CardapioSemana; cardapio: CardapioFull }) {
+  const tiposRefeicao = semana.dias
+    .flatMap((d) => d.itens.map((i) => i.tipo_refeicao))
+    .filter((tr, idx, arr) => arr.findIndex((t) => t.id === tr.id) === idx)
+    .sort((a, b) => a.ordem - b.ordem)
+
+  const resumo = calcularResumoSemanaPDF(semana, cardapio.fase_escolar)
+
+  // Compute actual date for each weekday based on data_inicio
+  function getDiaDate(diaSemana: string): string {
+    const diaData = semana.dias.find((d) => d.dia_semana === diaSemana)
+    if (!diaData) return ''
+    const idx = DIAS_SEMANA_NUTRI.findIndex(d => d.value === diaSemana)
+    if (idx >= 0 && semana.data_inicio) {
+      const base = new Date(semana.data_inicio + 'T12:00:00')
+      base.setDate(base.getDate() + idx)
+      return base.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+    }
+    return ''
+  }
+
+  return (
+    <div className="semana-page">
+      {/* ── HEADER ── Premium compact strip */}
+      <div className="sp-header">
+        <div className="sp-header-brand">
+          <span className="sp-title">{cardapio.nome}</span>
+        </div>
+        <div className="sp-header-meta">
+          <span className="sp-meta-item"><strong>Escola:</strong> {cardapio.escola?.nome || 'Modelo base'}</span>
+          <span className="sp-meta-divider">&#x2022;</span>
+          <span className="sp-meta-item"><strong>Categoria:</strong> {cardapio.categoria_escola}</span>
+          <span className="sp-meta-divider">&#x2022;</span>
+          <span className="sp-meta-item"><strong>Nutricionista:</strong> {cardapio.nutricionista?.nome || '—'} — CRN {cardapio.nutricionista?.crn || '—'}</span>
+          <span className="sp-meta-divider">&#x2022;</span>
+          <span className="sp-meta-item"><strong>Fase:</strong> {getFaseLabel(cardapio.fase_escolar)}</span>
+        </div>
+        <div className="sp-header-week">
+          <span className="sp-week-label">Semana {semana.numero}</span>
+          <span className="sp-week-dates">{formatDateShort(semana.data_inicio)} — {formatDateShort(semana.data_fim)}</span>
+        </div>
+      </div>
+
+      {/* ── MENU TABLE — Main content ── */}
+      <table className="sp-table">
+        <thead>
+          <tr>
+            <th className="sp-th-ref">Refeição</th>
+            {DIAS_SEMANA_NUTRI.map((dia) => (
+              <th key={dia.value} className="sp-th-dia">
+                <span className="sp-dia-nome">{dia.label}</span>
+                <span className="sp-dia-data">{getDiaDate(dia.value)}</span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {tiposRefeicao.map((tr) => (
+            <tr key={tr.id} className="sp-row">
+              <td className="sp-td-ref">
+                <span className="sp-ref-nome">{tr.nome}</span>
+                <span className="sp-ref-hora">{tr.horario}</span>
+              </td>
+              {DIAS_SEMANA_NUTRI.map((dia) => {
+                const diaData = semana.dias.find((d) => d.dia_semana === dia.value)
+                const itens = diaData?.itens.filter((i) => i.tipo_refeicao_id === tr.id) || []
+                return (
+                  <td key={dia.value} className="sp-td-dia">
+                    {itens.length > 0 ? (
+                      <ul className="sp-prep-list">
+                        {itens.map((item) => (
+                          <li key={item.id} className="sp-prep-item">
+                            <div className="sp-prep-nome">{item.preparacao.nome}</div>
+                            {item.preparacao.ingredientes.length > 0 && (
+                              <div className="sp-prep-ing">
+                                {item.preparacao.ingredientes.map((ing) => limparNomeIngrediente(ing.alimento.nome)).join(', ')}
+                              </div>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="sp-prep-vazio">—</span>
+                    )}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* ── NUTRITIONAL SUMMARY — Compact horizontal strip ── */}
+      <div className="sp-resumo">
+        <div className="sp-resumo-title">
+          Resumo Nutricional — Média Diária | {getFaseLabel(cardapio.fase_escolar)}
+        </div>
+        <div className="sp-resumo-grid">
+          {/* Col 1: Macronutrientes */}
+          <div className="sp-resumo-section">
+            <div className="sp-section-head">Macronutrientes</div>
+            <div className="sp-kv"><span>Energia</span><strong>{resumo.media_dia.energia_kcal.toFixed(0)} kcal</strong></div>
+            <div className="sp-kv"><span>Carboidratos</span><strong>{resumo.media_dia.carboidratos_g.toFixed(1)} g</strong></div>
+            <div className="sp-kv"><span>Proteínas</span><strong>{resumo.media_dia.proteinas_g.toFixed(1)} g</strong></div>
+            <div className="sp-kv"><span>Lipídios</span><strong>{resumo.media_dia.lipidios_g.toFixed(1)} g</strong></div>
+            <div className="sp-kv"><span>Fibra Alimentar</span><strong>{resumo.media_dia.fibra_alimentar_g.toFixed(1)} g</strong></div>
+          </div>
+          {/* Col 2: Micronutrientes */}
+          <div className="sp-resumo-section">
+            <div className="sp-section-head">Micronutrientes</div>
+            <div className="sp-kv"><span>Sódio</span><strong>{resumo.media_dia.sodio_mg.toFixed(0)} mg</strong></div>
+            <div className="sp-kv"><span>Ferro</span><strong>{resumo.media_dia.ferro_mg.toFixed(1)} mg</strong></div>
+            <div className="sp-kv"><span>Vit. A</span><strong>{resumo.media_dia.vitamina_a_mcg.toFixed(0)} mcg</strong></div>
+            <div className="sp-kv"><span>Vit. C</span><strong>{resumo.media_dia.vitamina_c_mg.toFixed(1)} mg</strong></div>
+            <div className="sp-kv"><span>Cálcio</span><strong>{resumo.media_dia.calcio_mg.toFixed(0)} mg</strong></div>
+          </div>
+          {/* Col 3: Distribuição VET */}
+          <div className="sp-resumo-section">
+            <div className="sp-section-head">Distribuição VET</div>
+            <div className="sp-kv"><span>Carboidratos</span><strong>{resumo.percentuais.carboidratos_pct.toFixed(1)}%</strong></div>
+            <div className="sp-kv"><span>Proteínas</span><strong>{resumo.percentuais.proteinas_pct.toFixed(1)}%</strong></div>
+            <div className="sp-kv"><span>Lipídios</span><strong>{resumo.percentuais.lipidios_pct.toFixed(1)}%</strong></div>
+            <div className="sp-kv"><span>Açúcar Adic.</span><strong>{resumo.percentuais.acucar_pct.toFixed(1)}%</strong></div>
+            <div className="sp-kv sp-kv-total"><span>Energia Total</span><strong>{resumo.media_dia.energia_kcal.toFixed(0)} kcal</strong></div>
+          </div>
+          {/* Col 4: Indicadores PNAE */}
+          <div className="sp-resumo-section">
+            <div className="sp-section-head">Indicadores PNAE</div>
+            <div className="sp-kv"><span>Ferro Heme</span><strong>{resumo.dias_com_ferro_heme} dias/sem</strong></div>
+            <div className="sp-kv"><span>Vit. A</span><strong>{resumo.dias_com_vitamina_a} dias/sem</strong></div>
+            <div className="sp-kv"><span>Açúcar Adic.</span><strong>{resumo.media_dia.acucar_adicionado_g.toFixed(1)} g/dia</strong></div>
+            <div className="sp-kv"><span>Zinco</span><strong>{resumo.media_dia.zinco_mg.toFixed(1)} mg</strong></div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── FOOTER ── */}
+      <div className="sp-footer">
+        <span>Cardápio Escolar PNAE — {cardapio.ano}/{cardapio.semestre}</span>
+        <span>Gerado em {new Date().toLocaleDateString('pt-BR')}</span>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Component ─────────────────────────────────────────────
+
+export default function CardapioPdfPage() {
+  const params = useParams()
+  const cardapioId = params.id as string
+
+  const [cardapio, setCardapio] = useState<CardapioFull | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedSemana, setSelectedSemana] = useState('1')
+  const [printMode, setPrintMode] = useState<'semana' | 'semestral'>('semana')
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}`)
+      if (!res.ok) throw new Error('Erro ao carregar cardápio')
+      const data = await res.json()
+      setCardapio(data)
+    } catch (err) {
+      console.error(err)
+      setError('Não foi possível carregar o cardápio.')
+    } finally {
+      setLoading(false)
+    }
+  }, [cardapioId])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  function handlePrint() { window.print() }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full border-2 border-[#D4A017]/30 border-t-[#D4A017] animate-spin" />
+          <span className="text-muted-foreground">Carregando cardápio...</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !cardapio) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-sm text-red-500 mb-3">{error || 'Cardápio não encontrado.'}</p>
+        <Button variant="outline" size="sm" onClick={loadData}>
+          <RefreshCw className="w-3 h-3 mr-1" /> Tentar novamente
+        </Button>
+      </div>
+    )
+  }
+
+  const semanasToPrint = printMode === 'semana'
+    ? [cardapio.semanas.find((s) => s.numero === Number(selectedSemana))].filter(Boolean) as CardapioSemana[]
+    : cardapio.semanas
+
+  return (
+    <div className="space-y-4 max-w-[1200px] mx-auto">
+      {/* Top Bar */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-3 rounded-xl border border-[#1A3A5C]/10 shadow-sm print:hidden"
+      >
+        <div className="flex items-center gap-3">
+          <Link href={`/nutricao/cardapios/${cardapioId}`}>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-lg font-bold text-[#1A3A5C] flex items-center gap-2">
+              <FileText className="w-5 h-5 text-[#D4A017]" />
+              PDF — {cardapio.nome}
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              {cardapio.escola?.nome || 'Modelo base'} · {cardapio.ano}/{cardapio.semestre}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+            <button
+              onClick={() => setPrintMode('semana')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                printMode === 'semana' ? 'bg-white text-[#1A3A5C] shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Calendar className="w-3 h-3" /> Semana
+            </button>
+            <button
+              onClick={() => setPrintMode('semestral')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                printMode === 'semestral' ? 'bg-white text-[#1A3A5C] shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <BookOpen className="w-3 h-3" /> Semestral
+            </button>
+          </div>
+          <Button variant="outline" size="sm" className="text-xs" onClick={handlePrint}>
+            <Printer className="w-3 h-3 mr-1" /> Imprimir / Salvar PDF
+          </Button>
+        </div>
+      </motion.div>
+
+      {/* Week Selection */}
+      {printMode === 'semana' && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }} className="print:hidden">
+          <Tabs value={selectedSemana} onValueChange={setSelectedSemana}>
+            <TabsList className="h-8 flex-wrap">
+              {cardapio.semanas.map((s) => (
+                <TabsTrigger key={s.id} value={String(s.numero)} className="text-[10px] h-6 px-2">
+                  Sem {s.numero}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </motion.div>
+      )}
+
+      {/* Print Pages */}
+      <div className="print-container">
+        {semanasToPrint.map((semana) => (
+          <SemanaPrintPage key={semana.id} semana={semana} cardapio={cardapio} />
+        ))}
+      </div>
+    </div>
+  )
+}

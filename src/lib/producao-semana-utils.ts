@@ -1,0 +1,125 @@
+// ============================================================
+// PRODUÇÃO SEMANA — Visão consolidada (por dia de PRODUÇÃO)
+// ============================================================
+
+import type { ItemProducao, ProducaoDia } from './producao-utils'
+import type { DiaProducao } from './date-utils'
+import { DIAS_PRODUCAO } from './date-utils'
+
+export interface EscolaConsolidada {
+  id: string
+  nome: string
+  nome_curto: string
+  rota: string
+  ordem: number
+  pf: Record<DiaProducao, number>
+  pcq: Record<DiaProducao, number>
+  lanche: Record<DiaProducao, number>
+  total_pf: number
+  total_pcq: number
+  total_lanche: number
+}
+
+export interface ProducaoConsolidada {
+  escolas: EscolaConsolidada[]
+  totais_por_dia: {
+    pf: Record<DiaProducao, number>
+    pcq: Record<DiaProducao, number>
+    lanche: Record<DiaProducao, number>
+  }
+  total_pf: number
+  total_pcq: number
+  total_lanche: number
+}
+
+function diasVazios(): Record<DiaProducao, number> {
+  return { domingo: 0, segunda: 0, terca: 0, quarta: 0, quinta: 0, sexta: 0 }
+}
+
+export function consolidarProducaoSemana(
+  producao: ProducaoDia[],
+  ordensEscola?: Map<string, number>
+): ProducaoConsolidada {
+  const empty: ProducaoConsolidada = {
+    escolas: [],
+    totais_por_dia: { pf: diasVazios(), pcq: diasVazios(), lanche: diasVazios() },
+    total_pf: 0, total_pcq: 0, total_lanche: 0,
+  }
+
+  if (!Array.isArray(producao) || producao.length === 0) return empty
+
+  const mapa = new Map<string, EscolaConsolidada>()
+
+  function obterOuCriar(item: ItemProducao): EscolaConsolidada {
+    let e = mapa.get(item.escola_id)
+    if (!e) {
+      e = {
+        id: item.escola_id,
+        nome: item.escola_nome,
+        nome_curto: item.escola_curto,
+        rota: item.rota,
+        ordem: ordensEscola?.get(item.escola_id) ?? 999,
+        pf: diasVazios(),
+        pcq: diasVazios(),
+        lanche: diasVazios(),
+        total_pf: 0,
+        total_pcq: 0,
+        total_lanche: 0,
+      }
+      mapa.set(item.escola_id, e)
+    }
+    return e
+  }
+
+  // Processar todos os itens de todos os dias de produção,
+  // agrupando pelo dia de PRODUÇÃO (não pelo dia de entrega)
+  producao.forEach((diaP) => {
+    const diaProd = diaP.dia_key as DiaProducao
+    if (!DIAS_PRODUCAO.includes(diaProd)) return
+
+    const allItems = [
+      ...(Array.isArray(diaP?.itens_pf) ? diaP.itens_pf : []),
+      ...(Array.isArray(diaP?.itens_pcq) ? diaP.itens_pcq : []),
+      ...(Array.isArray(diaP?.itens_lanche) ? diaP.itens_lanche : []),
+    ]
+
+    allItems.forEach((item) => {
+      const e = obterOuCriar(item)
+
+      // PF_COMP é integrado ao PF (sem distinção)
+      if (item.produto === 'PF' || item.produto === 'PF_COMP') {
+        e.pf[diaProd] += item.quantidade
+        e.total_pf += item.quantidade
+      } else if (item.produto === 'PCQ') {
+        e.pcq[diaProd] += item.quantidade
+        e.total_pcq += item.quantidade
+      } else if (item.produto === 'LANCHE') {
+        e.lanche[diaProd] += item.quantidade
+        e.total_lanche += item.quantidade
+      }
+    })
+  })
+
+  const totais_por_dia = {
+    pf: diasVazios(),
+    pcq: diasVazios(),
+    lanche: diasVazios(),
+  }
+
+  let total_pf = 0, total_pcq = 0, total_lanche = 0
+
+  Array.from(mapa.values()).forEach((e) => {
+    DIAS_PRODUCAO.forEach((d) => {
+      totais_por_dia.pf[d] += e.pf[d]
+      totais_por_dia.pcq[d] += e.pcq[d]
+      totais_por_dia.lanche[d] += e.lanche[d]
+    })
+    total_pf += e.total_pf
+    total_pcq += e.total_pcq
+    total_lanche += e.total_lanche
+  })
+
+  const escolas = Array.from(mapa.values()).sort((a, b) => a.ordem - b.ordem)
+
+  return { escolas, totais_por_dia, total_pf, total_pcq, total_lanche }
+}
