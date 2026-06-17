@@ -13,7 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   ArrowLeft, RefreshCw, Copy, Users, Sandwich, Cookie, CheckCircle2, XCircle,
-  AlertTriangle, Calendar, Info, Sparkles, Layers
+  AlertTriangle, Calendar, Info, Sparkles, Layers, CalendarOff
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DIAS_SEMANA_ISO } from '@/lib/preparacao-categorias'
@@ -65,6 +65,7 @@ interface ReplicarResponse {
     escola_nome: string
     cardapio_id: string
     trocas: { tipo: 'PAO' | 'LANCHE'; dia_origem: string; dia_destino: string; semanas_afetadas: number }[]
+    feriados_marcados?: number
   }[]
   erros: { escola_id: string; motivo: string }[]
   base_info: {
@@ -73,6 +74,14 @@ interface ReplicarResponse {
     dias_pao_base: string[]
     dias_lanche_base: string[]
   }
+}
+
+interface FeriadoSemestre {
+  id: string
+  data: string  // YYYY-MM-DD
+  nome: string
+  tipo: string
+  escolas_afetadas: string
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -105,18 +114,24 @@ export default function ReplicarCardapioPage() {
   const [configs, setConfigs] = useState<Record<string, EscolaConfig>>({})
   const [expandirParaSemestre, setExpandirParaSemestre] = useState(true)
   const [sobrescreverExistente, setSobrescreverExistente] = useState(false)
+  // v8: feriados do semestre
+  const [feriados, setFeriados] = useState<FeriadoSemestre[]>([])
+  const [marcarFeriados, setMarcarFeriados] = useState(true)
 
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [cardRes, escRes] = await Promise.all([
+      const [cardRes, escRes, ferRes] = await Promise.all([
         fetch(`/api/nutricao/cardapios/${cardapioId}`),
         fetch('/api/escolas'),
+        fetch('/api/feriados'),
       ])
       const cardData = await cardRes.json()
       const escData = await escRes.json()
+      const ferData = await ferRes.json()
       setCardapio(cardData)
       setEscolas(Array.isArray(escData) ? escData : [])
+      setFeriados(Array.isArray(ferData) ? ferData : [])
     } catch (err) {
       console.error(err)
       toast.error('Erro ao carregar dados')
@@ -232,6 +247,13 @@ export default function ReplicarCardapioPage() {
           escolas: escolasArr,
           expandir_para_semestre: expandirParaSemestre,
           sobrescrever_existente: sobrescreverExistente,
+          marcar_feriados: marcarFeriados,
+          feriados: feriados.map(f => ({
+            data: f.data,
+            nome: f.nome,
+            tipo: f.tipo,
+            escolas_afetadas: f.escolas_afetadas,
+          })),
         }),
       })
       if (!res.ok) {
@@ -440,9 +462,101 @@ export default function ReplicarCardapioPage() {
                 </p>
               </div>
             </label>
+
+            {/* v8: Marcar feriados */}
+            <label className="flex items-center gap-3 cursor-pointer">
+              <Checkbox
+                checked={marcarFeriados}
+                onCheckedChange={(v) => setMarcarFeriados(Boolean(v))}
+              />
+              <div>
+                <p className="text-sm font-medium flex items-center gap-1.5">
+                  <CalendarOff className="w-3.5 h-3.5 text-red-500" />
+                  Marcar feriados do semestre
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Nos dias de feriado, os itens normais serão removidos (dia vazio) e a semana será marcada como diferenciada. Feriados em fins de semana são ignorados.
+                </p>
+              </div>
+            </label>
           </CardContent>
         </Card>
       </motion.div>
+
+      {/* v8: Lista de feriados do semestre */}
+      {marcarFeriados && feriados.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.18 }}
+        >
+          <Card className="border-red-200/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold text-[#1A3A5C] flex items-center gap-2">
+                <CalendarOff className="w-4 h-4 text-red-500" />
+                Feriados do Semestre ({feriados.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                {feriados.map((f) => {
+                  // Formata data para dd/mm
+                  const [y, m, d] = f.data.split('-')
+                  const dataFmt = `${d}/${m}`
+                  // Dia da semana
+                  const dt = new Date(f.data + 'T12:00:00')
+                  const diaSemana = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][dt.getDay()]
+                  const ehFimDeSemana = dt.getDay() === 0 || dt.getDay() === 6
+                  return (
+                    <div
+                      key={f.id}
+                      className={`p-2 rounded-md border flex items-center gap-2 text-xs ${
+                        ehFimDeSemana
+                          ? 'bg-gray-50 border-gray-200 opacity-60'
+                          : 'bg-red-50/50 border-red-200'
+                      }`}
+                    >
+                      <div className="flex-shrink-0 w-12 text-center">
+                        <div className="font-bold text-[#1A3A5C]">{dataFmt}</div>
+                        <div className="text-[9px] text-muted-foreground">{diaSemana}</div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{f.nome}</div>
+                        <div className="text-[9px] text-muted-foreground flex items-center gap-1">
+                          <Badge variant="outline" className="text-[8px] h-3 px-1">{f.tipo}</Badge>
+                          {ehFimDeSemana && <span className="text-gray-500">(fim de semana — ignorado)</span>}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {feriados.length > 0 && (
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  💡 Total de {feriados.filter(f => {
+                    const dt = new Date(f.data + 'T12:00:00')
+                    return dt.getDay() !== 0 && dt.getDay() !== 6
+                  }).length} feriado(s) em dias úteis que serão marcados nos cardápios replicados.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Aviso se não há feriados cadastrados */}
+      {marcarFeriados && feriados.length === 0 && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="p-3 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-amber-800">
+                <strong>Nenhum feriado cadastrado.</strong> Cadastre feriados em <code className="px-1 bg-amber-100 rounded">/feriados</code> para que sejam automaticamente marcados nos cardápios replicados.
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Lista de escolas + configurador */}
       <motion.div

@@ -178,7 +178,8 @@ export async function POST(
           }
 
           // Cria novo cardápio para a escola
-          const nomeInstancia = `${original.nome} — ${escola.nome_curto || escola.nome}`
+          // v8: Nome do cardápio = "Cardápio {nome da escola} {ano}/{semestre}"
+          const nomeInstancia = `Cardápio ${escola.nome} ${original.ano}/${original.semestre}`
           const card = await tx.cardapioNutricional.create({
             data: {
               nome: nomeInstancia,

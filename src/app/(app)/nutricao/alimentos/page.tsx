@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
-import { Apple, Plus, Search, Pencil, Trash2, ChevronDown, ChevronUp, RefreshCw, X } from 'lucide-react'
+import { Apple, Plus, Search, Pencil, Trash2, ChevronDown, ChevronUp, RefreshCw, X, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { GRUPOS_ALIMENTOS } from '@/lib/nutricao-utils'
 import { normalizeText } from '@/lib/busca-utils'
@@ -156,6 +156,35 @@ export default function AlimentosPage() {
       acucar_adicionado_g: alimento.acucar_adicionado_g,
     })
     setDialogOpen(true)
+  }
+
+  // v8: Duplicar alimento — abre o dialog de novo já preenchido com os dados do alimento original
+  // (codigo_taco fica null porque é uma cópia, e nome fica com sufixo " (cópia)" para evitar duplicata)
+  function openDuplicateDialog(alimento: Alimento) {
+    setEditingId(null)  // null = modo criação
+    setForm({
+      codigo_taco: null,  // cópia não tem código TACO
+      nome: `${alimento.nome} (cópia)`,
+      grupo: alimento.grupo,
+      medida_caseira: alimento.medida_caseira,
+      gramas_por_medida: alimento.gramas_por_medida,
+      energia_kcal: alimento.energia_kcal,
+      carboidratos_g: alimento.carboidratos_g,
+      proteinas_g: alimento.proteinas_g,
+      lipidios_g: alimento.lipidios_g,
+      fibra_alimentar_g: alimento.fibra_alimentar_g,
+      sodio_mg: alimento.sodio_mg,
+      ferro_mg: alimento.ferro_mg,
+      ferro_heme_mg: alimento.ferro_heme_mg,
+      vitamina_a_mcg: alimento.vitamina_a_mcg,
+      vitamina_c_mg: alimento.vitamina_c_mg,
+      calcio_mg: alimento.calcio_mg,
+      magnesio_mg: alimento.magnesio_mg,
+      zinco_mg: alimento.zinco_mg,
+      acucar_adicionado_g: alimento.acucar_adicionado_g,
+    })
+    setDialogOpen(true)
+    toast.info(`Duplicando "${alimento.nome}" — ajuste o nome e salve`)
   }
 
   async function handleSave() {
@@ -304,6 +333,7 @@ export default function AlimentosPage() {
                       <TableHead className="text-[#1A3A5C] font-semibold text-right hidden 2xl:table-cell">Prot</TableHead>
                       <TableHead className="text-[#1A3A5C] font-semibold text-right hidden 2xl:table-cell">Lip</TableHead>
                       <TableHead className="text-[#1A3A5C] font-semibold text-right hidden 2xl:table-cell">Sódio</TableHead>
+                      <TableHead className="text-[#1A3A5C] font-semibold text-right hidden 2xl:table-cell">Açúcar</TableHead>
                       <TableHead className="text-right w-24">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -338,12 +368,29 @@ export default function AlimentosPage() {
                             <TableCell className="text-right text-xs hidden 2xl:table-cell">{a.proteinas_g.toFixed(1)}</TableCell>
                             <TableCell className="text-right text-xs hidden 2xl:table-cell">{a.lipidios_g.toFixed(1)}</TableCell>
                             <TableCell className="text-right text-xs hidden 2xl:table-cell">{a.sodio_mg.toFixed(0)}</TableCell>
+                            <TableCell className="text-right text-xs hidden 2xl:table-cell">
+                              {a.acucar_adicionado_g > 0 ? (
+                                <span className="text-orange-600 font-medium">{a.acucar_adicionado_g.toFixed(1)}</span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
                             <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1">
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEditDialog(a)}>
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEditDialog(a)} title="Editar">
                                   <Pencil className="w-3 h-3" />
                                 </Button>
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700" onClick={() => setDeleteId(a.id)}>
+                                {/* v8: Duplicar — abre dialog de novo preenchido com dados do alimento */}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-blue-500 hover:text-blue-700 hover:bg-blue-50"
+                                  onClick={() => openDuplicateDialog(a)}
+                                  title="Duplicar alimento"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </Button>
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700" onClick={() => setDeleteId(a.id)} title="Excluir">
                                   <Trash2 className="w-3 h-3" />
                                 </Button>
                               </div>

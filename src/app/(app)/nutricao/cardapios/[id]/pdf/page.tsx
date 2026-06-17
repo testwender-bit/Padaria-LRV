@@ -97,6 +97,7 @@ interface CardapioDia {
   id: string
   dia_semana: string
   itens: CardapioItem[]
+  feriado?: { nome: string; tipo: string } | null  // v8: null se não for feriado
 }
 
 interface CardapioSemana {
@@ -192,7 +193,55 @@ function calcularResumoSemanaPDF(
 
 // ── Week Page Component (LANDSCAPE A4 — B&W Optimized) ────────
 
-function SemanaPrintPage({ semana, cardapio }: { semana: CardapioSemana; cardapio: CardapioFull }) {
+interface FeriadoInfo {
+  data: string
+  nome: string
+  tipo: string
+  escolas_afetadas: string
+}
+
+function getFeriadoDoDiaCalc(
+  dataInicio: string,
+  diaSemanaPt: string,
+  feriados: FeriadoInfo[],
+  categoriaEscola: string
+): { nome: string; tipo: string } | null {
+  const diaToIdx: Record<string, number> = {
+    'domingo': 0, 'segunda': 1, 'terca': 2, 'quarta': 3,
+    'quinta': 4, 'sexta': 5, 'sabado': 6,
+  }
+  const idxAlvo = diaToIdx[diaSemanaPt]
+  if (idxAlvo === undefined) return null
+  const offsetDias = idxAlvo - 1
+  if (offsetDias < 0 || offsetDias > 4) return null
+  if (!dataInicio) return null
+
+  const inicio = new Date(dataInicio + 'T12:00:00')
+  const dataDia = new Date(inicio)
+  dataDia.setDate(inicio.getDate() + offsetDias)
+  const dataIso = dataDia.toISOString().split('T')[0]
+
+  const feriado = feriados.find((f) => f.data === dataIso)
+  if (!feriado) return null
+  const afetadas = feriado.escolas_afetadas || 'TODAS'
+  if (afetadas === 'TODAS') return { nome: feriado.nome, tipo: feriado.tipo }
+  const map: Record<string, string[]> = {
+    'REGULARES': ['REGULAR'], 'INTEGRAIS': ['INTEGRAL'], 'CRECHES': ['CRECHE'],
+    'BIFASICA': ['BIFASICA'], 'INTERIOR': ['INTERIOR'], 'OUTROS': ['OUTROS'],
+  }
+  if (!(map[afetadas] || [afetadas]).includes(categoriaEscola)) return null
+  return { nome: feriado.nome, tipo: feriado.tipo }
+}
+
+function SemanaPrintPage({
+  semana,
+  cardapio,
+  feriados = [],
+}: {
+  semana: CardapioSemana
+  cardapio: CardapioFull
+  feriados?: FeriadoInfo[]
+}) {
   const tiposRefeicao = semana.dias
     .flatMap((d) => d.itens.map((i) => i.tipo_refeicao))
     .filter((tr, idx, arr) => arr.findIndex((t) => t.id === tr.id) === idx)
@@ -226,6 +275,21 @@ function SemanaPrintPage({ semana, cardapio }: { semana: CardapioSemana; cardapi
           <span className="sp-meta-item"><strong>Categoria:</strong> {cardapio.categoria_escola}</span>
           <span className="sp-meta-divider">&#x2022;</span>
           <span className="sp-meta-item"><strong>Fase:</strong> {getFaseLabel(cardapio.fase_escolar)}</span>
+          {/* v8: Nutricionistas no header (após fase) */}
+          {(cardapio.equipe_nutricionistas?.length ?? 0) > 0 && (
+            <>
+              <span className="sp-meta-divider">&#x2022;</span>
+              <span className="sp-meta-item">
+                <strong>Nutricionistas:</strong>{' '}
+                {cardapio.equipe_nutricionistas!.map((n, i) => (
+                  <span key={n.id}>
+                    {n.nome} <span style={{ fontSize: '4pt', fontStyle: 'italic', color: '#999' }}>CRN {n.crn}</span>
+                    {i < cardapio.equipe_nutricionistas!.length - 1 ? ', ' : ''}
+                  </span>
+                ))}
+              </span>
+            </>
+          )}
         </div>
         <div className="sp-header-week">
           <span className="sp-week-label">Semana {semana.numero}</span>
@@ -241,7 +305,9 @@ function SemanaPrintPage({ semana, cardapio }: { semana: CardapioSemana; cardapi
             <span className="sp-alergeno-badge sp-alergeno-badge-sm">
               {a.sigla}
             </span>
-            <span className="sp-legend-nome">{a.nome}</span>
+            <span className="sp-legend-nome">
+              {a.sigla === 'L' ? 'Leite/Lactose' : a.nome}
+            </span>
           </span>
         ))}
       </div>
@@ -251,12 +317,24 @@ function SemanaPrintPage({ semana, cardapio }: { semana: CardapioSemana; cardapi
         <thead>
           <tr>
             <th className="sp-th-ref">Refeição</th>
-            {DIAS_SEMANA_NUTRI.map((dia) => (
-              <th key={dia.value} className="sp-th-dia">
-                <span className="sp-dia-nome">{dia.label}</span>
-                <span className="sp-dia-data">{getDiaDate(dia.value)}</span>
-              </th>
-            ))}
+            {DIAS_SEMANA_NUTRI.map((dia) => {
+              const diaData = semana.dias.find((d) => d.dia_semana === dia.value)
+              const feriado = getFeriadoDoDiaCalc(semana.data_inicio, dia.value, feriados, cardapio.categoria_escola)
+              return (
+                <th
+                  key={dia.value}
+                  className={`sp-th-dia ${feriado ? 'sp-th-dia-feriado' : ''}`}
+                >
+                  <span className="sp-dia-nome">{dia.label}</span>
+                  <span className="sp-dia-data">{getDiaDate(dia.value)}</span>
+                  {feriado && (
+                    <span className="sp-dia-feriado" title={`Feriado: ${feriado.nome}`}>
+                      🚫 {feriado.nome}
+                    </span>
+                  )}
+                </th>
+              )
+            })}
           </tr>
         </thead>
         <tbody>
@@ -269,9 +347,19 @@ function SemanaPrintPage({ semana, cardapio }: { semana: CardapioSemana; cardapi
               {DIAS_SEMANA_NUTRI.map((dia) => {
                 const diaData = semana.dias.find((d) => d.dia_semana === dia.value)
                 const itens = diaData?.itens.filter((i) => i.tipo_refeicao_id === tr.id) || []
+                const feriado = getFeriadoDoDiaCalc(semana.data_inicio, dia.value, feriados, cardapio.categoria_escola)
                 return (
-                  <td key={dia.value} className="sp-td-dia">
-                    {itens.length > 0 ? (
+                  <td
+                    key={dia.value}
+                    className={`sp-td-dia ${feriado ? 'sp-td-dia-feriado' : ''}`}
+                  >
+                    {feriado ? (
+                      <div className="sp-feriado-cell">
+                        <span className="sp-feriado-icon">🚫</span>
+                        <span className="sp-feriado-text">Feriado</span>
+                        <span className="sp-feriado-name">{feriado.nome}</span>
+                      </div>
+                    ) : itens.length > 0 ? (
                       <ul className="sp-prep-list">
                         {itens.map((item) => {
                           const alergenos = detectarAlergenosPreparacao(
@@ -359,26 +447,7 @@ function SemanaPrintPage({ semana, cardapio }: { semana: CardapioSemana; cardapi
         <span>* Cardápio sujeito a alterações sem aviso prévio.</span>
       </div>
 
-      {/* ── EQUIPE DE NUTRIÇÃO ── linha única compacta */}
-      {(cardapio.equipe_nutricionistas?.length ?? 0) > 0 && (
-        <div className="sp-equipe">
-          <span className="sp-equipe-label">Equipe de Nutrição:</span>
-          {cardapio.equipe_nutricionistas!.map((nut, idx) => (
-            <span key={nut.id} className="sp-equipe-pessoa">
-              {nut.nome} <span className="sp-equipe-crn">CRN {nut.crn}</span>
-              {idx < cardapio.equipe_nutricionistas!.length - 1 && (
-                <span className="sp-equipe-sep">·</span>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* ── FOOTER ── */}
-      <div className="sp-footer">
-        <span>Cardápio Escolar PNAE — {cardapio.ano}/{cardapio.semestre}</span>
-        <span>Gerado em {new Date().toLocaleDateString('pt-BR')}</span>
-      </div>
+      {/* v8: Footer removido (mensagem PNAE + data de criação) para economizar espaço */}
     </div>
   )
 }
@@ -394,15 +463,22 @@ export default function CardapioPdfPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedSemana, setSelectedSemana] = useState('1')
   const [printMode, setPrintMode] = useState<'semana' | 'semestral'>('semana')
+  // v8: feriados para mostrar no PDF
+  const [feriados, setFeriados] = useState<FeriadoInfo[]>([])
 
   const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}`)
-      if (!res.ok) throw new Error('Erro ao carregar cardápio')
-      const data = await res.json()
+      const [cardRes, ferRes] = await Promise.all([
+        fetch(`/api/nutricao/cardapios/${cardapioId}`),
+        fetch('/api/feriados'),
+      ])
+      if (!cardRes.ok) throw new Error('Erro ao carregar cardápio')
+      const data = await cardRes.json()
+      const ferData = ferRes.ok ? await ferRes.json() : []
       setCardapio(data)
+      setFeriados(Array.isArray(ferData) ? ferData : [])
     } catch (err) {
       console.error(err)
       setError('Não foi possível carregar o cardápio.')
@@ -509,7 +585,7 @@ export default function CardapioPdfPage() {
       {/* Print Pages */}
       <div className="print-container">
         {semanasToPrint.map((semana) => (
-          <SemanaPrintPage key={semana.id} semana={semana} cardapio={cardapio} />
+          <SemanaPrintPage key={semana.id} semana={semana} cardapio={cardapio} feriados={feriados} />
         ))}
       </div>
     </div>

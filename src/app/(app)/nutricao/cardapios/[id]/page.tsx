@@ -17,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock
+  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, CalendarOff
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -268,18 +268,21 @@ export default function CardapioEditorPage() {
   const [editingPorcoesId, setEditingPorcoesId] = useState<string | null>(null)
   // Versão mobile (sidebar sempre colapsável)
   const [isMobile, setIsMobile] = useState(false)
+  // v8: feriados do semestre (para mostrar badge no dia)
+  const [feriados, setFeriados] = useState<Array<{ id: string; data: string; nome: string; tipo: string; escolas_afetadas: string }>>([])
 
   const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [cardRes, prepRes, tipoRes, catRes, metaRes, topRes] = await Promise.all([
+      const [cardRes, prepRes, tipoRes, catRes, metaRes, topRes, ferRes] = await Promise.all([
         fetch(`/api/nutricao/cardapios/${cardapioId}`),
         fetch('/api/nutricao/preparacoes'),
         fetch('/api/nutricao/tipos-refeicao'),
         fetch('/api/nutricao/categorias-refeicao'),
         fetch('/api/nutricao/metas'),
         fetch('/api/nutricao/preparacoes?recentes=true&limite_recentes=6'),
+        fetch('/api/feriados'),
       ])
       if (!cardRes.ok) throw new Error('Erro ao carregar cardápio')
       const cardData = await cardRes.json()
@@ -288,10 +291,12 @@ export default function CardapioEditorPage() {
       const catData = catRes.ok ? await catRes.json() : []
       const metaData = metaRes.ok ? await metaRes.json() : []
       const topData = topRes.ok ? await topRes.json() : []
+      const ferData = ferRes.ok ? await ferRes.json() : []
       setCardapio(cardData)
       setSelectedFase(cardData.fase_escolar || 'FUND_FINAL')
       setPreparacoes(Array.isArray(prepData) ? prepData : [])
       setTiposRefeicao(Array.isArray(tipoData) ? tipoData : [])
+      setFeriados(Array.isArray(ferData) ? ferData : [])
       setCategoriasRefeicao(Array.isArray(catData) ? catData : [])
       setMetas(Array.isArray(metaData) ? metaData : [])
       setTopPreparacoes(Array.isArray(topData) ? topData : [])
@@ -362,7 +367,11 @@ export default function CardapioEditorPage() {
     if (!semanaAtual) return []
     const dia = semanaAtual.dias.find((d) => d.dia_semana === diaSemana)
     if (!dia) return []
-    return dia.itens.filter((i) => i.tipo_refeicao_id === tipoRefeicaoId)
+    // v8: filtra itens onde TODOS os ingredientes têm percapita = 0 para a fase atual
+    // (ex: vitamina só com açúcar numa fase onde açúcar é 0 → some do cardápio)
+    return dia.itens.filter((i) =>
+      i.tipo_refeicao_id === tipoRefeicaoId && itemVisivelNaFase(i)
+    )
   }
 
   // Get percapita-adjusted gramas for an ingredient based on cardápio's fase_escolar
@@ -374,13 +383,30 @@ export default function CardapioEditorPage() {
     return calcularPercapitaPorFase(ing.quantidade_gramas, cardapio.fase_escolar as FaseEscolar)
   }
 
+  // v8: Verifica se um item (preparação) deve aparecer no cardápio da fase atual.
+  // Regra: se TODOS os ingredientes têm percapita = 0 para esta fase, o item é oculto.
+  // Exemplo: Vitamina com açúcar tem percapita 0 para creche (creches não podem ter açúcar)
+  // → se a única preparação da vitamina é açúcar, ela some do cardápio da creche.
+  // Mas se a vitamina tem fruta + açúcar, a fruta ainda aparece (com percapita > 0)
+  // e o açúcar fica oculto (percapita 0). O cálculo nutricional automaticamente ignora
+  // ingredientes com 0g.
+  function itemVisivelNaFase(item: CardapioItem): boolean {
+    if (!cardapio) return true
+    // Se tem pelo menos 1 ingrediente com percapita > 0, mostra o item
+    return item.preparacao.ingredientes.some((ing) => {
+      const gramas = getGramasForFase(ing)
+      return gramas > 0
+    })
+  }
+
   // Calculate nutritional summary for current week
   const resumoNutricional = useMemo((): ResumoNutricionalSemana | null => {
     if (!semanaAtual || !cardapio) return null
 
     const diasNutrientes: NutrienteDia[] = []
     for (const dia of semanaAtual.dias) {
-      const diaNutri = dia.itens.reduce<NutrienteDia>((acc, item) => {
+      // v8: só considera itens visíveis na fase atual (percapita > 0 em pelo menos 1 ingrediente)
+      const diaNutri = dia.itens.filter(itemVisivelNaFase).reduce<NutrienteDia>((acc, item) => {
         const refeicaoNutri = calcularNutrientesRefeicao([{
           preparacao: {
             ingredientes: item.preparacao.ingredientes.map((ing) => ({
@@ -753,13 +779,53 @@ export default function CardapioEditorPage() {
     }
   }
 
+  // ── v8: Helper para verificar se um dia da semana atual é feriado ──
+  // Retorna o feriado se a data cair num dia da semana atual, ou null caso contrário.
+  function getFeriadoDoDia(diaSemanaPt: string): { nome: string; tipo: string } | null {
+    if (!semanaAtual || !cardapio) return null
+    // Mapeia dia_semana (segunda, terca, ...) → índice JS (0=dom, 1=seg, ...)
+    const diaToIdx: Record<string, number> = {
+      'domingo': 0, 'segunda': 1, 'terca': 2, 'quarta': 3,
+      'quinta': 4, 'sexta': 5, 'sabado': 6,
+    }
+    const idxAlvo = diaToIdx[diaSemanaPt]
+    if (idxAlvo === undefined) return null
+
+    // Calcula datas dos dias da semana atual
+    const inicio = new Date(semanaAtual.data_inicio + 'T12:00:00')
+    // Ajusta: data_inicio deve ser segunda (índice 1)
+    // Calcula data de cada dia: segunda = inicio + 0, terca = inicio + 1, ..., sexta = inicio + 4
+    const offsetDias = idxAlvo - 1  // segunda=0 offset, terca=1, etc
+    if (offsetDias < 0 || offsetDias > 4) return null  // só segunda-sexta
+
+    const dataDia = new Date(inicio)
+    dataDia.setDate(inicio.getDate() + offsetDias)
+    const dataIso = dataDia.toISOString().split('T')[0]
+
+    // Procura feriado nessa data
+    const feriado = feriados.find((f) => f.data === dataIso)
+    if (!feriado) return null
+
+    // Verifica se afeta esta categoria de escola
+    const afetadas = feriado.escolas_afetadas || 'TODAS'
+    if (afetadas === 'TODAS') return { nome: feriado.nome, tipo: feriado.tipo }
+    const map: Record<string, string[]> = {
+      'REGULARES': ['REGULAR'], 'INTEGRAIS': ['INTEGRAL'], 'CRECHES': ['CRECHE'],
+      'BIFASICA': ['BIFASICA'], 'INTERIOR': ['INTERIOR'], 'OUTROS': ['OUTROS'],
+    }
+    const categoriasAfetadas = map[afetadas] || [afetadas]
+    if (!categoriasAfetadas.includes(cardapio.categoria_escola)) return null
+    return { nome: feriado.nome, tipo: feriado.tipo }
+  }
+
   // ── NOVO v7: Resumo nutricional por dia (para mini-painel) ──
   function getResumoDia(diaSemana: string): { energia: number; ferro_heme: boolean; vit_a: boolean; alertas: number } {
     if (!semanaAtual || !cardapio) return { energia: 0, ferro_heme: false, vit_a: false, alertas: 0 }
     const dia = semanaAtual.dias.find(d => d.dia_semana === diaSemana)
     if (!dia || dia.itens.length === 0) return { energia: 0, ferro_heme: false, vit_a: false, alertas: 0 }
 
-    const diaNutri = dia.itens.reduce<NutrienteDia>((acc, item) => {
+    // v8: só considera itens visíveis na fase atual
+    const diaNutri = dia.itens.filter(itemVisivelNaFase).reduce<NutrienteDia>((acc, item) => {
       const refeicaoNutri = calcularNutrientesRefeicao([{
         preparacao: {
           ingredientes: item.preparacao.ingredientes.map((ing) => ({
@@ -1281,22 +1347,48 @@ export default function CardapioEditorPage() {
                 >
                   {/* Day Header with Copy button + traffic-light dot */}
                   <div className="bg-[#1A3A5C] text-white py-1.5 px-2 flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <span className={`w-2 h-2 rounded-full ${
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                         semaforo === 'green' ? 'bg-emerald-400' :
                         semaforo === 'amber' ? 'bg-amber-400' :
                         semaforo === 'red' ? 'bg-red-400' : 'bg-gray-400'
                       }`} title={`Energia: ${resumoDia.energia.toFixed(0)} kcal`} />
-                      <span className="text-xs font-semibold">{dia.label}</span>
+                      <span className="text-xs font-semibold truncate">{dia.label}</span>
+                      {/* v8: Badge de feriado */}
+                      {(() => {
+                        const feriado = getFeriadoDoDia(dia.value)
+                        return feriado ? (
+                          <span
+                            className="ml-1 inline-flex items-center gap-0.5 px-1 py-0 rounded bg-red-500/30 border border-red-400/50 text-[8px] text-red-100 font-bold flex-shrink-0"
+                            title={`Feriado: ${feriado.nome} (${feriado.tipo})`}
+                          >
+                            <CalendarOff className="w-2 h-2" />
+                            <span className="truncate max-w-[60px]">{feriado.nome}</span>
+                          </span>
+                        ) : null
+                      })()}
                     </div>
                     <button
                       onClick={() => openCopyDialog(dia.value, currentSemana)}
-                      className="text-white/70 hover:text-white transition-colors"
+                      className="text-white/70 hover:text-white transition-colors flex-shrink-0"
                       title="Copiar refeições para outro dia"
                     >
                       <Copy className="w-3 h-3" />
                     </button>
                   </div>
+
+                  {/* v8: Aviso de feriado (banner abaixo do header) */}
+                  {(() => {
+                    const feriado = getFeriadoDoDia(dia.value)
+                    return feriado ? (
+                      <div className="bg-red-50 border-b border-red-200 px-2 py-1 text-[9px] text-red-700 flex items-center gap-1">
+                        <CalendarOff className="w-2.5 h-2.5 flex-shrink-0" />
+                        <span className="font-semibold">Feriado:</span>
+                        <span className="truncate">{feriado.nome}</span>
+                        <Badge variant="outline" className="text-[7px] h-3 px-0.5 ml-auto flex-shrink-0 border-red-300 text-red-600">{feriado.tipo}</Badge>
+                      </div>
+                    ) : null
+                  })()}
 
                   {/* Refeição slots */}
                   <div className="p-1.5 space-y-1.5">

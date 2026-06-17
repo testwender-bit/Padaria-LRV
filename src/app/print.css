@@ -752,7 +752,7 @@
   /* Override the general @page portrait for cardápio pages */
   @page {
     size: A4 landscape;
-    margin: 6mm 6mm 5mm 6mm;
+    margin: 5mm 5mm 4mm 5mm;
   }
 
   .semana-page {
@@ -777,11 +777,11 @@
   .sp-header {
     background: #111 !important;
     color: white !important;
-    padding: 2.5mm 5mm !important;
+    padding: 2mm 4mm !important;
     display: flex !important;
     justify-content: space-between !important;
     align-items: center !important;
-    gap: 3mm !important;
+    gap: 2mm !important;
     flex-shrink: 0 !important;
   }
   .sp-header-brand { flex-shrink: 0 !important; }
@@ -796,57 +796,57 @@
   .sp-header-meta {
     display: flex !important;
     align-items: center !important;
-    gap: 1.5mm !important;
+    gap: 1mm !important;
     flex: 1 !important;
     min-width: 0 !important;
     flex-wrap: wrap !important;
   }
-  .sp-meta-item { font-size: 5.5pt !important; color: #999 !important; }
-  .sp-meta-item strong { color: #ccc !important; font-weight: 600 !important; }
-  .sp-meta-divider { color: #555 !important; font-size: 5pt !important; margin: 0 0.5mm !important; }
+  .sp-meta-item { font-size: 6pt !important; color: #666 !important; }
+  .sp-meta-item strong { color: #999 !important; font-weight: 600 !important; }
+  .sp-meta-divider { color: #333 !important; font-size: 5pt !important; margin: 0 0.5mm !important; }
   .sp-header-week {
     display: flex !important;
     align-items: center !important;
     gap: 2mm !important;
     flex-shrink: 0 !important;
   }
-  .sp-week-label { font-size: 8pt !important; font-weight: 600 !important; color: #999 !important; }
-  .sp-week-dates { font-size: 6pt !important; color: #777 !important; }
+  .sp-week-label { font-size: 8pt !important; font-weight: 600 !important; color: #666 !important; }
+  .sp-week-dates { font-size: 6pt !important; color: #333 !important; }
 
   /* Table — premium typography for print */
   .sp-table {
     width: 100% !important;
     border-collapse: collapse !important;
-    font-size: 8pt !important;
+    font-size: 8.5pt !important;
     flex: 1 !important;
   }
   .sp-th-ref {
     width: 9% !important;
-    padding: 1.5mm 2.5mm !important;
+    padding: 1.2mm 2mm !important;
     text-align: left !important;
     font-weight: 700 !important;
     color: white !important;
     background: #222 !important;
     border: 0.5pt solid #444 !important;
-    font-size: 7.5pt !important;
+    font-size: 8pt !important;
     vertical-align: top !important;
     letter-spacing: 0.3pt !important;
   }
   .sp-th-dia {
     width: 18.2% !important;
-    padding: 1.5mm 2mm !important;
+    padding: 1.2mm 1.5mm !important;
     text-align: center !important;
     font-weight: 700 !important;
     color: white !important;
     background: #222 !important;
     border: 0.5pt solid #444 !important;
-    font-size: 7.5pt !important;
+    font-size: 8pt !important;
   }
-  .sp-dia-nome { display: block !important; font-size: 7.5pt !important; font-weight: 700 !important; letter-spacing: 0.3pt !important; }
-  .sp-dia-data { display: block !important; font-size: 5.5pt !important; color: #888 !important; font-weight: 400 !important; margin-top: 0.3mm !important; }
+  .sp-dia-nome { display: block !important; font-size: 8pt !important; font-weight: 700 !important; letter-spacing: 0.3pt !important; }
+  .sp-dia-data { display: block !important; font-size: 6pt !important; color: #333 !important; font-weight: 400 !important; margin-top: 0.3mm !important; }
   .sp-td-ref {
-    padding: 2mm 2.5mm !important;
-    border: 0.5pt solid #bbb !important;
+    padding: 1.5mm 2mm !important;
+    border: 0.5pt solid #999 !important;
     background: #f5f5f5 !important;
     vertical-align: top !important;
   }
@@ -855,43 +855,41 @@
     font-family: Carlito, 'Segoe UI', Roboto, -apple-system, sans-serif !important;
     font-weight: 700 !important;
     color: #111 !important;
-    font-size: 8.5pt !important;
+    font-size: 9pt !important;
     letter-spacing: 0.1pt !important;
   }
-  .sp-ref-hora { display: block !important; font-size: 5.5pt !important; color: #888 !important; margin-top: 0.3mm !important; font-weight: 500 !important; }
+  .sp-ref-hora { display: block !important; font-size: 6pt !important; color: #333 !important; margin-top: 0.3mm !important; font-weight: 500 !important; }
   .sp-td-dia {
-    padding: 1.5mm 2mm !important;
-    border: 0.5pt solid #bbb !important;
+    padding: 1.2mm 1.5mm !important;
+    border: 0.5pt solid #999 !important;
     vertical-align: top !important;
   }
   .sp-prep-list { list-style: none !important; margin: 0 !important; padding: 0 !important; }
-  .sp-prep-item { margin-bottom: 1.2mm !important; }
+  .sp-prep-item { margin-bottom: 1mm !important; }
   .sp-prep-nome {
-    /* Clean, rounded, formal font for preparations — bold stands out */
     font-family: Carlito, 'Segoe UI', Roboto, -apple-system, sans-serif !important;
     font-weight: 700 !important;
-    font-size: 8pt !important;
+    font-size: 8.5pt !important;
     color: #111 !important;
     letter-spacing: 0.1pt !important;
     line-height: 1.3 !important;
   }
   .sp-prep-ing {
-    /* Same rounded font, smaller and lighter for ingredients */
     font-family: Carlito, 'Segoe UI', Roboto, -apple-system, sans-serif !important;
-    font-size: 5.5pt !important;
-    color: #555 !important;
+    font-size: 6pt !important;
+    color: #333 !important;
     line-height: 1.25 !important;
     margin-top: 0.5mm !important;
     font-weight: 400 !important;
   }
-  .sp-prep-vazio { color: #ccc !important; font-size: 7.5pt !important; }
+  .sp-prep-vazio { color: #999 !important; font-size: 7.5pt !important; }
   .sp-row:nth-child(even) .sp-td-dia { background: #fafafa !important; }
   .sp-row:nth-child(even) .sp-td-ref { background: #eee !important; }
 
   /* Resumo Nutricional — compact horizontal strip, B&W */
   .sp-resumo {
     border-top: 1.5pt solid #333 !important;
-    padding: 1.5mm 5mm !important;
+    padding: 1mm 4mm !important;
     page-break-inside: avoid !important;
     flex-shrink: 0 !important;
     background: #fafafa !important;
@@ -910,7 +908,7 @@
     gap: 3mm !important;
   }
   .sp-resumo-section {
-    border-left: 0.75pt solid #ccc !important;
+    border-left: 0.75pt solid #999 !important;
     padding-left: 2mm !important;
   }
   .sp-resumo-section:first-child { border-left: none !important; }
@@ -956,12 +954,12 @@
   .sp-legend-alergenos {
     display: flex !important;
     align-items: center !important;
-    gap: 2.5mm !important;
-    padding: 1mm 5mm !important;
+    gap: 2mm !important;
+    padding: 0.5mm 4mm !important;
     background: #f8fafc !important;
-    border-bottom: 0.5pt solid #ccc !important;
+    border-bottom: 0.5pt solid #999 !important;
     font-size: 5pt !important;
-    color: #475569 !important;
+    color: #334155 !important;
     flex-shrink: 0 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
@@ -977,7 +975,7 @@
   }
   .sp-legend-nome {
     font-size: 4.5pt !important;
-    color: #475569 !important;
+    color: #334155 !important;
   }
   .sp-prep-nome {
     display: flex !important;
@@ -1000,9 +998,9 @@
   .sp-equipe {
     padding: 1mm 5mm !important;
     background: #f8fafc !important;
-    border-bottom: 0.5pt solid #ccc !important;
+    border-bottom: 0.5pt solid #999 !important;
     font-size: 5pt !important;
-    color: #475569 !important;
+    color: #334155 !important;
     display: flex !important;
     align-items: center !important;
     flex-wrap: wrap !important;
@@ -1024,22 +1022,22 @@
   }
   .sp-equipe-crn {
     font-size: 4.5pt !important;
-    color: #64748b !important;
+    color: #334155 !important;
     font-style: italic !important;
   }
   .sp-equipe-sep {
-    color: #94a3b8 !important;
+    color: #334155 !important;
     margin: 0 0.5mm !important;
   }
   .sp-section-head {
     font-size: 4.5pt !important;
     font-weight: 700 !important;
-    color: #555 !important;
+    color: #333 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.5pt !important;
     margin-bottom: 0.5mm !important;
     padding-bottom: 0.5mm !important;
-    border-bottom: 0.5pt solid #ccc !important;
+    border-bottom: 0.5pt solid #999 !important;
   }
   .sp-kv {
     display: flex !important;
@@ -1047,23 +1045,23 @@
     align-items: baseline !important;
     font-size: 5.5pt !important;
     line-height: 1.4 !important;
-    color: #555 !important;
+    color: #333 !important;
   }
-  .sp-kv span { color: #777 !important; }
+  .sp-kv span { color: #333 !important; }
   .sp-kv strong { font-weight: 600 !important; color: #222 !important; }
   .sp-kv-total {
     margin-top: 0.5mm !important;
     padding-top: 0.5mm !important;
-    border-top: 0.5pt solid #ccc !important;
+    border-top: 0.5pt solid #999 !important;
   }
   .sp-kv-total strong { font-size: 6pt !important; }
 
   /* Footer — minimal */
   .sp-footer {
     padding: 1mm 5mm !important;
-    border-top: 0.5pt solid #ccc !important;
+    border-top: 0.5pt solid #999 !important;
     font-size: 5pt !important;
-    color: #999 !important;
+    color: #666 !important;
     display: flex !important;
     justify-content: space-between !important;
     flex-shrink: 0 !important;

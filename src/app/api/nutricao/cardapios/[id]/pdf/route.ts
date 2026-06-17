@@ -11,7 +11,26 @@ import {
 // ---------------------------------------------------------------------------
 // GET /api/nutricao/cardapios/[id]/pdf
 // Returns formatted cardápio data with nutritional summaries for PDF generation
+// Inclui marcação de feriados (v8) — dias de feriado aparecem com nome do feriado
 // ---------------------------------------------------------------------------
+
+// Helper: converte ISO date (YYYY-MM-DD) para dia da semana em pt
+function getDataDiaSemanaPt(dataIso: string): string {
+  const d = new Date(dataIso + 'T12:00:00')
+  const dias = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado']
+  return dias[d.getDay()]
+}
+
+// Helper: verifica se um feriado afeta uma categoria de escola
+function feriadoAfetaEscola(feriado: { escolas_afetadas: string }, categoriaEscola: string): boolean {
+  const afetadas = feriado.escolas_afetadas || 'TODAS'
+  if (afetadas === 'TODAS') return true
+  const map: Record<string, string[]> = {
+    'REGULARES': ['REGULAR'], 'INTEGRAIS': ['INTEGRAL'], 'CRECHES': ['CRECHE'],
+    'BIFASICA': ['BIFASICA'], 'INTERIOR': ['INTERIOR'], 'OUTROS': ['OUTROS'],
+  }
+  return (map[afetadas] || [afetadas]).includes(categoriaEscola)
+}
 
 export async function GET(
   _request: Request,
@@ -105,6 +124,31 @@ export async function GET(
       )
     }
 
+    // ── v8: Busca feriados para marcar no PDF ──
+    const feriados = await db.feriado.findMany({ orderBy: { data: 'asc' } })
+
+    // Helper: encontra feriado que cai num dia específico da semana
+    function getFeriadoDoDia(dataInicioSemana: string, diaSemanaPt: string): { nome: string; tipo: string } | null {
+      const diaToIdx: Record<string, number> = {
+        'domingo': 0, 'segunda': 1, 'terca': 2, 'quarta': 3,
+        'quinta': 4, 'sexta': 5, 'sabado': 6,
+      }
+      const idxAlvo = diaToIdx[diaSemanaPt]
+      if (idxAlvo === undefined) return null
+      const offsetDias = idxAlvo - 1  // segunda=0 offset
+      if (offsetDias < 0 || offsetDias > 4) return null
+
+      const inicio = new Date(dataInicioSemana + 'T12:00:00')
+      const dataDia = new Date(inicio)
+      dataDia.setDate(inicio.getDate() + offsetDias)
+      const dataIso = dataDia.toISOString().split('T')[0]
+
+      const feriado = feriados.find((f) => f.data === dataIso)
+      if (!feriado) return null
+      if (!feriadoAfetaEscola(feriado, cardapio!.categoria_escola)) return null
+      return { nome: feriado.nome, tipo: feriado.tipo }
+    }
+
     // Build enriched semanas with nutritional summaries
     const semanasComResumo = cardapio.semanas.map((semana) => {
       // Collect unique refeição types for this semana, preserving order
@@ -172,7 +216,14 @@ export async function GET(
         numero: semana.numero,
         data_inicio: semana.data_inicio,
         data_fim: semana.data_fim,
-        dias: semana.dias,
+        // v8: adiciona info de feriado em cada dia
+        dias: semana.dias.map((dia) => {
+          const feriado = getFeriadoDoDia(semana.data_inicio, dia.dia_semana)
+          return {
+            ...dia,
+            feriado: feriado,  // null se não for feriado, ou { nome, tipo }
+          }
+        }),
         tiposRefeicao: tiposOrdenados,
         resumoNutricional: {
           media_dia: mediaDia,

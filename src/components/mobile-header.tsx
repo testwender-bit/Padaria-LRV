@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { Separator } from '@/components/ui/separator'
 import { useState } from 'react'
 import { menuPrincipal, menuSecundario } from '@/lib/menu-config'
@@ -45,6 +45,8 @@ export function MobileHeader() {
             </Button>
           </SheetTrigger>
           <SheetContent side="right" className="w-72 p-0 bg-gradient-to-b from-[#1A3A5C] to-[#0F2740]">
+            {/* v8: SheetTitle oculto para acessibilidade (Radix exige) */}
+            <SheetTitle className="sr-only">Menu de Navegação</SheetTitle>
             <div className="flex items-center justify-between px-4 py-4 border-b border-white/10">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#D4A017] to-[#E8B84B] flex items-center justify-center">
