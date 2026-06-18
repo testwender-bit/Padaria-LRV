@@ -275,21 +275,6 @@ function SemanaPrintPage({
           <span className="sp-meta-item"><strong>Categoria:</strong> {cardapio.categoria_escola}</span>
           <span className="sp-meta-divider">&#x2022;</span>
           <span className="sp-meta-item"><strong>Fase:</strong> {getFaseLabel(cardapio.fase_escolar)}</span>
-          {/* v8: Nutricionistas no header (após fase) */}
-          {(cardapio.equipe_nutricionistas?.length ?? 0) > 0 && (
-            <>
-              <span className="sp-meta-divider">&#x2022;</span>
-              <span className="sp-meta-item">
-                <strong>Nutricionistas:</strong>{' '}
-                {cardapio.equipe_nutricionistas!.map((n, i) => (
-                  <span key={n.id}>
-                    {n.nome} <span style={{ fontSize: '4pt', fontStyle: 'italic', color: '#999' }}>CRN {n.crn}</span>
-                    {i < cardapio.equipe_nutricionistas!.length - 1 ? ', ' : ''}
-                  </span>
-                ))}
-              </span>
-            </>
-          )}
         </div>
         <div className="sp-header-week">
           <span className="sp-week-label">Semana {semana.numero}</span>
@@ -297,7 +282,7 @@ function SemanaPrintPage({
         </div>
       </div>
 
-      {/* ── LEGENDA DE ALÉRGENOS ── faixa horizontal compacta (P&B) */}
+      {/* ── LEGENDA DE ALÉRGENOS + NUTRICIONISTAS ── faixa horizontal compacta (P&B) */}
       <div className="sp-legend-alergenos">
         <span className="sp-legend-label">Alérgenos:</span>
         {ALERGENOS_LIST.map((a) => (
@@ -310,6 +295,18 @@ function SemanaPrintPage({
             </span>
           </span>
         ))}
+        {/* v8: Nutricionistas na mesma linha da legenda */}
+        {(cardapio.equipe_nutricionistas?.length ?? 0) > 0 && (
+          <span className="sp-legend-nutricionistas">
+            <span className="sp-legend-label" style={{ marginLeft: '3mm' }}>Nutricionistas:</span>{' '}
+            {cardapio.equipe_nutricionistas!.map((n, i) => (
+              <span key={n.id} className="sp-legend-nutri-nome">
+                {n.nome} <span style={{ fontSize: '4.5pt', fontStyle: 'italic' }}>CRN {n.crn}</span>
+                {i < cardapio.equipe_nutricionistas!.length - 1 ? ', ' : ''}
+              </span>
+            ))}
+          </span>
+        )}
       </div>
 
       {/* ── MENU TABLE — Main content ── */}
