@@ -28,6 +28,7 @@ import {
   ALERGENOS_LIST,
   type AlergenoSigla,
 } from '@/lib/alergenos-utils'
+import { sortItensByRefeicao } from '@/lib/ordenacao-preparacoes'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -301,7 +302,7 @@ function SemanaPrintPage({
             <span className="sp-legend-label" style={{ marginLeft: '3mm' }}>Nutricionistas:</span>{' '}
             {cardapio.equipe_nutricionistas!.map((n, i) => (
               <span key={n.id} className="sp-legend-nutri-nome">
-                {n.nome} <span style={{ fontSize: '4.5pt', fontStyle: 'italic' }}>CRN {n.crn}</span>
+                {n.nome} <span style={{ fontSize: '4.5pt', fontStyle: 'italic', color: '#000' }}>CRN {n.crn}</span>
                 {i < cardapio.equipe_nutricionistas!.length - 1 ? ', ' : ''}
               </span>
             ))}
@@ -320,7 +321,7 @@ function SemanaPrintPage({
               return (
                 <th
                   key={dia.value}
-                  className={`sp-th-dia ${feriado ? 'sp-th-dia-feriado' : ''}`}
+                  className="sp-th-dia"
                 >
                   <span className="sp-dia-nome">{dia.label}</span>
                   <span className="sp-dia-data">{getDiaDate(dia.value)}</span>
@@ -343,19 +344,17 @@ function SemanaPrintPage({
               </td>
               {DIAS_SEMANA_NUTRI.map((dia) => {
                 const diaData = semana.dias.find((d) => d.dia_semana === dia.value)
-                const itens = diaData?.itens.filter((i) => i.tipo_refeicao_id === tr.id) || []
+                const itensRaw = diaData?.itens.filter((i) => i.tipo_refeicao_id === tr.id) || []
+                // v8: aplica mesma ordenação do editor (auto-sort + ordem manual)
+                const itens = sortItensByRefeicao(itensRaw, tiposRefeicao)
                 const feriado = getFeriadoDoDiaCalc(semana.data_inicio, dia.value, feriados, cardapio.categoria_escola)
                 return (
                   <td
                     key={dia.value}
-                    className={`sp-td-dia ${feriado ? 'sp-td-dia-feriado' : ''}`}
+                    className="sp-td-dia"
                   >
                     {feriado ? (
-                      <div className="sp-feriado-cell">
-                        <span className="sp-feriado-icon">🚫</span>
-                        <span className="sp-feriado-text">Feriado</span>
-                        <span className="sp-feriado-name">{feriado.nome}</span>
-                      </div>
+                      <span className="sp-prep-vazio">—</span>
                     ) : itens.length > 0 ? (
                       <ul className="sp-prep-list">
                         {itens.map((item) => {
@@ -407,6 +406,7 @@ function SemanaPrintPage({
       <div className="sp-resumo">
         <div className="sp-resumo-title">
           Resumo Nutricional — Média Diária | {getFaseLabel(cardapio.fase_escolar)}
+          <span className="sp-resumo-aviso">* Cardápio sujeito a alterações sem aviso prévio.</span>
         </div>
         <div className="sp-resumo-grid">
           {/* Col 1: Macronutrientes */}
@@ -421,7 +421,6 @@ function SemanaPrintPage({
           {/* Col 2: Micronutrientes */}
           <div className="sp-resumo-section">
             <div className="sp-section-head">Micronutrientes</div>
-            <div className="sp-kv"><span>Sódio</span><strong>{resumo.media_dia.sodio_mg.toFixed(0)} mg</strong></div>
             <div className="sp-kv"><span>Ferro</span><strong>{resumo.media_dia.ferro_mg.toFixed(1)} mg</strong></div>
             <div className="sp-kv"><span>Vit. A</span><strong>{resumo.media_dia.vitamina_a_mcg.toFixed(0)} mcg</strong></div>
             <div className="sp-kv"><span>Vit. C</span><strong>{resumo.media_dia.vitamina_c_mg.toFixed(1)} mg</strong></div>
@@ -439,12 +438,7 @@ function SemanaPrintPage({
         </div>
       </div>
 
-      {/* ── AVISO DE ALTERAÇÃO — leve destaque ── */}
-      <div className="sp-aviso-alteracao">
-        <span>* Cardápio sujeito a alterações sem aviso prévio.</span>
-      </div>
-
-      {/* v8: Footer removido (mensagem PNAE + data de criação) para economizar espaço */}
+      {/* v8: Aviso movido para dentro do resumo nutricional */}
     </div>
   )
 }

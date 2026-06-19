@@ -15,9 +15,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
-  ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, Plus, Search,
+  ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, CalendarOff
+  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -35,6 +35,7 @@ import {
 } from '@/lib/nutricao-utils'
 import { detectarAlergenosPreparacao, ALERGENOS_LIST } from '@/lib/alergenos-utils'
 import { normalizeText } from '@/lib/busca-utils'
+import { sortItensByRefeicao } from '@/lib/ordenacao-preparacoes'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -99,6 +100,7 @@ interface CardapioItem {
   tipo_refeicao_id: string
   preparacao_id: string
   porcoes: number
+  ordem?: number  // v8: ordem de exibição (0 = auto-sort)
   tipo_refeicao: TipoRefeicao
   preparacao: Preparacao
 }
@@ -246,6 +248,12 @@ export default function CardapioEditorPage() {
 
   // Fase escolar selector
   const [faseDialogOpen, setFaseDialogOpen] = useState(false)
+  // v8: dialog para configurar data de início do cardápio
+  const [dataInicioDialogOpen, setDataInicioDialogOpen] = useState(false)
+  const [dataInicio, setDataInicio] = useState('')
+  // v8: dialog para editar nome do cardápio
+  const [nomeDialogOpen, setNomeDialogOpen] = useState(false)
+  const [editandoNome, setEditandoNome] = useState('')
   const [selectedFase, setSelectedFase] = useState<string>('FUND_FINAL')
 
   // Copy day dialog — multi-day support
@@ -268,7 +276,7 @@ export default function CardapioEditorPage() {
   const [editingPorcoesId, setEditingPorcoesId] = useState<string | null>(null)
   // Versão mobile (sidebar sempre colapsável)
   const [isMobile, setIsMobile] = useState(false)
-  // v8: feriados do semestre (para mostrar badge no dia)
+  // v8: feriados para mostrar badge no editor
   const [feriados, setFeriados] = useState<Array<{ id: string; data: string; nome: string; tipo: string; escolas_afetadas: string }>>([])
 
   const loadData = useCallback(async () => {
@@ -362,16 +370,86 @@ export default function CardapioEditorPage() {
     return cardapio.semanas.find((s) => s.numero === currentSemana) || null
   }, [cardapio, currentSemana])
 
-  // Get items for a specific day + refeição
+  // Get items for a specific day + refeição (com auto-sort)
   function getItensForSlot(diaSemana: string, tipoRefeicaoId: string): CardapioItem[] {
     if (!semanaAtual) return []
     const dia = semanaAtual.dias.find((d) => d.dia_semana === diaSemana)
     if (!dia) return []
-    // v8: filtra itens onde TODOS os ingredientes têm percapita = 0 para a fase atual
-    // (ex: vitamina só com açúcar numa fase onde açúcar é 0 → some do cardápio)
-    return dia.itens.filter((i) =>
-      i.tipo_refeicao_id === tipoRefeicaoId && itemVisivelNaFase(i)
-    )
+    // v8: aplica ordenação automática baseada no tipo de refeição
+    const itensDoSlot = dia.itens.filter((i) => i.tipo_refeicao_id === tipoRefeicaoId)
+    return sortItensByRefeicao(itensDoSlot, tiposRefeicao)
+  }
+
+  // v8: Reordenar item dentro do slot (up/down) — OTIMISTICO (sem refresh)
+  async function handleReordenarItem(itemId: string, direcao: 'up' | 'down') {
+    if (!cardapio || !semanaAtual) return
+
+    // Busca todos os itens do mesmo slot para encontrar qual trocar
+    for (const dia of semanaAtual.dias) {
+      const itemAtual = dia.itens.find(i => i.id === itemId)
+      if (!itemAtual) continue
+
+      // Encontra todos os itens do mesmo slot (mesma refeição)
+      const itensDoSlot = dia.itens.filter(i => i.tipo_refeicao_id === itemAtual.tipo_refeicao_id)
+      const sortedSlot = sortItensByRefeicao(itensDoSlot, tiposRefeicao)
+      const idxAtual = sortedSlot.findIndex(i => i.id === itemId)
+      if (idxAtual === -1) continue
+
+      const idxTroca = direcao === 'up' ? idxAtual - 1 : idxAtual + 1
+      if (idxTroca < 0 || idxTroca >= sortedSlot.length) return // já está no extremo
+
+      const itemTroca = sortedSlot[idxTroca]
+
+      // Se todos têm ordem 0, atribui ordens sequenciais a TODOS antes de trocar
+      const todosZero = sortedSlot.every(i => (i.ordem ?? 0) === 0)
+      const ordensMap: Record<string, number> = {}
+      if (todosZero) {
+        sortedSlot.forEach((item, idx) => {
+          ordensMap[item.id] = idx + 1
+        })
+      } else {
+        sortedSlot.forEach((item) => {
+          ordensMap[item.id] = item.ordem ?? 0
+        })
+      }
+
+      // Troca as ordens dos dois itens
+      const temp = ordensMap[itemId]
+      ordensMap[itemId] = ordensMap[itemTroca.id]
+      ordensMap[itemTroca.id] = temp
+
+      // Atualização otimista: aplica todas as ordens localmente
+      setCardapio(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          semanas: prev.semanas.map(s => ({
+            ...s,
+            dias: s.dias.map(d => ({
+              ...d,
+              itens: d.itens.map(i => {
+                if (ordensMap[i.id] !== undefined) {
+                  return { ...i, ordem: ordensMap[i.id] }
+                }
+                return i
+              }),
+            })),
+          })),
+        }
+      })
+
+      // Envia para a API (sem esperar para não travar a UI)
+      try {
+        await fetch(`/api/nutricao/cardapios/${cardapioId}/reordenar-item`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ item_id: itemId, direcao }),
+        })
+      } catch {
+        toast.error('Erro ao salvar ordem')
+      }
+      return
+    }
   }
 
   // Get percapita-adjusted gramas for an ingredient based on cardápio's fase_escolar
@@ -383,30 +461,13 @@ export default function CardapioEditorPage() {
     return calcularPercapitaPorFase(ing.quantidade_gramas, cardapio.fase_escolar as FaseEscolar)
   }
 
-  // v8: Verifica se um item (preparação) deve aparecer no cardápio da fase atual.
-  // Regra: se TODOS os ingredientes têm percapita = 0 para esta fase, o item é oculto.
-  // Exemplo: Vitamina com açúcar tem percapita 0 para creche (creches não podem ter açúcar)
-  // → se a única preparação da vitamina é açúcar, ela some do cardápio da creche.
-  // Mas se a vitamina tem fruta + açúcar, a fruta ainda aparece (com percapita > 0)
-  // e o açúcar fica oculto (percapita 0). O cálculo nutricional automaticamente ignora
-  // ingredientes com 0g.
-  function itemVisivelNaFase(item: CardapioItem): boolean {
-    if (!cardapio) return true
-    // Se tem pelo menos 1 ingrediente com percapita > 0, mostra o item
-    return item.preparacao.ingredientes.some((ing) => {
-      const gramas = getGramasForFase(ing)
-      return gramas > 0
-    })
-  }
-
   // Calculate nutritional summary for current week
   const resumoNutricional = useMemo((): ResumoNutricionalSemana | null => {
     if (!semanaAtual || !cardapio) return null
 
     const diasNutrientes: NutrienteDia[] = []
     for (const dia of semanaAtual.dias) {
-      // v8: só considera itens visíveis na fase atual (percapita > 0 em pelo menos 1 ingrediente)
-      const diaNutri = dia.itens.filter(itemVisivelNaFase).reduce<NutrienteDia>((acc, item) => {
+      const diaNutri = dia.itens.reduce<NutrienteDia>((acc, item) => {
         const refeicaoNutri = calcularNutrientesRefeicao([{
           preparacao: {
             ingredientes: item.preparacao.ingredientes.map((ing) => ({
@@ -780,41 +841,31 @@ export default function CardapioEditorPage() {
   }
 
   // ── v8: Helper para verificar se um dia da semana atual é feriado ──
-  // Retorna o feriado se a data cair num dia da semana atual, ou null caso contrário.
   function getFeriadoDoDia(diaSemanaPt: string): { nome: string; tipo: string } | null {
     if (!semanaAtual || !cardapio) return null
-    // Mapeia dia_semana (segunda, terca, ...) → índice JS (0=dom, 1=seg, ...)
     const diaToIdx: Record<string, number> = {
       'domingo': 0, 'segunda': 1, 'terca': 2, 'quarta': 3,
       'quinta': 4, 'sexta': 5, 'sabado': 6,
     }
     const idxAlvo = diaToIdx[diaSemanaPt]
     if (idxAlvo === undefined) return null
+    const offsetDias = idxAlvo - 1
+    if (offsetDias < 0 || offsetDias > 4) return null
 
-    // Calcula datas dos dias da semana atual
     const inicio = new Date(semanaAtual.data_inicio + 'T12:00:00')
-    // Ajusta: data_inicio deve ser segunda (índice 1)
-    // Calcula data de cada dia: segunda = inicio + 0, terca = inicio + 1, ..., sexta = inicio + 4
-    const offsetDias = idxAlvo - 1  // segunda=0 offset, terca=1, etc
-    if (offsetDias < 0 || offsetDias > 4) return null  // só segunda-sexta
-
     const dataDia = new Date(inicio)
     dataDia.setDate(inicio.getDate() + offsetDias)
     const dataIso = dataDia.toISOString().split('T')[0]
 
-    // Procura feriado nessa data
     const feriado = feriados.find((f) => f.data === dataIso)
     if (!feriado) return null
-
-    // Verifica se afeta esta categoria de escola
     const afetadas = feriado.escolas_afetadas || 'TODAS'
     if (afetadas === 'TODAS') return { nome: feriado.nome, tipo: feriado.tipo }
     const map: Record<string, string[]> = {
       'REGULARES': ['REGULAR'], 'INTEGRAIS': ['INTEGRAL'], 'CRECHES': ['CRECHE'],
       'BIFASICA': ['BIFASICA'], 'INTERIOR': ['INTERIOR'], 'OUTROS': ['OUTROS'],
     }
-    const categoriasAfetadas = map[afetadas] || [afetadas]
-    if (!categoriasAfetadas.includes(cardapio.categoria_escola)) return null
+    if (!(map[afetadas] || [afetadas]).includes(cardapio.categoria_escola)) return null
     return { nome: feriado.nome, tipo: feriado.tipo }
   }
 
@@ -824,8 +875,7 @@ export default function CardapioEditorPage() {
     const dia = semanaAtual.dias.find(d => d.dia_semana === diaSemana)
     if (!dia || dia.itens.length === 0) return { energia: 0, ferro_heme: false, vit_a: false, alertas: 0 }
 
-    // v8: só considera itens visíveis na fase atual
-    const diaNutri = dia.itens.filter(itemVisivelNaFase).reduce<NutrienteDia>((acc, item) => {
+    const diaNutri = dia.itens.reduce<NutrienteDia>((acc, item) => {
       const refeicaoNutri = calcularNutrientesRefeicao([{
         preparacao: {
           ingredientes: item.preparacao.ingredientes.map((ing) => ({
@@ -872,6 +922,48 @@ export default function CardapioEditorPage() {
       loadData()
     } catch {
       toast.error('Erro ao salvar fase escolar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // v8: Salvar data de início do cardápio
+  async function handleSaveDataInicio() {
+    if (!cardapio || !dataInicio) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data_inicio: dataInicio }),
+      })
+      if (!res.ok) throw new Error('Erro ao salvar data')
+      toast.success('Datas atualizadas — todas as semanas foram recalculadas')
+      setDataInicioDialogOpen(false)
+      loadData()
+    } catch {
+      toast.error('Erro ao salvar data de início')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // v8: Salvar nome do cardápio
+  async function handleSaveNome() {
+    if (!cardapio || !editandoNome.trim()) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: editandoNome.trim() }),
+      })
+      if (!res.ok) throw new Error('Erro ao salvar nome')
+      toast.success('Nome do cardápio atualizado')
+      setNomeDialogOpen(false)
+      loadData()
+    } catch {
+      toast.error('Erro ao salvar nome')
     } finally {
       setSaving(false)
     }
@@ -1095,7 +1187,16 @@ export default function CardapioEditorPage() {
           </Link>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-[#1A3A5C] truncate">{cardapio.nome}</h1>
+              <h1
+                className="text-lg font-bold text-[#1A3A5C] truncate cursor-pointer hover:text-blue-700 hover:underline"
+                onClick={() => {
+                  setEditandoNome(cardapio.nome)
+                  setNomeDialogOpen(true)
+                }}
+                title="Clique para editar o nome do cardápio"
+              >
+                {cardapio.nome}
+              </h1>
               {getStatusBadge(cardapio.status)}
             </div>
             <p className="text-xs text-muted-foreground">
@@ -1113,6 +1214,23 @@ export default function CardapioEditorPage() {
             <Users className="w-3 h-3" />
             {faseInfo?.label || cardapio.fase_escolar}
             <span className="text-[10px] opacity-70">({faseInfo?.faixa || '—'})</span>
+          </button>
+
+          {/* v8: Botão Configurar Datas */}
+          <button
+            onClick={() => {
+              // Pega a data da primeira semana como default
+              const primeiraSemana = cardapio.semanas?.[0]
+              if (primeiraSemana?.data_inicio) {
+                setDataInicio(primeiraSemana.data_inicio)
+              }
+              setDataInicioDialogOpen(true)
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors hover:bg-gray-50 border-blue-300 text-blue-700"
+            title="Configurar data de início do cardápio"
+          >
+            <Calendar className="w-3 h-3" />
+            {cardapio.semanas?.[0]?.data_inicio ? formatDate(cardapio.semanas[0].data_inicio) : 'Definir data'}
           </button>
 
           {/* Botão Replicar p/ Escolas (somente se for base) */}
@@ -1353,15 +1471,12 @@ export default function CardapioEditorPage() {
                         semaforo === 'amber' ? 'bg-amber-400' :
                         semaforo === 'red' ? 'bg-red-400' : 'bg-gray-400'
                       }`} title={`Energia: ${resumoDia.energia.toFixed(0)} kcal`} />
-                      <span className="text-xs font-semibold truncate">{dia.label}</span>
+                      <span className="text-xs font-semibold">{dia.label}</span>
                       {/* v8: Badge de feriado */}
                       {(() => {
                         const feriado = getFeriadoDoDia(dia.value)
                         return feriado ? (
-                          <span
-                            className="ml-1 inline-flex items-center gap-0.5 px-1 py-0 rounded bg-red-500/30 border border-red-400/50 text-[8px] text-red-100 font-bold flex-shrink-0"
-                            title={`Feriado: ${feriado.nome} (${feriado.tipo})`}
-                          >
+                          <span className="ml-1 inline-flex items-center gap-0.5 px-1 py-0 rounded bg-red-500/30 border border-red-400/50 text-[8px] text-red-100 font-bold flex-shrink-0" title={`Feriado: ${feriado.nome}`}>
                             <CalendarOff className="w-2 h-2" />
                             <span className="truncate max-w-[60px]">{feriado.nome}</span>
                           </span>
@@ -1376,19 +1491,6 @@ export default function CardapioEditorPage() {
                       <Copy className="w-3 h-3" />
                     </button>
                   </div>
-
-                  {/* v8: Aviso de feriado (banner abaixo do header) */}
-                  {(() => {
-                    const feriado = getFeriadoDoDia(dia.value)
-                    return feriado ? (
-                      <div className="bg-red-50 border-b border-red-200 px-2 py-1 text-[9px] text-red-700 flex items-center gap-1">
-                        <CalendarOff className="w-2.5 h-2.5 flex-shrink-0" />
-                        <span className="font-semibold">Feriado:</span>
-                        <span className="truncate">{feriado.nome}</span>
-                        <Badge variant="outline" className="text-[7px] h-3 px-0.5 ml-auto flex-shrink-0 border-red-300 text-red-600">{feriado.tipo}</Badge>
-                      </div>
-                    ) : null
-                  })()}
 
                   {/* Refeição slots */}
                   <div className="p-1.5 space-y-1.5">
@@ -1456,6 +1558,23 @@ export default function CardapioEditorPage() {
                             >
                               <GripVertical className="w-2.5 h-2.5 text-gray-300 flex-shrink-0 group-hover:text-gray-400" />
                               <span className="flex-1 truncate font-medium">{item.preparacao.nome}</span>
+                              {/* v8: Botões up/down para reordenar dentro do slot */}
+                              <div className="flex flex-col flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleReordenarItem(item.id, 'up') }}
+                                  className="text-gray-300 hover:text-[#1A3A5C] leading-none"
+                                  title="Mover para cima"
+                                >
+                                  <ChevronUp className="w-2.5 h-2.5" />
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleReordenarItem(item.id, 'down') }}
+                                  className="text-gray-300 hover:text-[#1A3A5C] leading-none"
+                                  title="Mover para baixo"
+                                >
+                                  <ChevronDown className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
                               {/* Porções (display estático — definidas no cadastro da preparação) */}
                               {item.porcoes > 1 && (
                                 <span
@@ -2011,6 +2130,82 @@ export default function CardapioEditorPage() {
               <Button variant="outline" size="sm" onClick={() => setFaseDialogOpen(false)}>Cancelar</Button>
               <Button size="sm" onClick={handleSaveFase} disabled={saving} className="bg-[#1A3A5C] hover:bg-[#1A3A5C]/90">
                 {saving ? 'Salvando...' : 'Aplicar'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* v8: Dialog Configurar Data de Início */}
+      <Dialog open={dataInicioDialogOpen} onOpenChange={setDataInicioDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-[#1A3A5C] text-sm flex items-center gap-2">
+              <Calendar className="w-4 h-4" />
+              Configurar Data de Início
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              Defina a data de início da <strong>Semana 1</strong> (deve ser uma segunda-feira).
+              Todas as demais semanas serão calculadas automaticamente (semana 2 = +7 dias, etc).
+              As datas são usadas para mostrar feriados no PDF e no editor.
+            </p>
+            <div className="space-y-2">
+              <Label className="text-sm">Data de início (Segunda-feira)</Label>
+              <Input
+                type="date"
+                value={dataInicio}
+                onChange={(e) => setDataInicio(e.target.value)}
+                className="text-sm"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                {dataInicio && new Date(dataInicio + 'T12:00:00').getDay() !== 1 && (
+                  <span className="text-amber-600 font-medium">
+                    ⚠️ Esta data não é uma segunda-feira. Recomendamos ajustar para o início da semana.
+                  </span>
+                )}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setDataInicioDialogOpen(false)}>Cancelar</Button>
+              <Button size="sm" onClick={handleSaveDataInicio} disabled={saving || !dataInicio} className="bg-[#1A3A5C] hover:bg-[#1A3A5C]/90">
+                {saving ? 'Salvando...' : 'Atualizar Datas'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* v8: Dialog Editar Nome do Cardápio */}
+      <Dialog open={nomeDialogOpen} onOpenChange={setNomeDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-[#1A3A5C] text-sm flex items-center gap-2">
+              <Pencil className="w-4 h-4" />
+              Editar Nome do Cardápio
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label className="text-sm">Nome</Label>
+              <Input
+                value={editandoNome}
+                onChange={(e) => setEditandoNome(e.target.value)}
+                placeholder="Ex: Cardápio Creche 2025/2"
+                className="text-sm"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && editandoNome.trim()) {
+                    handleSaveNome()
+                  }
+                }}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setNomeDialogOpen(false)}>Cancelar</Button>
+              <Button size="sm" onClick={handleSaveNome} disabled={saving || !editandoNome.trim()} className="bg-[#1A3A5C] hover:bg-[#1A3A5C]/90">
+                {saving ? 'Salvando...' : 'Salvar Nome'}
               </Button>
             </div>
           </div>

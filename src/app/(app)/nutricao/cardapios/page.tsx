@@ -19,6 +19,8 @@ interface Escola {
   id: string
   nome: string
   categoria: string
+  ativo?: boolean
+  nome_curto?: string
 }
 
 interface Nutricionista {
@@ -230,6 +232,13 @@ export default function CardapiosPage() {
     setCloneDialogOpen(true)
   }
 
+  // v8: labels dinâmicas para o dialog de clonar
+  const cardapioSendoClonado = cardapios.find(c => c.id === cloneCardapioId)
+  const cardapioAnoSemestreLabel = cardapioSendoClonado
+    ? `${cardapioSendoClonado.semestre}º semestre`
+    : ''
+  const escolaSelecionadaNome = escolas.find(e => e.id === cloneEscolaId)?.nome || '—'
+
   async function handleClone() {
     if (!cloneCardapioId || !cloneEscolaId) {
       toast.error('Selecione uma escola de destino')
@@ -240,7 +249,7 @@ export default function CardapiosPage() {
       const res = await fetch(`/api/nutricao/cardapios/${cloneCardapioId}/clonar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ escola_id: cloneEscolaId }),
+        body: JSON.stringify({ escola_id_destino: cloneEscolaId }),
       })
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}))
@@ -593,18 +602,23 @@ export default function CardapiosPage() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              Selecione a escola de destino para clonar este cardápio.
+              Selecione a escola de destino para clonar este cardápio. O novo cardápio será criado com o nome <strong>"Cardápio {cardapioAnoSemestreLabel} — {escolaSelecionadaNome}"</strong>.
             </p>
             <div className="space-y-2">
               <Label>Escola de Destino</Label>
               <Select value={cloneEscolaId} onValueChange={setCloneEscolaId}>
                 <SelectTrigger><SelectValue placeholder="Selecionar escola" /></SelectTrigger>
                 <SelectContent>
-                  {escolas.map((e) => (
+                  {escolas.filter(e => e.ativo).map((e) => (
                     <SelectItem key={e.id} value={e.id}>{e.nome}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="p-2 rounded-md bg-amber-50 border border-amber-200">
+              <p className="text-xs text-amber-800">
+                ⚠️ Se a escola já tiver um cardápio do mesmo ano/semestre, ele será <strong>completamente substituído</strong> por esta cópia.
+              </p>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setCloneDialogOpen(false)} disabled={cloning}>Cancelar</Button>

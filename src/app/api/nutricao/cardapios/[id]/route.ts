@@ -131,6 +131,35 @@ export async function PATCH(
       },
     })
 
+    // v8: Se data_inicio foi fornecida, recalcular datas de todas as semanas
+    if (body.data_inicio) {
+      const dataInicio = new Date(body.data_inicio + 'T12:00:00')
+      const semanas = await db.cardapioSemanaNutri.findMany({
+        where: { cardapio_id: id },
+        orderBy: { numero: 'asc' },
+      })
+
+      for (const semana of semanas) {
+        const numSemana = semana.numero
+        // Cada semana começa 7*(numSemana-1) dias após a data de início
+        const inicioSemana = new Date(dataInicio)
+        inicioSemana.setDate(dataInicio.getDate() + (numSemana - 1) * 7)
+        const fimSemana = new Date(inicioSemana)
+        fimSemana.setDate(inicioSemana.getDate() + 4) // segunda a sexta
+
+        const inicioStr = inicioSemana.toISOString().split('T')[0]
+        const fimStr = fimSemana.toISOString().split('T')[0]
+
+        await db.cardapioSemanaNutri.update({
+          where: { id: semana.id },
+          data: {
+            data_inicio: inicioStr,
+            data_fim: fimStr,
+          },
+        })
+      }
+    }
+
     return NextResponse.json(cardapio)
   } catch (error) {
     console.error('Erro ao atualizar cardápio (PATCH):', error)

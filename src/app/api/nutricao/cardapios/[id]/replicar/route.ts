@@ -143,7 +143,7 @@ export async function POST(
     const expandir = body.expandir_para_semestre !== false  // default: true
     const sobrescrever = body.sobrescrever_existente === true
 
-    // ── Transação principal ──
+    // ── Transação principal — timeout aumentado para 30s (default 5s é pouco para 5+ escolas) ──
     const result = await db.$transaction(async (tx) => {
       const criados: Array<{
         escola_id: string
@@ -178,8 +178,7 @@ export async function POST(
           }
 
           // Cria novo cardápio para a escola
-          // v8: Nome do cardápio = "Cardápio {nome da escola} {ano}/{semestre}"
-          const nomeInstancia = `Cardápio ${escola.nome} ${original.ano}/${original.semestre}`
+          const nomeInstancia = `${original.nome} — ${escola.nome_curto || escola.nome}`
           const card = await tx.cardapioNutricional.create({
             data: {
               nome: nomeInstancia,
@@ -382,6 +381,9 @@ export async function POST(
       }
 
       return { criados, erros, base_info: { tem_pao: diasPaoArray.length > 0, tem_lanche: diasLancheArray.length > 0, dias_pao_base: diasPaoArray, dias_lanche_base: diasLancheArray } }
+    }, {
+      timeout: 30000,  // 30 segundos (default 5s é insuficiente para 5+ escolas com 22 semanas)
+      maxWait: 10000,  // espera até 10s para adquirir a transação
     })
 
     return NextResponse.json(result, { status: 201 })

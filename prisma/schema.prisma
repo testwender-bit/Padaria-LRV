@@ -552,6 +552,7 @@ model CardapioItem {
   tipo_refeicao_id  String
   preparacao_id     String
   porcoes           Int     @default(1)
+  ordem             Int     @default(0)  // v8: ordem de exibição dentro do slot (0 = auto-sort)
 
   dia               CardapioDiaNutri @relation(fields: [dia_id], references: [id], onDelete: Cascade)
   tipo_refeicao     TipoRefeicao     @relation(fields: [tipo_refeicao_id], references: [id])

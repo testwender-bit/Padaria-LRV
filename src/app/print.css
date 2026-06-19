@@ -810,8 +810,8 @@
     gap: 2mm !important;
     flex-shrink: 0 !important;
   }
-  .sp-week-label { font-size: 8pt !important; font-weight: 600 !important; color: #666 !important; }
-  .sp-week-dates { font-size: 6pt !important; color: #333 !important; }
+  .sp-week-label { font-size: 8pt !important; font-weight: 600 !important; color: #fff !important; }
+  .sp-week-dates { font-size: 6pt !important; color: #fff !important; }
 
   /* Table — premium typography for print */
   .sp-table {
@@ -876,8 +876,8 @@
   }
   .sp-prep-ing {
     font-family: Carlito, 'Segoe UI', Roboto, -apple-system, sans-serif !important;
-    font-size: 6.5pt !important;
-    color: #333 !important;
+    font-size: 7pt !important;
+    color: #222 !important;
     line-height: 1.2 !important;
     margin-top: 0.3mm !important;
     font-weight: 400 !important;
@@ -885,6 +885,44 @@
   .sp-prep-vazio { color: #999 !important; font-size: 7.5pt !important; }
   .sp-row:nth-child(even) .sp-td-dia { background: #fafafa !important; }
   .sp-row:nth-child(even) .sp-td-ref { background: #eee !important; }
+
+  /* v8: Feriados — destaque visual na impressão (P&B) */
+  .sp-th-dia-feriado {
+    background: #444 !important;
+    border-bottom: 2pt solid #000 !important;
+  }
+  .sp-dia-feriado {
+    display: block !important;
+    font-size: 6pt !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+    margin-top: 1pt !important;
+    line-height: 1.2 !important;
+  }
+  .sp-td-dia-feriado {
+    background: #f0f0f0 !important;
+  }
+  .sp-feriado-cell {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 2pt !important;
+    text-align: center !important;
+  }
+  .sp-feriado-icon { font-size: 10pt !important; margin-bottom: 1pt !important; }
+  .sp-feriado-text {
+    font-size: 6pt !important;
+    font-weight: 700 !important;
+    color: #000 !important;
+    text-transform: uppercase !important;
+  }
+  .sp-feriado-name {
+    font-size: 5.5pt !important;
+    color: #333 !important;
+    margin-top: 0.5pt !important;
+    line-height: 1.2 !important;
+  }
 
   /* Resumo Nutricional — compact horizontal strip, B&W */
   .sp-resumo {
@@ -901,6 +939,17 @@
     text-transform: uppercase !important;
     letter-spacing: 0.5pt !important;
     margin-bottom: 1mm !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: baseline !important;
+  }
+  .sp-resumo-aviso {
+    font-size: 5.5pt !important;
+    font-weight: 400 !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    color: #000 !important;
+    font-style: italic !important;
   }
   .sp-resumo-grid {
     display: grid !important;
@@ -966,7 +1015,7 @@
   }
   .sp-legend-label {
     font-weight: 700 !important;
-    color: #1A3A5C !important;
+    color: #000 !important;
   }
   .sp-legend-item {
     display: inline-flex !important;
@@ -975,7 +1024,13 @@
   }
   .sp-legend-nome {
     font-size: 4.5pt !important;
-    color: #334155 !important;
+    color: #000 !important;
+  }
+  .sp-legend-nutricionistas {
+    color: #000 !important;
+  }
+  .sp-legend-nutri-nome {
+    color: #000 !important;
   }
   .sp-prep-nome {
     display: flex !important;
@@ -1079,5 +1134,42 @@
 @media screen {
   .print-only {
     display: none !important;
+  }
+  /* v8: Feriados — estilos de tela */
+  .sp-th-dia-feriado {
+    background: #fef2f2 !important;
+    border-bottom: 2px solid #dc2626 !important;
+  }
+  .sp-dia-feriado {
+    display: block;
+    font-size: 7px;
+    color: #dc2626;
+    font-weight: 700;
+    margin-top: 2px;
+    line-height: 1.2;
+  }
+  .sp-td-dia-feriado {
+    background: #fef2f2 !important;
+  }
+  .sp-feriado-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    text-align: center;
+  }
+  .sp-feriado-icon { font-size: 14px; margin-bottom: 2px; }
+  .sp-feriado-text {
+    font-size: 8px;
+    font-weight: 700;
+    color: #dc2626;
+    text-transform: uppercase;
+  }
+  .sp-feriado-name {
+    font-size: 7px;
+    color: #991b1b;
+    margin-top: 1px;
+    line-height: 1.2;
   }
 }
