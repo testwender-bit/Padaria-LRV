@@ -14,7 +14,10 @@
     "seed": "npx prisma db seed",
     "seed:taco": "npx tsx prisma/seed-taco-alimentos.ts",
     "seed:nutricao": "npx tsx prisma/seed-nutricao.ts",
-    "seed:all": "npx prisma db seed && npx tsx prisma/seed-taco-alimentos.ts && npx tsx prisma/seed-nutricao.ts"
+    "seed:all": "npx prisma db seed && npx tsx prisma/seed-taco-alimentos.ts && npx tsx prisma/seed-nutricao.ts",
+    "seed:users": "npx tsx prisma/seed-users.ts",
+    "export:sqlite": "npx tsx scripts/export-sqlite-to-json.ts",
+    "import:supabase": "npx tsx scripts/import-json-to-supabase.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

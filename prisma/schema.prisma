@@ -8,8 +8,21 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  // v8.6: trocado de "sqlite" para "postgresql" para deploy na Vercel + Supabase.
+  // SQLite não funciona em serverless (filesystem efêmero da Vercel perde dados a cada cold start).
+  // O schema Prisma é 100% compatível (apenas String/Int/Boolean/DateTime/Float — sem tipos Postgres-only).
+
+  provider  = "postgresql"
+
+  // url = usada pelo Prisma Client em runtime (queries da app).
+  // Deve apontar para o TRANSACTION POOLER (porta 6543) — escala em serverless Vercel.
+  // Adicionar ?pgbouncer=true&connection_limit=1 é CRÍTICO para Vercel + Supabase free tier.
+  url       = env("DATABASE_URL")
+
+  // directUrl = usada APENAS por prisma db push / prisma migrate (criação/alteração de schema).
+  // Deve apontar para a DIRECT CONNECTION (porta 5432 do db.xxx.supabase.co).
+  // Não pode ser pooler porque migrations precisam de sessão sticky.
+  directUrl = env("DIRECT_URL")
 }
 
 // ── Autenticação (NextAuth) ─────────────────────────────────
