@@ -480,7 +480,18 @@ export default function CardapioPdfPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  function handlePrint() { window.print() }
+  function handlePrint() {
+    // v8: Define o título da página = nome do cardápio para o navegador usar como nome do arquivo
+    if (cardapio) {
+      const semanasLabel = printMode === 'semestral'
+        ? 'Completo'
+        : `Semana ${selectedSemana}`
+      document.title = `${cardapio.nome} — ${semanasLabel}`
+    }
+    window.print()
+    // Restaura o título original após imprimir
+    setTimeout(() => { document.title = 'Padaria Escolar' }, 2000)
+  }
 
   if (loading) {
     return (

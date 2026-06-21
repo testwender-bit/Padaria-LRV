@@ -241,6 +241,9 @@ export default function CardapioEditorPage() {
   const [addPrepSearch, setAddPrepSearch] = useState('')
   const [addSelectedPrepIds, setAddSelectedPrepIds] = useState<Set<string>>(new Set())
   const [adding, setAdding] = useState(false)
+  // v8: editar/criar/clonar preparação dentro do dialog de adicionar
+  const [editingPrepInDialog, setEditingPrepInDialog] = useState<string | null>(null)  // id da prep sendo editada, null = nova
+  const [prepDialogOpenInCardapio, setPrepDialogOpenInCardapio] = useState(false)
   // Filtros do modal: todas | favoritas | recentes
   const [addFilter, setAddFilter] = useState<'all' | 'favoritas' | 'recentes'>('all')
   // Filtro alérgenos: exclui preparações com esses alérgenos
@@ -837,6 +840,81 @@ export default function CardapioEditorPage() {
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao mover preparação')
+    }
+  }
+
+  // v8: Duplicar item (Alt+Drag) — cria cópia no destino sem remover origem
+  async function handleDuplicateItem(item: CardapioItem, destinoSemana: number, destinoDia: string, destinoTipoRefeicaoId: string) {
+    // Não duplica para o mesmo slot
+    const semanaOrigem = cardapio?.semanas.find(s => s.dias.some(d => d.itens.some(i => i.id === item.id)))
+    const diaOrigem = semanaOrigem?.dias.find(d => d.itens.some(i => i.id === item.id))
+    if (semanaOrigem?.numero === destinoSemana && diaOrigem?.dia_semana === destinoDia && item.tipo_refeicao_id === destinoTipoRefeicaoId) {
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/duplicar-item`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item_id: item.id,
+          destino: {
+            semana_numero: destinoSemana,
+            dia_semana: destinoDia,
+            tipo_refeicao_id: destinoTipoRefeicaoId,
+          },
+        }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || 'Erro ao duplicar')
+      }
+      const data = await res.json()
+      toast.success(`Duplicado para ${destinoDia}, semana ${destinoSemana}${data.action === 'merged' ? ' (mesclado com item existente)' : ''}`)
+
+      // Atualização otimista
+      const novoItemId = data.item?.id || `temp-${Date.now()}`
+      setCardapio(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          semanas: prev.semanas.map(s => {
+            if (s.numero !== destinoSemana) return s
+            return {
+              ...s,
+              dias: s.dias.map(d => {
+                if (d.dia_semana !== destinoDia) return d
+                if (data.action === 'merged') {
+                  // Soma porções no item existente
+                  return {
+                    ...d,
+                    itens: d.itens.map(i =>
+                      i.preparacao_id === item.preparacao_id && i.tipo_refeicao_id === destinoTipoRefeicaoId
+                        ? { ...i, porcoes: i.porcoes + item.porcoes }
+                        : i
+                    ),
+                  }
+                }
+                // Adiciona novo item
+                return {
+                  ...d,
+                  itens: [...d.itens, {
+                    id: novoItemId,
+                    tipo_refeicao_id: destinoTipoRefeicaoId,
+                    preparacao_id: item.preparacao_id,
+                    porcoes: item.porcoes,
+                    ordem: 0,
+                    tipo_refeicao: item.tipo_refeicao,
+                    preparacao: item.preparacao,
+                  }],
+                }
+              }),
+            }
+          }),
+        }
+      })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao duplicar preparação')
     }
   }
 
@@ -1508,7 +1586,7 @@ export default function CardapioEditorPage() {
                           }`}
                           onDragOver={(e) => {
                             e.preventDefault()
-                            e.dataTransfer.dropEffect = 'move'
+                            e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move'
                             if (!isDragOver) setDragOverSlot(slotKey)
                           }}
                           onDragLeave={() => {
@@ -1518,7 +1596,11 @@ export default function CardapioEditorPage() {
                             e.preventDefault()
                             setDragOverSlot(null)
                             if (draggedItem) {
-                              handleMoveItem(draggedItem, currentSemana, dia.value, cr.tipo_refeicao_id)
+                              if (e.altKey) {
+                                handleDuplicateItem(draggedItem, currentSemana, dia.value, cr.tipo_refeicao_id)
+                              } else {
+                                handleMoveItem(draggedItem, currentSemana, dia.value, cr.tipo_refeicao_id)
+                              }
                               setDraggedItem(null)
                             }
                           }}
@@ -1886,6 +1968,17 @@ export default function CardapioEditorPage() {
                         <span className="text-[10px] text-muted-foreground ml-1 flex-shrink-0">
                           {p.ingredientes.length} ingred.
                         </span>
+                        {/* v8: Botão editar preparação */}
+                        <a
+                          href={`/nutricao/preparacoes?edit=${p.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-400 hover:text-blue-600 flex-shrink-0 ml-1"
+                          title="Editar preparação (abre em nova aba)"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </a>
                       </label>
                     )
                   })
@@ -1894,6 +1987,15 @@ export default function CardapioEditorPage() {
             </ScrollArea>
           </div>
           <DialogFooter className="gap-2">
+            {/* v8: Link para criar nova preparação */}
+            <a
+              href="/nutricao/preparacoes?new=true"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-blue-600 hover:text-blue-800 underline mr-auto"
+            >
+              + Nova Preparação
+            </a>
             <Button variant="outline" size="sm" onClick={() => setAddDialogOpen(false)} disabled={adding}>Cancelar</Button>
             <Button
               size="sm"

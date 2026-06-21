@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react'
+import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ChefHat, Plus, Search, Pencil, Trash2, ChevronDown, ChevronUp, RefreshCw, X, Minus, Unlock, Check, Star, Copy } from 'lucide-react'
+import { ChefHat, Plus, Search, Pencil, Trash2, ChevronDown, ChevronUp, RefreshCw, X, Minus, Unlock, Check, Star } from 'lucide-react'
 import { toast } from 'sonner'
 import { calcularNutrientesPreparacao, FASES_ESCOLARES, calcularPercapitaPorFase, type FaseEscolar } from '@/lib/nutricao-utils'
 import { PREPARACAO_CATEGORIAS, getCategoriaInfo, getCategoriaCor, isCategoriaEspecial, type PreparacaoCategoria } from '@/lib/preparacao-categorias'
@@ -116,197 +117,21 @@ function gerarPercapitasAuto(gramasBase: number): PercapitaForm[] {
   }))
 }
 
-// ── v8: Componente card memoizado ──
-// Antes: cada card era renderizado inline no map, re-renderizando TODOS os 173 cards
-// a cada keystroke (cada um com cálculo nutricional + alérgenos + percapitas = 1+ segundo).
-// Agora: memoizado com React.memo — só re-renderiza quando suas props mudam.
-// Como as props são estáveis (callbacks via useCallback), o React pula re-render
-// dos cards que não mudaram, fazendo a busca ficar instantânea.
-
-interface PreparacaoCardProps {
-  prep: Preparacao
-  isExpanded: boolean
-  onToggleExpand: () => void
-  onToggleFavorita: () => void
-  onEdit: () => void
-  onDelete: () => void
-  onDuplicate: () => void
-}
-
-function formatarMedidaCaseira(gramas: number, alimento: Alimento): string {
-  if (!alimento.gramas_por_medida || alimento.gramas_por_medida === 0) return ''
-  const medidas = gramas / alimento.gramas_por_medida
-  if (medidas < 0.1) return ''
-  if (Math.abs(medidas - Math.round(medidas)) < 0.05) {
-    return `${Math.round(medidas)}x ${alimento.medida_caseira}`
-  }
-  if (Math.abs(medidas - 0.5) < 0.05) return `½x ${alimento.medida_caseira}`
-  if (Math.abs(medidas - 0.25) < 0.05) return `¼x ${alimento.medida_caseira}`
-  return `${medidas.toFixed(1)}x ${alimento.medida_caseira}`
-}
-
-const PreparacaoCard = memo(function PreparacaoCard({
-  prep,
-  isExpanded,
-  onToggleExpand,
-  onToggleFavorita,
-  onEdit,
-  onDelete,
-  onDuplicate,
-}: PreparacaoCardProps) {
-  // Cálculos memoizados — só recalcula quando `prep` muda
-  const nutricionais = useMemo(() => calcularNutricaoPrepStandalone(prep.ingredientes), [prep])
-  const hasPercapitas = useMemo(
-    () => prep.ingredientes.some((ing) => !ing.mesma_percapita && ing.percapitas && ing.percapitas.length > 0),
-    [prep]
-  )
-
+export default function PreparacoesPageWrapper() {
   return (
-    <div>
-      <Card className="border-[#1A3A5C]/10 hover:shadow-md transition-shadow">
-        <CardHeader className="pb-2">
-          <div className="flex items-start justify-between">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5">
-                {prep.favorita && (
-                  <Star className="w-3.5 h-3.5 text-[#D4A017] flex-shrink-0 fill-[#D4A017]" />
-                )}
-                <CardTitle className="text-sm font-semibold text-[#1A3A5C] truncate">{prep.nome}</CardTitle>
-                {prep.categoria && prep.categoria !== 'PREPARACAO' && (
-                  <Badge
-                    variant="outline"
-                    className="text-[9px] h-4 px-1 flex items-center gap-0.5"
-                    style={{
-                      borderColor: getCategoriaCor(prep.categoria),
-                      color: getCategoriaCor(prep.categoria),
-                    }}
-                    title={getCategoriaInfo(prep.categoria).descricao}
-                  >
-                    {getCategoriaInfo(prep.categoria).label}
-                  </Badge>
-                )}
-              </div>
-              {prep.descricao && (
-                <p className="text-xs text-muted-foreground mt-0.5 truncate">{prep.descricao}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-1 ml-2 flex-shrink-0">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0"
-                title={prep.favorita ? 'Desfavoritar' : 'Marcar como favorita'}
-                onClick={onToggleFavorita}
-              >
-                <Star
-                  className={`w-3 h-3 ${prep.favorita ? 'text-[#D4A017] fill-[#D4A017]' : 'text-gray-400'}`}
-                />
-              </Button>
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onEdit} title="Editar">
-                <Pencil className="w-3 h-3" />
-              </Button>
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-500 hover:text-blue-700 hover:bg-blue-50" onClick={onDuplicate} title="Duplicar preparação">
-                <Copy className="w-3 h-3" />
-              </Button>
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500" onClick={onDelete} title="Excluir">
-                <Trash2 className="w-3 h-3" />
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="outline" className="text-[10px]">
-              {prep.ingredientes.length} ingrediente{prep.ingredientes.length !== 1 ? 's' : ''}
-            </Badge>
-            <Badge className="bg-amber-100 text-amber-700 text-[10px] hover:bg-amber-100">
-              {nutricionais.energia_kcal.toFixed(0)} kcal
-            </Badge>
-            <Badge className="bg-blue-100 text-blue-700 text-[10px] hover:bg-blue-100">
-              P {nutricionais.proteinas_g.toFixed(1)}g
-            </Badge>
-            {hasPercapitas && (
-              <Badge className="bg-purple-100 text-purple-700 text-[10px] hover:bg-purple-100">
-                Percapita
-              </Badge>
-            )}
-          </div>
-
-          <button
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-[#1A3A5C] transition-colors w-full"
-            onClick={onToggleExpand}
-          >
-            {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            {isExpanded ? 'Ocultar' : 'Ver'} ingredientes
-          </button>
-
-          {isExpanded && (
-            <div className="space-y-1 border-t pt-2">
-              {prep.ingredientes.map((ing) => (
-                <div key={ing.id} className="flex items-center justify-between text-xs">
-                  <span className="truncate flex-1">{ing.alimento.nome}</span>
-                  <span className="text-muted-foreground ml-2 flex-shrink-0">
-                    {ing.quantidade_gramas.toFixed(0)}g — {formatarMedidaCaseira(ing.quantidade_gramas, ing.alimento)}
-                    {ing.mesma_percapita && <span className="ml-1 text-green-600">✓</span>}
-                  </span>
-                </div>
-              ))}
-              {hasPercapitas && (
-                <div className="border-t pt-2 mt-2">
-                  <p className="text-[10px] font-semibold text-purple-700 mb-1">Percapitas por Fase Escolar</p>
-                  <div className="space-y-0.5">
-                    {prep.ingredientes
-                      .filter((ing) => !ing.mesma_percapita && ing.percapitas && ing.percapitas.length > 0)
-                      .map((ing) => (
-                        <div key={ing.id} className="text-[10px]">
-                          <span className="font-medium">{ing.alimento.nome}:</span>{' '}
-                          {ing.percapitas.map((pc) => {
-                            const faseLabel = FASES_ESCOLARES.find(f => f.value === pc.fase_escolar)?.label ?? pc.fase_escolar
-                            return (
-                              <span key={pc.fase_escolar} className="text-muted-foreground mr-2">
-                                {faseLabel}={pc.quantidade_gramas.toFixed(0)}g
-                                {!pc.auto_calculado && <span className="text-orange-500">*</span>}
-                              </span>
-                            )
-                          })}
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
-              <div className="border-t pt-2 mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
-                <div className="flex justify-between"><span className="text-muted-foreground">Energia:</span><span className="font-medium">{nutricionais.energia_kcal.toFixed(0)} kcal</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Carboidratos:</span><span className="font-medium">{nutricionais.carboidratos_g.toFixed(1)} g</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Proteínas:</span><span className="font-medium">{nutricionais.proteinas_g.toFixed(1)} g</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Lipídios:</span><span className="font-medium">{nutricionais.lipidios_g.toFixed(1)} g</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Fibra:</span><span className="font-medium">{nutricionais.fibra_alimentar_g.toFixed(1)} g</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Sódio:</span><span className="font-medium">{nutricionais.sodio_mg.toFixed(0)} mg</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Ferro:</span><span className="font-medium">{nutricionais.ferro_mg.toFixed(1)} mg</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Vit A:</span><span className="font-medium">{nutricionais.vitamina_a_mcg.toFixed(0)} mcg</span></div>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  )
-})
-
-// v8: versão standalone de calcularNutricaoPrep (não depende do componente)
-function calcularNutricaoPrepStandalone(ingredientes: IngredienteDB[]) {
-  return calcularNutrientesPreparacao(
-    ingredientes.map((ing) => ({
-      quantidade_gramas: ing.quantidade_gramas,
-      alimento: ing.alimento,
-    }))
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><div className="w-8 h-8 rounded-full border-2 border-[#D4A017]/30 border-t-[#D4A017] animate-spin" /></div>}>
+      <PreparacoesPage />
+    </Suspense>
   )
 }
 
-export default function PreparacoesPage() {
+function PreparacoesPage() {
+  const searchParams = useSearchParams()
   const [preparacoes, setPreparacoes] = useState<Preparacao[]>([])
   const [alimentos, setAlimentos] = useState<Alimento[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -324,22 +149,12 @@ export default function PreparacoesPage() {
 
   const searchInputRefs = useRef<Record<number, HTMLInputElement | null>>({})
 
-  // ── v8: Busca SERVER-SIDE com debounce ──
-  // Arquitetura: debounce de 300ms → busca na API → mostra apenas resultados
-  // Importante: NÃO mostra loading durante a busca (só mostra "Buscando..." sutil)
-  // para evitar refresh visual.
-  const [search, setSearch] = useState('')
-  const [searching, setSearching] = useState(false)
-
-  const loadData = useCallback(async (busca?: string) => {
+  const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const url = busca
-        ? `/api/nutricao/preparacoes?light=true&busca=${encodeURIComponent(busca)}`
-        : '/api/nutricao/preparacoes?light=true'
       const [prepRes, alRes] = await Promise.all([
-        fetch(url),
+        fetch('/api/nutricao/preparacoes'),
         fetch('/api/nutricao/alimentos'),
       ])
       if (!prepRes.ok) throw new Error('Erro ao carregar preparações')
@@ -352,51 +167,33 @@ export default function PreparacoesPage() {
       setError('Não foi possível carregar os dados.')
     } finally {
       setLoading(false)
-      setSearching(false)
     }
   }, [])
 
-  // Carrega tudo na primeira vez (sem busca)
   useEffect(() => {
     loadData()
   }, [loadData])
 
-  // Busca com debounce: 300ms após parar de digitar → busca na API
-  // NÃO causa refresh visual — mantém a lista atual até a resposta chegar
+  // v8: Detecta parâmetros ?edit=ID ou ?new=true na URL para abrir dialog automaticamente
   useEffect(() => {
-    if (search === '') return  // não busca se vazio (lista já está completa)
-    setSearching(true)
-    const t = setTimeout(async () => {
-      try {
-        const url = `/api/nutricao/preparacoes?light=true&busca=${encodeURIComponent(search)}`
-        const prepRes = await fetch(url)
-        if (!prepRes.ok) throw new Error('Erro ao buscar')
-        const prepData = await prepRes.json()
-        setPreparacoes(Array.isArray(prepData) ? prepData : [])
-      } catch (err) {
-        console.error(err)
-      } finally {
-        setSearching(false)
+    if (loading) return
+    const editId = searchParams.get('edit')
+    const isNew = searchParams.get('new') === 'true'
+    if (editId) {
+      const prep = preparacoes.find(p => p.id === editId)
+      if (prep) {
+        openEditDialog(prep)
       }
-    }, 300)
-    return () => clearTimeout(t)
-  }, [search])
-
-  // Quando limpa a busca (clica no X), recarrega tudo
-  async function handleClearSearch() {
-    setSearch('')
-    try {
-      const prepRes = await fetch('/api/nutricao/preparacoes?light=true')
-      if (!prepRes.ok) return
-      const prepData = await prepRes.json()
-      setPreparacoes(Array.isArray(prepData) ? prepData : [])
-    } catch (err) {
-      console.error(err)
+    } else if (isNew) {
+      openNewDialog()
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, loading, preparacoes])
 
-  // Sem filtro no cliente — a API já retorna apenas resultados filtrados
-  const filtered = preparacoes
+  const filtered = preparacoes.filter((p) =>
+    // v8: busca sem acento (normalizeText)
+    normalizeText(p.nome).includes(normalizeText(search))
+  )
 
   function getAlimentoById(id: string): Alimento | undefined {
     return alimentos.find((a) => a.id === id)
@@ -438,83 +235,22 @@ export default function PreparacoesPage() {
     setDialogOpen(true)
   }
 
-  // v8: Duplicar preparação — abre dialog de novo preenchido com dados da prep original
-  async function openDuplicateDialog(prep: Preparacao) {
-    setEditingId(null)  // null = modo criação (POST)
-    // Busca ingredientes completos (a listagem vem sem percapitas)
-    let ingredientesCompletos = prep.ingredientes || []
-    const hasPercapitas = ingredientesCompletos.some(
-      (ing) => !ing.mesma_percapita && ing.percapitas && ing.percapitas.length > 0
-    )
-    if (!hasPercapitas && ingredientesCompletos.length > 0) {
-      try {
-        const res = await fetch(`/api/nutricao/preparacoes/${prep.id}`)
-        if (res.ok) {
-          const full = await res.json()
-          ingredientesCompletos = full.ingredientes || []
-        }
-      } catch (err) {
-        console.error('Erro ao carregar ingredientes:', err)
-      }
-    }
-
-    setForm({
-      nome: `${prep.nome} (cópia)`,
-      descricao: prep.descricao || '',
-      modo_preparo: prep.modo_preparo || '',
-      categoria: (prep.categoria as PreparacaoCategoria) || 'PREPARACAO',
-      ingredientes: ingredientesCompletos.map((ing) => ({
-        alimento_id: ing.alimento_id,
-        quantidade_gramas: ing.quantidade_gramas,
-        mesma_percapita: ing.mesma_percapita,
-        percapitas: ing.percapitas?.map((pc) => ({
-          fase_escolar: pc.fase_escolar,
-          quantidade_gramas: pc.quantidade_gramas,
-          auto_calculado: pc.auto_calculado,
-        })) || [],
-      })),
-    })
-    setIngSearches({})
-    setIngPopoverOpen({})
-    setDialogOpen(true)
-    toast.info(`Duplicando "${prep.nome}" — ajuste o nome e salve`)
-  }
-
-  async function openEditDialog(prep: Preparacao) {
+  function openEditDialog(prep: Preparacao) {
     setEditingId(prep.id)
-    // ── Sempre busca a preparação COMPLETA (com percapitas) ao editar ──
-    // A listagem vem sem percapitas (light mode) — precisamos delas para editar.
-    let ingredientesCompletos = prep.ingredientes || []
-    const hasPercapitas = ingredientesCompletos.some(
-      (ing) => !ing.mesma_percapita && ing.percapitas && ing.percapitas.length > 0
-    )
-    if (!hasPercapitas && ingredientesCompletos.length > 0) {
-      // Provavelmente veio do light mode (sem percapitas) — busca versão completa
-      try {
-        const res = await fetch(`/api/nutricao/preparacoes/${prep.id}`)
-        if (res.ok) {
-          const full = await res.json()
-          ingredientesCompletos = full.ingredientes || []
-        }
-      } catch (err) {
-        console.error('Erro ao carregar ingredientes:', err)
-      }
-    }
-
     setForm({
       nome: prep.nome,
       descricao: prep.descricao || '',
       modo_preparo: prep.modo_preparo || '',
       categoria: (prep.categoria as PreparacaoCategoria) || 'PREPARACAO',
-      ingredientes: ingredientesCompletos.map((ing) => ({
+      ingredientes: prep.ingredientes.map((ing) => ({
         alimento_id: ing.alimento_id,
         quantidade_gramas: ing.quantidade_gramas,
         mesma_percapita: ing.mesma_percapita,
-        percapitas: ing.percapitas?.map((pc) => ({
+        percapitas: ing.percapitas.map((pc) => ({
           fase_escolar: pc.fase_escolar,
           quantidade_gramas: pc.quantidade_gramas,
           auto_calculado: pc.auto_calculado,
-        })) || [],
+        })),
       })),
     })
     setIngSearches({})
@@ -767,7 +503,7 @@ export default function PreparacoesPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Buscar preparação..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 max-w-md" />
           {search && (
-            <button onClick={handleClearSearch} className="absolute right-3 top-1/2 -translate-y-1/2">
+            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2">
               <X className="w-4 h-4 text-muted-foreground hover:text-foreground" />
             </button>
           )}
@@ -778,7 +514,7 @@ export default function PreparacoesPage() {
       {error && (
         <div className="text-center py-8">
           <p className="text-sm text-red-500 mb-3">{error}</p>
-          <Button variant="outline" size="sm" onClick={() => loadData()}>
+          <Button variant="outline" size="sm" onClick={loadData}>
             <RefreshCw className="w-3 h-3 mr-1" /> Tentar novamente
           </Button>
         </div>
@@ -786,36 +522,146 @@ export default function PreparacoesPage() {
 
       {/* Cards */}
       {!error && (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.length === 0 ? (
             <div className="col-span-full text-center py-8 text-muted-foreground">
               {search ? 'Nenhuma preparação encontrada.' : 'Nenhuma preparação cadastrada.'}
             </div>
           ) : (
-            <>
-              {/* v8: Busca server-side — API retorna apenas resultados filtrados */}
-              {/* Sem paginação necessária: a API já filtra, cliente só exibe */}
-              {searching && (
-                <div className="col-span-full text-center py-4 text-muted-foreground">
-                  <RefreshCw className="w-4 h-4 inline animate-spin mr-1" />
-                  Buscando...
-                </div>
-              )}
-              {!searching && filtered.map((prep) => (
-                <PreparacaoCard
-                  key={prep.id}
-                  prep={prep}
-                  isExpanded={expandedId === prep.id}
-                  onToggleExpand={() => setExpandedId(expandedId === prep.id ? null : prep.id)}
-                  onToggleFavorita={() => toggleFavorita(prep.id, prep.favorita)}
-                  onEdit={() => openEditDialog(prep)}
-                  onDelete={() => setDeleteId(prep.id)}
-                  onDuplicate={() => openDuplicateDialog(prep)}
-                />
-              ))}
-            </>
+            filtered.map((prep) => {
+              const nutricionais = calcularNutricaoPrep(prep.ingredientes)
+              const isExpanded = expandedId === prep.id
+              const hasPercapitas = prep.ingredientes.some((ing) => !ing.mesma_percapita && ing.percapitas && ing.percapitas.length > 0)
+              return (
+                <motion.div key={prep.id} variants={item}>
+                  <Card className="border-[#1A3A5C]/10 hover:shadow-md transition-shadow">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            {prep.favorita && (
+                              <Star className="w-3.5 h-3.5 text-[#D4A017] flex-shrink-0 fill-[#D4A017]" />
+                            )}
+                            <CardTitle className="text-sm font-semibold text-[#1A3A5C] truncate">{prep.nome}</CardTitle>
+                            {/* v8: Badge de categoria */}
+                            {prep.categoria && prep.categoria !== 'PREPARACAO' && (
+                              <Badge
+                                variant="outline"
+                                className="text-[9px] h-4 px-1 flex items-center gap-0.5"
+                                style={{
+                                  borderColor: getCategoriaCor(prep.categoria),
+                                  color: getCategoriaCor(prep.categoria),
+                                }}
+                                title={getCategoriaInfo(prep.categoria).descricao}
+                              >
+                                {getCategoriaInfo(prep.categoria).label}
+                              </Badge>
+                            )}
+                          </div>
+                          {prep.descricao && (
+                            <p className="text-xs text-muted-foreground mt-0.5 truncate">{prep.descricao}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            title={prep.favorita ? 'Desfavoritar' : 'Marcar como favorita'}
+                            onClick={() => toggleFavorita(prep.id, prep.favorita)}
+                          >
+                            <Star
+                              className={`w-3 h-3 ${prep.favorita ? 'text-[#D4A017] fill-[#D4A017]' : 'text-gray-400'}`}
+                            />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEditDialog(prep)}>
+                            <Pencil className="w-3 h-3" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500" onClick={() => setDeleteId(prep.id)}>
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className="text-[10px]">
+                          {prep.ingredientes.length} ingrediente{prep.ingredientes.length !== 1 ? 's' : ''}
+                        </Badge>
+                        <Badge className="bg-amber-100 text-amber-700 text-[10px] hover:bg-amber-100">
+                          {nutricionais.energia_kcal.toFixed(0)} kcal
+                        </Badge>
+                        <Badge className="bg-blue-100 text-blue-700 text-[10px] hover:bg-blue-100">
+                          P {nutricionais.proteinas_g.toFixed(1)}g
+                        </Badge>
+                        {hasPercapitas && (
+                          <Badge className="bg-purple-100 text-purple-700 text-[10px] hover:bg-purple-100">
+                            Percapita
+                          </Badge>
+                        )}
+                      </div>
+
+                      <button
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-[#1A3A5C] transition-colors w-full"
+                        onClick={() => setExpandedId(isExpanded ? null : prep.id)}
+                      >
+                        {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        {isExpanded ? 'Ocultar' : 'Ver'} ingredientes
+                      </button>
+
+                      {isExpanded && (
+                        <div className="space-y-1 border-t pt-2">
+                          {prep.ingredientes.map((ing) => (
+                            <div key={ing.id} className="flex items-center justify-between text-xs">
+                              <span className="truncate flex-1">{ing.alimento.nome}</span>
+                              <span className="text-muted-foreground ml-2 flex-shrink-0">
+                                {ing.quantidade_gramas.toFixed(0)}g — {formatarMedidaCaseira(ing.quantidade_gramas, ing.alimento)}
+                                {ing.mesma_percapita && <span className="ml-1 text-green-600">✓</span>}
+                              </span>
+                            </div>
+                          ))}
+                          {hasPercapitas && (
+                            <div className="border-t pt-2 mt-2">
+                              <p className="text-[10px] font-semibold text-purple-700 mb-1">Percapitas por Fase Escolar</p>
+                              <div className="space-y-0.5">
+                                {prep.ingredientes
+                                  .filter((ing) => !ing.mesma_percapita && ing.percapitas && ing.percapitas.length > 0)
+                                  .map((ing) => (
+                                    <div key={ing.id} className="text-[10px]">
+                                      <span className="font-medium">{ing.alimento.nome}:</span>{' '}
+                                      {ing.percapitas.map((pc) => {
+                                        const faseLabel = FASES_ESCOLARES.find(f => f.value === pc.fase_escolar)?.label ?? pc.fase_escolar
+                                        return (
+                                          <span key={pc.fase_escolar} className="text-muted-foreground mr-2">
+                                            {faseLabel}={pc.quantidade_gramas.toFixed(0)}g
+                                            {!pc.auto_calculado && <span className="text-orange-500">*</span>}
+                                          </span>
+                                        )
+                                      })}
+                                    </div>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
+                          <div className="border-t pt-2 mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                            <div className="flex justify-between"><span className="text-muted-foreground">Energia:</span><span className="font-medium">{nutricionais.energia_kcal.toFixed(0)} kcal</span></div>
+                            <div className="flex justify-between"><span className="text-muted-foreground">Carboidratos:</span><span className="font-medium">{nutricionais.carboidratos_g.toFixed(1)} g</span></div>
+                            <div className="flex justify-between"><span className="text-muted-foreground">Proteínas:</span><span className="font-medium">{nutricionais.proteinas_g.toFixed(1)} g</span></div>
+                            <div className="flex justify-between"><span className="text-muted-foreground">Lipídios:</span><span className="font-medium">{nutricionais.lipidios_g.toFixed(1)} g</span></div>
+                            <div className="flex justify-between"><span className="text-muted-foreground">Fibra:</span><span className="font-medium">{nutricionais.fibra_alimentar_g.toFixed(1)} g</span></div>
+                            <div className="flex justify-between"><span className="text-muted-foreground">Sódio:</span><span className="font-medium">{nutricionais.sodio_mg.toFixed(0)} mg</span></div>
+                            <div className="flex justify-between"><span className="text-muted-foreground">Ferro:</span><span className="font-medium">{nutricionais.ferro_mg.toFixed(1)} mg</span></div>
+                            <div className="flex justify-between"><span className="text-muted-foreground">Vit A:</span><span className="font-medium">{nutricionais.vitamina_a_mcg.toFixed(0)} mcg</span></div>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              )
+            })
           )}
-        </div>
+        </motion.div>
       )}
 
       {/* ═══════════════════════════════════════════════════════════
