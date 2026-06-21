@@ -16,10 +16,6 @@ export async function GET(request: Request) {
     const semAlergenos = semAlergenosParam
       ? semAlergenosParam.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean)
       : []
-    // ── Modo light: retorna apenas dados básicos (sem ingredientes/percapitas) ──
-    // Usado pela listagem de preparações para evitar carregar milhares de percapitas.
-    // Default: false (mantém compatibilidade com chamadas existentes).
-    const light = searchParams.get('light') === 'true'
 
     const where: Record<string, unknown> = {
       ativo: true,
@@ -35,32 +31,16 @@ export async function GET(request: Request) {
       orderBy = { vezes_usada: 'desc' }
     }
 
-    // ── Em modo light, inclui ingredientes mas SEM percapitas (que são milhares) ──
-    // Isso permite mostrar "X ingredientes" + nome dos alimentos na listagem
-    // sem carregar milhares de percapitas (que só são necessárias ao editar).
-    const include = light
-      ? {
-          ingredientes: {
-            include: {
-              alimento: {
-                select: { id: true, nome: true, grupo: true, energia_kcal: true, proteinas_g: true, lipidios_g: true, carboidratos_g: true, ferro_mg: true, ferro_heme_mg: true, vitamina_a_mcg: true, vitamina_c_mg: true, sodio_mg: true, fibra_alimentar_g: true, calcio_mg: true, magnesio_mg: true, zinco_mg: true, acucar_adicionado_g: true, medida_caseira: true, gramas_por_medida: true },
-              },
-              // SEM percapitas no modo light
-            },
-          },
-        }
-      : {
-          ingredientes: {
-            include: {
-              alimento: true,
-              percapitas: true,
-            },
-          },
-        }
-
     let preparacoes = await db.preparacao.findMany({
       where,
-      include,
+      include: {
+        ingredientes: {
+          include: {
+            alimento: true,
+            percapitas: true,
+          },
+        },
+      },
       orderBy,
       ...(soRecentes ? { take: limiteRecentes } : {}),
     })
@@ -73,8 +53,8 @@ export async function GET(request: Request) {
       )
     }
 
-    // Filtro por alérgenos (precisa processar ingredientes — só funciona se NÃO for light)
-    if (semAlergenos.length > 0 && !light) {
+    // Filtro por alérgenos (precisa processar ingredientes)
+    if (semAlergenos.length > 0) {
       preparacoes = preparacoes.filter((p) => {
         const alergenos = detectarAlergenosPreparacao(
           p.ingredientes.map((ing) => ({
@@ -136,6 +116,8 @@ export async function POST(request: Request) {
           nome: body.nome,
           descricao: body.descricao || null,
           modo_preparo: body.modo_preparo || null,
+          // v8: categoria (default PREPARACAO)
+          categoria: body.categoria || 'PREPARACAO',
           ativo: true,
         },
       })

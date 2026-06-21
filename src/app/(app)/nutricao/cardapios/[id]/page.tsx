@@ -36,6 +36,7 @@ import {
 import { detectarAlergenosPreparacao, ALERGENOS_LIST } from '@/lib/alergenos-utils'
 import { normalizeText } from '@/lib/busca-utils'
 import { sortItensByRefeicao } from '@/lib/ordenacao-preparacoes'
+import { PreparacaoFormDialog, type PreparacaoLite } from '@/components/preparacao-form-dialog'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -79,6 +80,7 @@ interface PercapitaData {
 
 interface IngredienteComAlimento {
   id: string
+  alimento_id: string  // v8: necessário para o sub-dialog de edição de preparação
   quantidade_gramas: number
   mesma_percapita: boolean
   alimento: Alimento
@@ -89,6 +91,7 @@ interface Preparacao {
   id: string
   nome: string
   descricao: string | null
+  modo_preparo: string | null  // v8: necessário para o sub-dialog de edição
   favorita: boolean
   vezes_usada: number
   categoria?: string  // v8: PREPARACAO | PAO | LANCHE | BEBIDA | SOBREMESA
@@ -273,6 +276,8 @@ export default function CardapioEditorPage() {
   // Item sendo arrastado (drag-and-drop)
   const [draggedItem, setDraggedItem] = useState<CardapioItem | null>(null)
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null)
+  // v8: dica visual de Alt+Drag = duplicar (banner fixo durante o arrasto)
+  const [dragAltHint, setDragAltHint] = useState(false)
   // Modo mobile: mostra apenas 1 dia por vez (picker no topo)
   const [mobileDayView, setMobileDayView] = useState<string>('segunda')
   // Porções com edição inline em andamento (item_id)
@@ -584,6 +589,70 @@ export default function CardapioEditorPage() {
     }
   }
 
+  // ── v8: Abrir/fechar sub-dialog de preparação (nova ou editar) ──
+  // Chamado a partir do dialog "Adicionar Preparações" — não abre nova aba.
+  function openEditPrepInDialog(prepId: string) {
+    setEditingPrepInDialog(prepId)
+    setPrepDialogOpenInCardapio(true)
+  }
+  function openNewPrepInDialog() {
+    setEditingPrepInDialog(null)
+    setPrepDialogOpenInCardapio(true)
+  }
+  // Recarrega apenas a lista de preparações (após criar/editar no sub-dialog)
+  async function refreshPreparacoes() {
+    try {
+      const [prepRes, topRes] = await Promise.all([
+        fetch('/api/nutricao/preparacoes'),
+        fetch('/api/nutricao/preparacoes?recentes=true&limite_recentes=6'),
+      ])
+      if (prepRes.ok) {
+        const data = await prepRes.json()
+        setPreparacoes(Array.isArray(data) ? data : [])
+      }
+      if (topRes.ok) {
+        const top = await topRes.json()
+        setTopPreparacoes(Array.isArray(top) ? top : [])
+      }
+    } catch {
+      // silencioso — não bloqueia o fluxo
+    }
+  }
+  function handlePrepSaved(info: { id: string; nome: string; isNew: boolean }) {
+    refreshPreparacoes()
+    // Seleciona automaticamente a preparação recém-criada para fácil adição
+    if (info.isNew) {
+      setAddSelectedPrepIds(prev => new Set(prev).add(info.id))
+      toast.success(`Preparação "${info.nome}" criada e pré-selecionada`)
+    } else {
+      toast.success(`Preparação "${info.nome}" atualizada`)
+    }
+  }
+  // v8: Após clonar — muda editingPrepId para a nova prep e mantém o dialog aberto
+  // (o usuário continua editando a cópia sem sair da página)
+  function handlePrepCloned(newId: string, clonedPrep: PreparacaoLite) {
+    setEditingPrepInDialog(newId)
+    // Atualização otimista: adiciona a nova prep à lista IMEDIATAMENTE
+    // para que o `editingPrep` prop seja encontrado sem flash de formulário vazio.
+    // O refreshPreparacoes abaixo vai buscar a versão canônica do banco.
+    setPreparacoes(prev => [
+      clonedPrep as unknown as Preparacao,
+      ...prev.filter(p => p.id !== newId),
+    ])
+    // Também atualiza topPreparacoes (não afeta a cópia, mas mantém consistência)
+    refreshPreparacoes()
+  }
+  // v8: Após excluir — fecha dialog e recarrega lista (a prep excluída some)
+  function handlePrepDeleted(_id: string) {
+    refreshPreparacoes()
+    // Remove da seleção caso estivesse selecionada
+    setAddSelectedPrepIds(prev => {
+      const next = new Set(prev)
+      next.delete(_id)
+      return next
+    })
+  }
+
   async function handleRemoveItem(itemId: string) {
     try {
       const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/item`, {
@@ -845,10 +914,11 @@ export default function CardapioEditorPage() {
 
   // v8: Duplicar item (Alt+Drag) — cria cópia no destino sem remover origem
   async function handleDuplicateItem(item: CardapioItem, destinoSemana: number, destinoDia: string, destinoTipoRefeicaoId: string) {
-    // Não duplica para o mesmo slot
+    // Não duplica para o mesmo slot — dá feedback claro para o usuário
     const semanaOrigem = cardapio?.semanas.find(s => s.dias.some(d => d.itens.some(i => i.id === item.id)))
     const diaOrigem = semanaOrigem?.dias.find(d => d.itens.some(i => i.id === item.id))
     if (semanaOrigem?.numero === destinoSemana && diaOrigem?.dia_semana === destinoDia && item.tipo_refeicao_id === destinoTipoRefeicaoId) {
+      toast.info('Mesmo slot de origem — arraste para outro dia ou refeição para duplicar')
       return
     }
 
@@ -1250,6 +1320,13 @@ export default function CardapioEditorPage() {
 
   return (
     <div className="space-y-3 max-w-[1600px] mx-auto">
+      {/* v8: Banner de dica Alt+Drag = duplicar (somente durante o arrasto) */}
+      {dragAltHint && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 bg-[#1A3A5C] text-white text-xs px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-pulse">
+          <Copy className="w-3.5 h-3.5" />
+          <span>Solte para <b className="font-bold">mover</b> · segure <kbd className="px-1.5 py-0.5 bg-white/20 rounded text-[10px] font-mono">Alt</kbd> para <b className="font-bold">duplicar</b></span>
+        </div>
+      )}
       {/* Top Bar */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
@@ -1586,6 +1663,8 @@ export default function CardapioEditorPage() {
                           }`}
                           onDragOver={(e) => {
                             e.preventDefault()
+                            // ⚠️ Importante: usar 'copyMove' para permitir tanto move quanto copy
+                            // (setar apenas 'move' faz o navegador bloquear o cursor de cópia com Alt)
                             e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move'
                             if (!isDragOver) setDragOverSlot(slotKey)
                           }}
@@ -1596,12 +1675,14 @@ export default function CardapioEditorPage() {
                             e.preventDefault()
                             setDragOverSlot(null)
                             if (draggedItem) {
+                              // Alt+Drop = duplicar (cópia); Drop normal = mover
                               if (e.altKey) {
                                 handleDuplicateItem(draggedItem, currentSemana, dia.value, cr.tipo_refeicao_id)
                               } else {
                                 handleMoveItem(draggedItem, currentSemana, dia.value, cr.tipo_refeicao_id)
                               }
                               setDraggedItem(null)
+                              setDragAltHint(false)
                             }
                           }}
                         >
@@ -1627,16 +1708,20 @@ export default function CardapioEditorPage() {
                               draggable
                               onDragStart={(e) => {
                                 setDraggedItem(item)
-                                e.dataTransfer.effectAllowed = 'move'
+                                // ⚠️ 'copyMove' permite que o navegador mostre cursor de cópia (Alt) OU de mover
+                                e.dataTransfer.effectAllowed = 'copyMove'
+                                // Dica visual temporária para o usuário saber que Alt = duplicar
+                                setDragAltHint(true)
                               }}
                               onDragEnd={() => {
                                 setDraggedItem(null)
                                 setDragOverSlot(null)
+                                setDragAltHint(false)
                               }}
                               className={`flex items-center gap-1 mb-1 p-1 rounded bg-white border border-gray-100 text-[10px] group cursor-grab active:cursor-grabbing ${
                                 draggedItem?.id === item.id ? 'opacity-50' : ''
                               }`}
-                              title="Arraste para mover para outro dia/refeição"
+                              title="Arraste para mover • Alt+Arraste para duplicar"
                             >
                               <GripVertical className="w-2.5 h-2.5 text-gray-300 flex-shrink-0 group-hover:text-gray-400" />
                               <span className="flex-1 truncate font-medium">{item.preparacao.nome}</span>
@@ -1826,13 +1911,13 @@ export default function CardapioEditorPage() {
 
       {/* ═══ Add Preparações Dialog (Multi-Select) ═══ */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col gap-3 p-5 overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-[#1A3A5C] text-sm">Adicionar Preparações</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
+          <div className="flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden">
             {/* Abas de filtro rápido */}
-            <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-md">
+            <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-md flex-shrink-0">
               <button
                 onClick={() => setAddFilter('all')}
                 className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
@@ -1860,7 +1945,7 @@ export default function CardapioEditorPage() {
             </div>
 
             {/* Search */}
-            <div className="relative">
+            <div className="relative flex-shrink-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
               <Input
                 placeholder="Buscar por nome..."
@@ -1872,7 +1957,7 @@ export default function CardapioEditorPage() {
             </div>
 
             {/* Filtro alérgenos (excluir) */}
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap flex-shrink-0">
               <span className="text-[10px] text-muted-foreground">Sem alérgeno:</span>
               {ALERGENOS_LIST.map((a) => {
                 const active = addSemAlergenos.has(a.sigla)
@@ -1887,7 +1972,7 @@ export default function CardapioEditorPage() {
                         return next
                       })
                     }}
-                    className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-colors ${
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-colors ${
                       active
                         ? 'bg-red-50 border-red-300 text-red-700'
                         : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
@@ -1902,7 +1987,7 @@ export default function CardapioEditorPage() {
 
             {/* Selected count */}
             {addSelectedPrepIds.size > 0 && (
-              <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-[#1A3A5C]/5 border border-[#1A3A5C]/10">
+              <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-[#1A3A5C]/5 border border-[#1A3A5C]/10 flex-shrink-0">
                 <Check className="w-3.5 h-3.5 text-[#1A3A5C]" />
                 <span className="text-xs font-medium text-[#1A3A5C]">{addSelectedPrepIds.size} selecionada(s)</span>
                 <button
@@ -1914,8 +1999,8 @@ export default function CardapioEditorPage() {
               </div>
             )}
 
-            {/* Preparations list with checkboxes */}
-            <ScrollArea className="h-[300px] border rounded-lg">
+            {/* Preparations list with checkboxes — flex-1 para precher espaço restante */}
+            <ScrollArea className="flex-1 min-h-0 border rounded-lg">
               <div className="p-1">
                 {filteredPreparacoes.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-8">
@@ -1946,7 +2031,7 @@ export default function CardapioEditorPage() {
                         {p.favorita && (
                           <Star className="w-3 h-3 text-[#D4A017] flex-shrink-0 fill-[#D4A017]" />
                         )}
-                        <span className="font-medium truncate flex-1">{p.nome}</span>
+                        <span className="font-medium truncate flex-1 min-w-0">{p.nome}</span>
                         {alergenos.length > 0 && (
                           <div className="flex items-center gap-0.5 flex-shrink-0">
                             {alergenos.map((sigla) => (
@@ -1962,23 +2047,25 @@ export default function CardapioEditorPage() {
                         )}
                         {p.vezes_usada > 0 && (
                           <span className="text-[9px] text-muted-foreground flex-shrink-0">
-                            {p.vezes_usada}× usada
+                            {p.vezes_usada}×
                           </span>
                         )}
-                        <span className="text-[10px] text-muted-foreground ml-1 flex-shrink-0">
-                          {p.ingredientes.length} ingred.
+                        <span className="text-[10px] text-muted-foreground flex-shrink-0">
+                          {p.ingredientes.length} ing.
                         </span>
-                        {/* v8: Botão editar preparação */}
-                        <a
-                          href={`/nutricao/preparacoes?edit=${p.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-400 hover:text-blue-600 flex-shrink-0 ml-1"
-                          title="Editar preparação (abre em nova aba)"
-                          onClick={(e) => e.stopPropagation()}
+                        {/* v8: Botão editar preparação — abre sub-dialog (não abre nova aba) */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            openEditPrepInDialog(p.id)
+                          }}
+                          className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded p-0.5 flex-shrink-0 transition-colors"
+                          title="Editar preparação"
                         >
                           <Pencil className="w-3 h-3" />
-                        </a>
+                        </button>
                       </label>
                     )
                   })
@@ -1986,16 +2073,17 @@ export default function CardapioEditorPage() {
               </div>
             </ScrollArea>
           </div>
-          <DialogFooter className="gap-2">
-            {/* v8: Link para criar nova preparação */}
-            <a
-              href="/nutricao/preparacoes?new=true"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-blue-600 hover:text-blue-800 underline mr-auto"
+          <DialogFooter className="gap-2 flex-shrink-0">
+            {/* v8: Botão para criar nova preparação — abre sub-dialog (não abre nova aba) */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={openNewPrepInDialog}
+              className="text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700 mr-auto"
             >
-              + Nova Preparação
-            </a>
+              <Plus className="w-3 h-3 mr-1" /> Nova Preparação
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setAddDialogOpen(false)} disabled={adding}>Cancelar</Button>
             <Button
               size="sm"
@@ -2344,6 +2432,21 @@ export default function CardapioEditorPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ═══ Sub-dialog: Nova/Editar Preparação (sem sair da página) ═══ */}
+      <PreparacaoFormDialog
+        open={prepDialogOpenInCardapio}
+        onOpenChange={setPrepDialogOpenInCardapio}
+        editingPrepId={editingPrepInDialog}
+        editingPrep={
+          editingPrepInDialog
+            ? (preparacoes.find((p) => p.id === editingPrepInDialog) as PreparacaoLite | undefined)
+            : null
+        }
+        onSaved={handlePrepSaved}
+        onCloned={handlePrepCloned}
+        onDeleted={handlePrepDeleted}
+      />
     </div>
   )
 }
