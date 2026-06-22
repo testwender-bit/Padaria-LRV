@@ -292,62 +292,97 @@ async function main() {
 
   // 5b. Recriar ingredientes nas preparações
   console.log('\n── 5b. Recriando ingredientes nas preparações ──')
-  let criados = 0
-  let pulados = 0
+
+  // OTIMIZAÇÃO: pré-carregar todas as preparações e ingredientes existentes
+  // em memória para evitar N queries individuais (que deixam o script lento)
+  console.log('  📦 Pré-carregando preparações e ingredientes existentes...')
+  const todasPreparacoes = await prisma.preparacao.findMany({ select: { id: true } })
+  const preparacoesExistentes = new Set(todasPreparacoes.map(p => p.id))
+  console.log(`     ${preparacoesExistentes.size} preparações no banco`)
+
+  const ingredientesExistentes = await prisma.preparacaoIngrediente.findMany({
+    select: { id: true, preparacao_id: true, alimento_id: true, quantidade_gramas: true },
+  })
+  // Mapa: "prepId|alimentoId" → ingrediente
+  const ingredienteMap = new Map<string, { id: string; quantidade_gramas: number }>()
+  for (const ing of ingredientesExistentes) {
+    ingredienteMap.set(`${ing.preparacao_id}|${ing.alimento_id}`, { id: ing.id, quantidade_gramas: ing.quantidade_gramas })
+  }
+  console.log(`     ${ingredienteMap.size} ingredientes já existentes`)
+
+  // Agrupar ingredientes por (preparacao_id, alimento_id) para somar duplicatas
+  const ingredientesAgrupados = new Map<string, {
+    preparacao_id: string
+    alimento_id: string
+    quantidade_total: number
+    mesma_percapita: boolean
+  }>()
+
   for (const r of resultados) {
     let alimentoId: string | null = null
-
     if (r.status === 'auto' || r.status === 'revisar') {
       alimentoId = r.alimento_id_novo
     } else if (r.status === 'criar_custom') {
       alimentoId = nomesCustom.get(r.alimento_nome_antigo) || null
     }
+    if (!alimentoId) continue
+    if (!preparacoesExistentes.has(r.preparacao_id)) continue
 
-    if (!alimentoId) {
-      pulados++
-      continue
+    const key = `${r.preparacao_id}|${alimentoId}`
+    const existente = ingredientesAgrupados.get(key)
+    if (existente) {
+      existente.quantidade_total += r.quantidade_gramas
+    } else {
+      ingredientesAgrupados.set(key, {
+        preparacao_id: r.preparacao_id,
+        alimento_id: alimentoId,
+        quantidade_total: r.quantidade_gramas,
+        mesma_percapita: r.mesma_percapita,
+      })
     }
+  }
 
-    // Verificar se a preparação ainda existe
-    const prepExiste = await prisma.preparacao.findUnique({
-      where: { id: r.preparacao_id },
-      select: { id: true },
-    })
-    if (!prepExiste) {
-      pulados++
-      continue
-    }
+  console.log(`  📦 ${ingredientesAgrupados.size} ingredientes únicos para criar (após agrupar duplicatas)`)
 
-    // Verificar se já não existe este ingrediente (idempotência)
-    const existente = await prisma.preparacaoIngrediente.findUnique({
-      where: {
-        preparacao_id_alimento_id: {
-          preparacao_id: r.preparacao_id,
-          alimento_id: alimentoId,
-        },
-      },
-    })
+  // Criar/atualizar ingredientes em lotes
+  let criados = 0
+  let atualizados = 0
+  let pulados = 0
+  let count = 0
+  const total = ingredientesAgrupados.size
+
+  for (const [, ing] of ingredientesAgrupados) {
+    count++
+    const key = `${ing.preparacao_id}|${ing.alimento_id}`
+    const existente = ingredienteMap.get(key)
+
     if (existente) {
       // Já existe — somar quantidade
       await prisma.preparacaoIngrediente.update({
         where: { id: existente.id },
-        data: { quantidade_gramas: existente.quantidade_gramas + r.quantidade_gramas },
+        data: { quantidade_gramas: existente.quantidade_gramas + ing.quantidade_total },
+      })
+      atualizados++
+    } else {
+      // Criar novo
+      await prisma.preparacaoIngrediente.create({
+        data: {
+          preparacao_id: ing.preparacao_id,
+          alimento_id: ing.alimento_id,
+          quantidade_gramas: ing.quantidade_total,
+          mesma_percapita: ing.mesma_percapita,
+        },
       })
       criados++
-      continue
     }
 
-    await prisma.preparacaoIngrediente.create({
-      data: {
-        preparacao_id: r.preparacao_id,
-        alimento_id: alimentoId,
-        quantidade_gramas: r.quantidade_gramas,
-        mesma_percapita: r.mesma_percapita,
-      },
-    })
-    criados++
+    if (count % 100 === 0) {
+      console.log(`  ... ${count}/${total} processados (${criados} criados, ${atualizados} atualizados)`)
+    }
   }
-  console.log(`  ✓ ${criados} ingredientes recriados`)
+  pulados = resultados.length - ingredientesAgrupados.size
+  console.log(`  ✓ ${criados} ingredientes criados`)
+  console.log(`  ✓ ${atualizados} ingredientes atualizados (somou quantidades)`)
   console.log(`  ⏭️  ${pulados} ingredientes pulados (sem match ou preparação não existe)`)
 
   // ── 6. VALIDAÇÃO FINAL ──────────────────────────────────────

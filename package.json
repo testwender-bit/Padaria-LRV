@@ -15,11 +15,7 @@
     "seed": "npx prisma db seed",
     "seed:taco": "npx tsx prisma/seed-taco-alimentos.ts",
     "seed:nutricao": "npx tsx prisma/seed-nutricao.ts",
-    "seed:all": "npx prisma db seed && npx tsx prisma/seed-taco-alimentos.ts && npx tsx prisma/seed-nutricao.ts",
-    "backup": "npx tsx scripts/backup-supabase-completo.ts",
-    "restore": "npx tsx scripts/restore-supabase-completo.ts",
-    "taco:reset": "npx tsx scripts/reset-populate-taco.ts --apply",
-    "taco:revincular": "npx tsx scripts/revincular-preparacoes.ts --apply"
+    "seed:all": "npx prisma db seed && npx tsx prisma/seed-taco-alimentos.ts && npx tsx prisma/seed-nutricao.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

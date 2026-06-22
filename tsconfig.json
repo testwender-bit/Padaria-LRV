@@ -40,6 +40,8 @@
     "node_modules",
     "skills",
     "agent-ctx",
+    "scripts",
+    "prisma",
     "taco_seed_nutricao.ts",
     "taco_*.json",
     "tabelataco*.json",
