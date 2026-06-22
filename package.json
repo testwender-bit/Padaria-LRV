@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
+    "build": "prisma generate && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
+    "postinstall": "prisma generate",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
     "db:push": "prisma db push",
@@ -15,9 +16,10 @@
     "seed:taco": "npx tsx prisma/seed-taco-alimentos.ts",
     "seed:nutricao": "npx tsx prisma/seed-nutricao.ts",
     "seed:all": "npx prisma db seed && npx tsx prisma/seed-taco-alimentos.ts && npx tsx prisma/seed-nutricao.ts",
-    "seed:users": "npx tsx prisma/seed-users.ts",
-    "export:sqlite": "npx tsx scripts/export-sqlite-to-json.ts",
-    "import:supabase": "npx tsx scripts/import-json-to-supabase.ts"
+    "backup": "npx tsx scripts/backup-supabase-completo.ts",
+    "restore": "npx tsx scripts/restore-supabase-completo.ts",
+    "taco:reset": "npx tsx scripts/reset-populate-taco.ts --apply",
+    "taco:revincular": "npx tsx scripts/revincular-preparacoes.ts --apply"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
