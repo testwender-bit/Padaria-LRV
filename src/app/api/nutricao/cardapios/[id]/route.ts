@@ -46,6 +46,14 @@ export async function GET(
             preparacao_substituta: { select: { id: true, nome: true } },
           },
         },
+        // v8.7: horários customizados por refeição (override do default)
+        horarios_refeicoes: {
+          include: {
+            tipo_refeicao: {
+              select: { id: true, codigo: true, nome: true, horario: true, ordem: true },
+            },
+          },
+        },
       },
     })
 

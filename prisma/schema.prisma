@@ -366,6 +366,8 @@ model TipoRefeicao {
   cardapio_itens      CardapioItem[]
   metas               MetaNutricional[]
   sobrescritas        SobrescritaCardapio[]
+  // v8.7: horários customizados por cardápio (override do default desta refeição)
+  horarios_cardapios  CardapioHorarioRefeicao[]
 }
 
 // ── Categoria de Escola × Refeição ──────────────────────────
@@ -517,6 +519,8 @@ model CardapioNutricional {
   semanas           CardapioSemanaNutri[]
   sobrescritas      SobrescritaCardapio[]
   listas_compras    ListaCompras[]
+  // v8.7: horários customizados por tipo de refeição (override do default)
+  horarios_refeicoes CardapioHorarioRefeicao[]
 
   @@index([escola_id])
   @@index([categoria_escola])
@@ -671,3 +675,29 @@ model ListaCompras {
 // (Adicionada via back-relation; Prisma exige declaração explícita)
 // Para evitar conflito de schema, adicionamos a relação ao
 // CardapioNutricional abaixo como lista_compras.
+
+// ── v8.7: Horário customizado de refeição por cardápio ─────
+// Permite que cada cardápio tenha seu próprio horário para cada tipo
+// de refeição, sobrescrevendo o default de TipoRefeicao.horario.
+//
+// Casos de uso:
+//   - Lanche da Regular servido em 2 horários: "09h00 / 15h00"
+//   - Almoço do Interior às 11h00 (em vez de 10h00 default)
+//   - Renomear "Lanche" para "Lanche (manhã/tarde)" sem alterar tabela global
+//
+// Quando não existe registro, o sistema usa TipoRefeicao.horario (default).
+model CardapioHorarioRefeicao {
+  id                String  @id @default(cuid())
+  cardapio_id       String
+  tipo_refeicao_id  String
+  horario           String  // ex: "09h00 / 15h00" ou "11h00min"
+  // Número de vezes que esta refeição é servida no dia (default 1).
+  // Se horario="09h00 / 15h00", multiplicador=2 (mas a preparação aparece 1x só).
+  multiplicador     Int     @default(1)
+
+  cardapio       CardapioNutricional @relation(fields: [cardapio_id], references: [id], onDelete: Cascade)
+  tipo_refeicao  TipoRefeicao        @relation(fields: [tipo_refeicao_id], references: [id], onDelete: Cascade)
+
+  @@unique([cardapio_id, tipo_refeicao_id])
+  @@index([cardapio_id])
+}

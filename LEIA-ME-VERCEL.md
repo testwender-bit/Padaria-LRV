@@ -277,7 +277,7 @@ git commit -m "v8.6: migração para Supabase + Vercel"
 
 # Crie um repo público ou privado no GitHub e siga as instruções
 # Por exemplo, se criou como seu-usuario/padaria-lrv:
-git remote add origin https://github.com/SEU-USUARIO/padaria-lrv.git
+git remote add origin https://github.com/testwender-bit/padaria-lrv.git
 git branch -M main
 git push -u origin main
 ```

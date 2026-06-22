@@ -17,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil
+  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -37,6 +37,7 @@ import { detectarAlergenosPreparacao, ALERGENOS_LIST } from '@/lib/alergenos-uti
 import { normalizeText } from '@/lib/busca-utils'
 import { sortItensByRefeicao } from '@/lib/ordenacao-preparacoes'
 import { PreparacaoFormDialog, type PreparacaoLite } from '@/components/preparacao-form-dialog'
+import { parseHorarioToMinutes, ordenarPorHorario, contarHorarios, temMultiplosHorarios } from '@/lib/horario-utils'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -138,6 +139,17 @@ interface CardapioFull {
   escola?: { id: string; nome: string } | null
   nutricionista?: { id: string; nome: string } | null
   semanas: CardapioSemana[]
+  // v8.7: horários customizados por refeição (override do default)
+  horarios_refeicoes?: CardapioHorarioRefeicao[]
+}
+
+// v8.7: override de horário por cardápio
+interface CardapioHorarioRefeicao {
+  id: string
+  cardapio_id: string
+  tipo_refeicao_id: string
+  horario: string         // ex: "09h00 / 15h00"
+  multiplicador: number   // ex: 2 se tem 2 horários
 }
 
 interface MetaNutricional {
@@ -286,6 +298,11 @@ export default function CardapioEditorPage() {
   const [isMobile, setIsMobile] = useState(false)
   // v8: feriados para mostrar badge no editor
   const [feriados, setFeriados] = useState<Array<{ id: string; data: string; nome: string; tipo: string; escolas_afetadas: string }>>([])
+  // v8.7: dialog para editar horário customizado de uma refeição
+  const [horarioDialogOpen, setHorarioDialogOpen] = useState(false)
+  const [horarioEditando, setHorarioEditando] = useState<{ tipoRefeicaoId: string; nome: string; horarioDefault: string; horarioAtual: string } | null>(null)
+  const [horarioInput, setHorarioInput] = useState('')
+  const [salvandoHorario, setSalvandoHorario] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -365,11 +382,25 @@ export default function CardapioEditorPage() {
   }, [addDialogOpen, copyDialogOpen, faseDialogOpen, cardapio])
 
   // Refeições for the current category (with schedule info)
+  // v8.7: ORDENA POR HORÁRIO CRONOLÓGICO (não por tipo_refeicao.ordem).
+  // Usa horário customizado do cardápio se existir, senão usa default de TipoRefeicao.
   const refeicoesForCategoria = useMemo(() => {
     if (!cardapio) return []
-    return categoriasRefeicao
-      .filter((cr) => cr.categoria_escola === cardapio.categoria_escola)
-      .sort((a, b) => a.tipo_refeicao.ordem - b.tipo_refeicao.ordem)
+    const lista = categoriasRefeicao.filter((cr) => cr.categoria_escola === cardapio.categoria_escola)
+    // Para cada CategoriaRefeicao, anexar o horário efetivo (override se existir)
+    const horariosOverride = cardapio.horarios_refeicoes || []
+    return ordenarPorHorario(
+      lista.map((cr) => {
+        const override = horariosOverride.find(h => h.tipo_refeicao_id === cr.tipo_refeicao_id)
+        const horarioEfetivo = override?.horario ?? cr.tipo_refeicao.horario
+        return {
+          ...cr,
+          // Adiciona campo virtual para uso na UI
+          horario_efetivo: horarioEfetivo,
+          horario_override: override ?? null,
+        }
+      })
+    )
   }, [cardapio, categoriasRefeicao])
 
   // Current semana data
@@ -651,6 +682,86 @@ export default function CardapioEditorPage() {
       next.delete(_id)
       return next
     })
+  }
+
+  // ── v8.7: Horário customizado de refeição ──
+  // Abre o dialog de edição de horário para uma refeição
+  function openHorarioDialog(tipoRefeicaoId: string, nomeRefeicao: string, horarioDefault: string, horarioAtual: string) {
+    setHorarioEditando({ tipoRefeicaoId, nome: nomeRefeicao, horarioDefault, horarioAtual })
+    setHorarioInput(horarioAtual || horarioDefault)
+    setHorarioDialogOpen(true)
+  }
+
+  // Salva o horário customizado (POST na API)
+  async function handleSaveHorario() {
+    if (!horarioEditando) return
+    if (!horarioInput.trim()) {
+      toast.error('Horário não pode ser vazio')
+      return
+    }
+    setSalvandoHorario(true)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/horarios`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tipo_refeicao_id: horarioEditando.tipoRefeicaoId,
+          horario: horarioInput.trim(),
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Erro ao salvar horário')
+      }
+      const saved = await res.json()
+      // Atualização otimista: atualiza o estado do cardápio
+      setCardapio(prev => {
+        if (!prev) return prev
+        const existing = prev.horarios_refeicoes || []
+        const others = existing.filter(h => h.tipo_refeicao_id !== horarioEditando.tipoRefeicaoId)
+        return {
+          ...prev,
+          horarios_refeicoes: [
+            ...others,
+            { id: saved.id, cardapio_id: prev.id, tipo_refeicao_id: horarioEditando.tipoRefeicaoId, horario: saved.horario, multiplicador: saved.multiplicador },
+          ],
+        }
+      })
+      toast.success(`Horário de "${horarioEditando.nome}" atualizado para ${saved.horario}`)
+      setHorarioDialogOpen(false)
+      setHorarioEditando(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar horário')
+    } finally {
+      setSalvandoHorario(false)
+    }
+  }
+
+  // Remove o override (volta a usar o default de TipoRefeicao)
+  async function handleResetHorario() {
+    if (!horarioEditando) return
+    setSalvandoHorario(true)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/horarios?tipo_refeicao_id=${horarioEditando.tipoRefeicaoId}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error('Erro ao remover horário')
+      // Atualização otimista
+      setCardapio(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          horarios_refeicoes: (prev.horarios_refeicoes || []).filter(h => h.tipo_refeicao_id !== horarioEditando.tipoRefeicaoId),
+        }
+      })
+      toast.success(`Horário de "${horarioEditando.nome}" restaurado para o padrão (${horarioEditando.horarioDefault})`)
+      setHorarioDialogOpen(false)
+      setHorarioEditando(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao remover horário')
+    } finally {
+      setSalvandoHorario(false)
+    }
   }
 
   async function handleRemoveItem(itemId: string) {
@@ -1512,7 +1623,17 @@ export default function CardapioEditorPage() {
             {refeicoesForCategoria.map((cr) => (
               <div key={cr.tipo_refeicao_id} className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-gray-50 border border-gray-100 text-xs">
                 <span className="font-medium text-[#1A3A5C]">{cr.tipo_refeicao.nome}</span>
-                <Badge variant="outline" className="text-[9px] h-4 px-1 border-[#1A3A5C]/20">{cr.tipo_refeicao.horario}</Badge>
+                {/* v8.7: usa horário efetivo (override se existir) */}
+                <Badge
+                  variant="outline"
+                  className={`text-[9px] h-4 px-1 ${
+                    (cr as { horario_override?: unknown }).horario_override
+                      ? 'border-[#D4A017]/50 text-[#D4A017] bg-[#D4A017]/10'
+                      : 'border-[#1A3A5C]/20'
+                  }`}
+                >
+                  {(cr as { horario_efetivo?: string }).horario_efetivo ?? cr.tipo_refeicao.horario}
+                </Badge>
                 <span className="text-[9px] text-muted-foreground">{cr.percentual_energia}% VET</span>
               </div>
             ))}
@@ -1689,7 +1810,24 @@ export default function CardapioEditorPage() {
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-[10px] font-semibold text-[#1A3A5C] truncate">{cr.tipo_refeicao.nome}</span>
                             <div className="flex items-center gap-1">
-                              <Badge variant="outline" className="text-[8px] h-4 px-1">{cr.tipo_refeicao.horario}</Badge>
+                              {/* v8.7: Badge de horário clicável (mostra override se existir) */}
+                              <button
+                                onClick={() => openHorarioDialog(
+                                  cr.tipo_refeicao_id,
+                                  cr.tipo_refeicao.nome,
+                                  cr.tipo_refeicao.horario,
+                                  (cr as { horario_efetivo?: string }).horario_efetivo ?? cr.tipo_refeicao.horario,
+                                )}
+                                className={`text-[8px] h-4 px-1 inline-flex items-center gap-0.5 rounded border transition-colors ${
+                                  (cr as { horario_override?: unknown }).horario_override
+                                    ? 'bg-[#D4A017]/15 border-[#D4A017]/50 text-[#D4A017]'
+                                    : 'bg-transparent border-gray-200 text-gray-600 hover:border-[#1A3A5C]/40 hover:text-[#1A3A5C]'
+                                }`}
+                                title={`Horário padrão: ${cr.tipo_refeicao.horario}. Clique para editar.`}
+                              >
+                                <ClockIcon className="w-2.5 h-2.5" />
+                                {(cr as { horario_efetivo?: string }).horario_efetivo ?? cr.tipo_refeicao.horario}
+                              </button>
                               {itens.length > 0 && (
                                 <button
                                   onClick={() => handleClearSlot(dia.value, cr.tipo_refeicao_id)}
@@ -2447,6 +2585,88 @@ export default function CardapioEditorPage() {
         onCloned={handlePrepCloned}
         onDeleted={handlePrepDeleted}
       />
+
+      {/* ═══ v8.7: Dialog para editar horário customizado de refeição ═══ */}
+      <Dialog open={horarioDialogOpen} onOpenChange={setHorarioDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-[#1A3A5C] text-sm flex items-center gap-2">
+              <ClockIcon className="w-4 h-4" />
+              Editar Horário — {horarioEditando?.nome}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              Defina o horário desta refeição para <b>este cardápio</b>. O padrão é{' '}
+              <code className="bg-gray-100 px-1 rounded text-[10px]">{horarioEditando?.horarioDefault}</code>.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Horário</Label>
+              <Input
+                value={horarioInput}
+                onChange={(e) => setHorarioInput(e.target.value)}
+                placeholder="Ex: 09h00 / 15h00"
+                autoFocus
+                className="text-sm"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Para indicar que a refeição é servida em mais de um horário, separe com{' '}
+                <code className="bg-gray-100 px-1 rounded">/</code>. Exemplo:{' '}
+                <code className="bg-gray-100 px-1 rounded">09h00 / 15h00</code>.
+                A preparação aparece <b>uma vez só</b> no cardápio, mas com ambos os horários discriminados.
+              </p>
+            </div>
+
+            {/* Sugestões rápidas */}
+            <div className="flex flex-wrap gap-1">
+              <span className="text-[10px] text-muted-foreground self-center mr-1">Sugestões:</span>
+              {[
+                '09h00 / 15h00',
+                '07h30min',
+                '09h00min',
+                '11h00min',
+                '15h00min',
+              ].map(s => (
+                <button
+                  key={s}
+                  onClick={() => setHorarioInput(s)}
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-gray-200 hover:bg-gray-50 hover:border-[#1A3A5C]/30"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+          <DialogFooter className="gap-2 flex justify-between sm:justify-between">
+            {/* Reset (remove override) */}
+            {horarioEditando && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResetHorario}
+                disabled={salvandoHorario}
+                className="text-red-600 border-red-200 hover:bg-red-50"
+                title="Remove o override e volta para o horário padrão"
+              >
+                Restaurar padrão
+              </Button>
+            )}
+            <div className="flex gap-2 ml-auto">
+              <Button variant="outline" size="sm" onClick={() => setHorarioDialogOpen(false)} disabled={salvandoHorario}>
+                Cancelar
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSaveHorario}
+                disabled={salvandoHorario || !horarioInput.trim()}
+                className="bg-[#1A3A5C] hover:bg-[#1A3A5C]/90"
+              >
+                {salvandoHorario ? 'Salvando...' : 'Salvar Horário'}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

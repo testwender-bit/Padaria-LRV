@@ -29,6 +29,7 @@ import {
   type AlergenoSigla,
 } from '@/lib/alergenos-utils'
 import { sortItensByRefeicao } from '@/lib/ordenacao-preparacoes'
+import { parseHorarioToMinutes } from '@/lib/horario-utils'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -122,6 +123,13 @@ interface CardapioFull {
   nutricionista?: { id: string; nome: string; crn: string } | null
   equipe_nutricionistas?: { id: string; nome: string; crn: string }[]
   semanas: CardapioSemana[]
+  // v8.7: horários customizados por refeição (override do default)
+  horarios_refeicoes?: Array<{
+    id: string
+    tipo_refeicao_id: string
+    horario: string
+    multiplicador: number
+  }>
 }
 
 interface ResumoSemana {
@@ -166,7 +174,7 @@ function calcularResumoSemanaPDF(
   let diasComVitA = 0
 
   for (const dia of semana.dias) {
-    if (dia.itens.length === 0) continue
+    if (dia.itens.length === 0) continue  // dia vazio (feriado) — pula
     const diaNutri = dia.itens.reduce<NutrienteDia>((acc, item) => {
       const refeicaoNutri = calcularNutrientesRefeicao([{
         preparacao: {
@@ -179,6 +187,10 @@ function calcularResumoSemanaPDF(
       }])
       return somarNutrientes(acc, refeicaoNutri)
     }, emptyNutrienteDia())
+
+    // v8.7: também pula dias onde a soma dos nutrientes é zero
+    // (caso raro de itens com ingredientes todos zerados)
+    if (diaNutri.energia_kcal === 0 && diaNutri.proteinas_g === 0) continue
 
     totalSemana = somarNutrientes(totalSemana, diaNutri)
     diasComDados++
@@ -243,10 +255,25 @@ function SemanaPrintPage({
   cardapio: CardapioFull
   feriados?: FeriadoInfo[]
 }) {
+  // v8.7: tipos de refeição que aparecem nesta semana, ordenados por HORÁRIO
+  // cronológico (não mais por tipo_refeicao.ordem).
+  // Usa horário customizado do cardápio se existir; senão usa default.
+  const horariosOverride = (cardapio.horarios_refeicoes || []) as Array<{
+    tipo_refeicao_id: string
+    horario: string
+  }>
   const tiposRefeicao = semana.dias
     .flatMap((d) => d.itens.map((i) => i.tipo_refeicao))
     .filter((tr, idx, arr) => arr.findIndex((t) => t.id === tr.id) === idx)
-    .sort((a, b) => a.ordem - b.ordem)
+    .map((tr) => {
+      const override = horariosOverride.find(h => h.tipo_refeicao_id === tr.id)
+      return {
+        ...tr,
+        // horário efetivo = override se existir, senão default
+        horario_efetivo: override?.horario ?? tr.horario,
+      }
+    })
+    .sort((a, b) => parseHorarioToMinutes(a.horario_efetivo) - parseHorarioToMinutes(b.horario_efetivo))
 
   const resumo = calcularResumoSemanaPDF(semana, cardapio.fase_escolar)
 
@@ -340,7 +367,8 @@ function SemanaPrintPage({
             <tr key={tr.id} className="sp-row">
               <td className="sp-td-ref">
                 <span className="sp-ref-nome">{tr.nome}</span>
-                <span className="sp-ref-hora">{tr.horario}</span>
+                {/* v8.7: usa horário efetivo (override se existir) */}
+                <span className="sp-ref-hora">{(tr as { horario_efetivo?: string }).horario_efetivo ?? tr.horario}</span>
               </td>
               {DIAS_SEMANA_NUTRI.map((dia) => {
                 const diaData = semana.dias.find((d) => d.dia_semana === dia.value)

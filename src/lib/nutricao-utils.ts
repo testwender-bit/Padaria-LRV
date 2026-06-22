@@ -433,16 +433,23 @@ export function calcularResumoSemana(
   metas: MetaNutricionalData,
   categoriaEscola: string,
 ): ResumoNutricionalSemana {
-  // Sum all days and compute the daily average
-  const totalSemana = diasNutrientes.reduce(somarNutrientes, emptyNutrienteDia())
-  const numDias = diasNutrientes.length > 0 ? diasNutrientes.length : 1
+  // v8.7: Filtrar dias com preparação (ignora dias de feriado sem itens).
+  // Antes a média dividia por todos os dias (5), o que dava média baixa
+  // quando um dia era feriado. Agora divide apenas pelos dias que têm
+  // nutrientes (sum > 0), garantindo média real.
+  const diasComNutrientes = diasNutrientes.filter(
+    (d) => d.energia_kcal > 0 || d.proteinas_g > 0 || d.carboidratos_g > 0,
+  )
+
+  const totalSemana = diasComNutrientes.reduce(somarNutrientes, emptyNutrienteDia())
+  const numDias = diasComNutrientes.length > 0 ? diasComNutrientes.length : 1
   const mediaDia = dividirNutrientes(totalSemana, numDias)
 
   // Count days with heme iron and vitamin A
-  const diasComFerroHeme = diasNutrientes.filter(
+  const diasComFerroHeme = diasComNutrientes.filter(
     (d) => d.ferro_heme_mg > 0,
   ).length
-  const diasComVitaminaA = diasNutrientes.filter(
+  const diasComVitaminaA = diasComNutrientes.filter(
     (d) => d.vitamina_a_mcg > 0,
   ).length
 
