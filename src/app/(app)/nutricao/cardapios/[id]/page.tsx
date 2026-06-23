@@ -255,6 +255,9 @@ export default function CardapioEditorPage() {
   const [addTipoRefeicaoId, setAddTipoRefeicaoId] = useState<string | null>(null)
   const [addPrepSearch, setAddPrepSearch] = useState('')
   const [addSelectedPrepIds, setAddSelectedPrepIds] = useState<Set<string>>(new Set())
+  // v8.8: rastreia quais preparações JÁ ESTAVAM no slot quando o dialog abriu
+  // (para saber quais remover se o usuário desmarcar)
+  const [addInitialPrepIds, setAddInitialPrepIds] = useState<Set<string>>(new Set())
   const [adding, setAdding] = useState(false)
   // v8: editar/criar/clonar preparação dentro do dialog de adicionar
   const [editingPrepInDialog, setEditingPrepInDialog] = useState<string | null>(null)  // id da prep sendo editada, null = nova
@@ -553,13 +556,20 @@ export default function CardapioEditorPage() {
   }, [semanaAtual, cardapio, metas])
 
   // Open add dialog for a specific slot
-  function openAddDialog(diaId: string, tipoRefeicaoId: string) {
+  // v8.8: pré-seleciona as preparações que JÁ ESTÃO no slot
+  function openAddDialog(diaId: string, tipoRefeicaoId: string, diaSemana: string) {
     setAddDiaId(diaId)
     setAddTipoRefeicaoId(tipoRefeicaoId)
     setAddPrepSearch('')
-    setAddSelectedPrepIds(new Set())
     setAddFilter('all')
     setAddSemAlergenos(new Set())
+
+    // Buscar itens que já estão neste slot e pré-selecioná-los
+    const itensExistentes = getItensForSlot(diaSemana, tipoRefeicaoId)
+    const prepIdsExistentes = new Set(itensExistentes.map(i => i.preparacao_id))
+    setAddSelectedPrepIds(prepIdsExistentes)
+    setAddInitialPrepIds(new Set(prepIdsExistentes))  // snapshot do estado inicial
+
     setAddDialogOpen(true)
   }
 
@@ -573,48 +583,106 @@ export default function CardapioEditorPage() {
     })
   }
 
-  // Add all selected preparations
+  // v8.8: Adicionar E remover preparações (baseado no que foi marcado/desmarcado)
   async function handleAddPreparacoes() {
-    if (!addDiaId || addSelectedPrepIds.size === 0) return
+    if (!addDiaId) return
+    // Permite size === 0 se o usuário desmarcou tudo (para remover todos)
     setAdding(true)
     try {
-      const items = Array.from(addSelectedPrepIds).map(prepId => ({
-        dia_id: addDiaId,
-        tipo_refeicao_id: addTipoRefeicaoId,
-        preparacao_id: prepId,
-        porcoes: 1,
-      }))
+      // Calcular o que adicionar (marcado agora mas não estava antes)
+      const paraAdicionar = Array.from(addSelectedPrepIds).filter(id => !addInitialPrepIds.has(id))
+      // Calcular o que remover (estava antes mas foi desmarcado)
+      const paraRemover = Array.from(addInitialPrepIds).filter(id => !addSelectedPrepIds.has(id))
 
-      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/item`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items }),
-      })
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error(errData.error || 'Erro ao adicionar preparações')
-      }
-      const itensCriados = await res.json()
-      toast.success(`${addSelectedPrepIds.size} preparação(ões) adicionada(s)`)
-      setAddDialogOpen(false)
+      let adicionadas = 0
+      let removidas = 0
 
-      // ── ATUALIZAÇÃO OTIMISTA (sem refresh) ──
-      const novosItens = (Array.isArray(itensCriados) ? itensCriados : [itensCriados]) as CardapioItem[]
-      setCardapio(prev => {
-        if (!prev) return prev
-        return {
-          ...prev,
-          semanas: prev.semanas.map(s => ({
-            ...s,
-            dias: s.dias.map(d => {
-              if (d.id !== addDiaId) return d
-              return { ...d, itens: [...d.itens, ...novosItens] }
-            }),
-          })),
+      // ── ADICIONAR novas preparações ──
+      if (paraAdicionar.length > 0) {
+        const items = paraAdicionar.map(prepId => ({
+          dia_id: addDiaId,
+          tipo_refeicao_id: addTipoRefeicaoId,
+          preparacao_id: prepId,
+          porcoes: 1,
+        }))
+
+        const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/item`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items }),
+        })
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}))
+          throw new Error(errData.error || 'Erro ao adicionar preparações')
         }
-      })
+        const itensCriados = await res.json()
+        adicionadas = paraAdicionar.length
+
+        // Atualização otimista
+        const novosItens = (Array.isArray(itensCriados) ? itensCriados : [itensCriados]) as CardapioItem[]
+        setCardapio(prev => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            semanas: prev.semanas.map(s => ({
+              ...s,
+              dias: s.dias.map(d => {
+                if (d.id !== addDiaId) return d
+                return { ...d, itens: [...d.itens, ...novosItens] }
+              }),
+            })),
+          }
+        })
+      }
+
+      // ── REMOVER preparações desmarcadas ──
+      if (paraRemover.length > 0) {
+        // Para cada preparação a remover, encontrar o item no slot e deletar
+        for (const prepId of paraRemover) {
+          // Buscar o item no estado atual
+          const dia = semanaAtual?.dias.find(d => d.id === addDiaId)
+          const item = dia?.itens.find(i => i.preparacao_id === prepId && i.tipo_refeicao_id === addTipoRefeicaoId)
+          if (!item) continue
+
+          const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/item`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: item.id }),
+          })
+          if (res.ok) {
+            removidas++
+            // Atualização otimista
+            setCardapio(prev => {
+              if (!prev) return prev
+              return {
+                ...prev,
+                semanas: prev.semanas.map(s => ({
+                  ...s,
+                  dias: s.dias.map(d => {
+                    if (d.id !== addDiaId) return d
+                    return { ...d, itens: d.itens.filter(i => i.id !== item.id) }
+                  }),
+                })),
+              }
+            })
+          }
+        }
+      }
+
+      // Toast informativo
+      if (adicionadas > 0 && removidas > 0) {
+        toast.success(`${adicionadas} adicionada(s), ${removidas} removida(s)`)
+      } else if (adicionadas > 0) {
+        toast.success(`${adicionadas} preparação(ões) adicionada(s)`)
+      } else if (removidas > 0) {
+        toast.success(`${removidas} preparação(ões) removida(s)`)
+      } else {
+        toast.info('Nenhuma alteração')
+      }
+
+      setAddDialogOpen(false)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao adicionar preparações')
+      toast.error(err instanceof Error ? err.message : 'Erro ao atualizar preparações')
     } finally {
       setAdding(false)
     }
@@ -1905,7 +1973,7 @@ export default function CardapioEditorPage() {
                             className="w-full h-5 text-[9px] text-muted-foreground hover:text-[#1A3A5C] hover:bg-[#1A3A5C]/5"
                             onClick={() => {
                               if (diaData) {
-                                openAddDialog(diaData.id, cr.tipo_refeicao_id)
+                                openAddDialog(diaData.id, cr.tipo_refeicao_id, dia.value)
                               }
                             }}
                           >
@@ -2051,7 +2119,7 @@ export default function CardapioEditorPage() {
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col gap-3 p-5 overflow-hidden">
           <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="text-[#1A3A5C] text-sm">Adicionar Preparações</DialogTitle>
+            <DialogTitle className="text-[#1A3A5C] text-sm">Gerenciar Preparações</DialogTitle>
           </DialogHeader>
           <div className="flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden">
             {/* Abas de filtro rápido */}
@@ -2128,6 +2196,19 @@ export default function CardapioEditorPage() {
               <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-[#1A3A5C]/5 border border-[#1A3A5C]/10 flex-shrink-0">
                 <Check className="w-3.5 h-3.5 text-[#1A3A5C]" />
                 <span className="text-xs font-medium text-[#1A3A5C]">{addSelectedPrepIds.size} selecionada(s)</span>
+                {/* v8.8: mostrar mudanças em tempo real */}
+                {(() => {
+                  const paraAdd = Array.from(addSelectedPrepIds).filter(id => !addInitialPrepIds.has(id)).length
+                  const paraRem = Array.from(addInitialPrepIds).filter(id => !addSelectedPrepIds.has(id)).length
+                  if (paraAdd > 0 || paraRem > 0) {
+                    return (
+                      <span className="text-[10px] text-[#D4A017] font-medium ml-1">
+                        ({paraAdd > 0 ? `+${paraAdd}` : ''}{paraAdd > 0 && paraRem > 0 ? ' ' : ''}{paraRem > 0 ? `-${paraRem}` : ''})
+                      </span>
+                    )
+                  }
+                  return null
+                })()}
                 <button
                   onClick={() => setAddSelectedPrepIds(new Set())}
                   className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
@@ -2226,10 +2307,17 @@ export default function CardapioEditorPage() {
             <Button
               size="sm"
               onClick={handleAddPreparacoes}
-              disabled={adding || addSelectedPrepIds.size === 0}
+              disabled={adding}
               className="bg-[#1A3A5C] hover:bg-[#1A3A5C]/90"
             >
-              {adding ? 'Adicionando...' : `Adicionar ${addSelectedPrepIds.size} preparação(ões)`}
+              {adding ? 'Salvando...' : (() => {
+                const paraAdd = Array.from(addSelectedPrepIds).filter(id => !addInitialPrepIds.has(id)).length
+                const paraRem = Array.from(addInitialPrepIds).filter(id => !addSelectedPrepIds.has(id)).length
+                if (paraAdd > 0 && paraRem > 0) return `Salvar (+${paraAdd} / -${paraRem})`
+                if (paraAdd > 0) return `Adicionar ${paraAdd} preparação(ões)`
+                if (paraRem > 0) return `Remover ${paraRem} preparação(ões)`
+                return 'Nenhuma alteração'
+              })()}
             </Button>
           </DialogFooter>
         </DialogContent>
