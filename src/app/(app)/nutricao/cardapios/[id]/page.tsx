@@ -574,6 +574,7 @@ export default function CardapioEditorPage() {
   }
 
   // Toggle preparation selection
+  // v8.8: ao selecionar, limpa a busca para mostrar todos + mantém foco na lista
   function togglePrepSelection(prepId: string) {
     setAddSelectedPrepIds(prev => {
       const next = new Set(prev)
@@ -581,6 +582,8 @@ export default function CardapioEditorPage() {
       else next.add(prepId)
       return next
     })
+    // Limpar a busca após selecionar/desselecionar
+    setAddPrepSearch('')
   }
 
   // v8.8: Adicionar E remover preparações (baseado no que foi marcado/desmarcado)
@@ -2191,30 +2194,57 @@ export default function CardapioEditorPage() {
               })}
             </div>
 
-            {/* Selected count */}
+            {/* Selected count + chips dos itens selecionados */}
             {addSelectedPrepIds.size > 0 && (
-              <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-[#1A3A5C]/5 border border-[#1A3A5C]/10 flex-shrink-0">
-                <Check className="w-3.5 h-3.5 text-[#1A3A5C]" />
-                <span className="text-xs font-medium text-[#1A3A5C]">{addSelectedPrepIds.size} selecionada(s)</span>
-                {/* v8.8: mostrar mudanças em tempo real */}
-                {(() => {
-                  const paraAdd = Array.from(addSelectedPrepIds).filter(id => !addInitialPrepIds.has(id)).length
-                  const paraRem = Array.from(addInitialPrepIds).filter(id => !addSelectedPrepIds.has(id)).length
-                  if (paraAdd > 0 || paraRem > 0) {
+              <div className="flex flex-col gap-1.5 px-2 py-1.5 rounded-lg bg-[#1A3A5C]/5 border border-[#1A3A5C]/10 flex-shrink-0">
+                {/* Linha 1: contador + mudanças */}
+                <div className="flex items-center gap-2">
+                  <Check className="w-3.5 h-3.5 text-[#1A3A5C]" />
+                  <span className="text-xs font-medium text-[#1A3A5C]">{addSelectedPrepIds.size} selecionada(s)</span>
+                  {(() => {
+                    const paraAdd = Array.from(addSelectedPrepIds).filter(id => !addInitialPrepIds.has(id)).length
+                    const paraRem = Array.from(addInitialPrepIds).filter(id => !addSelectedPrepIds.has(id)).length
+                    if (paraAdd > 0 || paraRem > 0) {
+                      return (
+                        <span className="text-[10px] text-[#D4A017] font-medium ml-1">
+                          ({paraAdd > 0 ? `+${paraAdd}` : ''}{paraAdd > 0 && paraRem > 0 ? ' ' : ''}{paraRem > 0 ? `-${paraRem}` : ''})
+                        </span>
+                      )
+                    }
+                    return null
+                  })()}
+                  <button
+                    onClick={() => setAddSelectedPrepIds(new Set())}
+                    className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
+                  >
+                    Limpar seleção
+                  </button>
+                </div>
+                {/* Linha 2: chips dos itens selecionados (clicáveis para remover) */}
+                <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                  {Array.from(addSelectedPrepIds).map(prepId => {
+                    const prep = preparacoes.find(p => p.id === prepId)
+                    if (!prep) return null
+                    const ehNovo = !addInitialPrepIds.has(prepId)
+                    const ehRemover = false  // já foi removido se não está no set
                     return (
-                      <span className="text-[10px] text-[#D4A017] font-medium ml-1">
-                        ({paraAdd > 0 ? `+${paraAdd}` : ''}{paraAdd > 0 && paraRem > 0 ? ' ' : ''}{paraRem > 0 ? `-${paraRem}` : ''})
-                      </span>
+                      <button
+                        key={prepId}
+                        onClick={() => togglePrepSelection(prepId)}
+                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+                          ehNovo
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                            : 'bg-[#1A3A5C]/10 border-[#1A3A5C]/20 text-[#1A3A5C] hover:bg-red-50 hover:border-red-300 hover:text-red-600'
+                        }`}
+                        title={ehNovo ? 'Nova (clique para remover)' : 'Existente (clique para remover)'}
+                      >
+                        {ehNovo && <span className="text-[8px]">+</span>}
+                        <span className="truncate max-w-[120px]">{prep.nome}</span>
+                        <X className="w-2.5 h-2.5 flex-shrink-0" />
+                      </button>
                     )
-                  }
-                  return null
-                })()}
-                <button
-                  onClick={() => setAddSelectedPrepIds(new Set())}
-                  className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
-                >
-                  Limpar seleção
-                </button>
+                  })}
+                </div>
               </div>
             )}
 
