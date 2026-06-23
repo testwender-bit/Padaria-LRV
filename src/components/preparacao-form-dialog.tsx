@@ -551,14 +551,14 @@ export function PreparacaoFormDialog({
           Este sub-dialog, sendo aberto depois, aparece por cima pela ordem do DOM.
           Se tivéssemos um zIndex inline aqui (ex: 100), o AlertDialog de exclusão
           (z-50 default) ficaria ATRÁS deste dialog e o usuário não conseguiria clicar. */}
-      <DialogContent className="max-w-[95vw] lg:max-w-[1100px] h-[95vh] flex flex-col p-0 gap-0">
+      <DialogContent className="max-w-[98vw] lg:max-w-[1280px] h-[96vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
           <DialogTitle className="text-[#1A3A5C] text-lg">
             {isEditing ? 'Editar Preparação' : 'Nova Preparação'}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5 custom-scrollbar">
           {/* Nome, Descrição, Modo Preparo, Categoria */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div className="space-y-1.5">
@@ -662,7 +662,7 @@ export function PreparacaoFormDialog({
                                 />
                               </div>
                             </div>
-                            <div className="max-h-[200px] overflow-y-auto">
+                            <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
                               {getFilteredAlimentosForIng(idx).length === 0 ? (
                                 <p className="text-xs text-muted-foreground text-center py-3">Nenhum alimento encontrado</p>
                               ) : (

@@ -126,9 +126,10 @@
   }
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar — discreta e elegante */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
@@ -139,6 +140,11 @@
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: oklch(0.65 0.01 90);
+}
+/* Firefox */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.8 0.01 90) transparent;
 }
 
 @import './print.css';
