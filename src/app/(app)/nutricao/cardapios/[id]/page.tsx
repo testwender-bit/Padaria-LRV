@@ -208,6 +208,7 @@ function getFaseColor(fase: string) {
 function formatDate(dateStr: string) {
   if (!dateStr) return '—'
   const d = new Date(dateStr + 'T12:00:00')
+  if (isNaN(d.getTime())) return '—'  // v8.8: data inválida
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
 }
 
@@ -1181,8 +1182,11 @@ export default function CardapioEditorPage() {
     if (idxAlvo === undefined) return null
     const offsetDias = idxAlvo - 1
     if (offsetDias < 0 || offsetDias > 4) return null
+    // v8.8: se data_inicio está vazio (cardápio novo sem data configurada), não calcular feriados
+    if (!semanaAtual.data_inicio) return null
 
     const inicio = new Date(semanaAtual.data_inicio + 'T12:00:00')
+    if (isNaN(inicio.getTime())) return null  // data inválida — não calcular
     const dataDia = new Date(inicio)
     dataDia.setDate(inicio.getDate() + offsetDias)
     const dataIso = dataDia.toISOString().split('T')[0]
@@ -1597,15 +1601,6 @@ export default function CardapioEditorPage() {
             <Link href={`/nutricao/cardapios/${cardapioId}/comparar`}>
               <Button variant="outline" size="sm" className="text-xs h-8 border-blue-200 text-blue-700 hover:bg-blue-50">
                 <GitCompare className="w-3 h-3 mr-1" /> Comparar c/ Base
-              </Button>
-            </Link>
-          )}
-
-          {/* Botão Clonar em Lote (somente se for base) — mantido para compat. */}
-          {!cardapio.escola_id && (
-            <Link href={`/nutricao/cardapios/${cardapioId}/clonar-lote`}>
-              <Button variant="outline" size="sm" className="text-xs h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50">
-                <Layers className="w-3 h-3 mr-1" /> Clonar em Lote
               </Button>
             </Link>
           )}

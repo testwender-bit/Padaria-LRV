@@ -107,17 +107,27 @@ function parseTabelas(tabelas: any[]): SemanaCardapio[] {
       const row = tabela[ri]
       if (!row || row.length < 2) continue
 
-      // Célula 0 = número da semana + data
+      // Célula 0 = "Semana X" ou "X data" ou vazio (pular se vazio)
       const cell0 = row[0]
       const weekInfo = cell0.join(' ').trim()
       if (!weekInfo) continue
 
-      // Extrair número da semana e data
-      // Ex: "3 20 a 24/07" → semana 3, data "20 a 24/07"
-      // Ex: "4 27 a 31/07" → semana 4, data "27 a 31/07"
-      const weekMatch = weekInfo.match(/^(\d+)\s*(.*)$/)
-      const numeroSemana = weekMatch ? weekMatch[1] : '?'
-      const dataRange = weekMatch ? weekMatch[2].trim() : weekInfo
+      // v8.8: Extrair número da semana do formato "Semana X"
+      // Suporta: "Semana 1", "Semana 22", "1 20 a 24/07", etc.
+      let numeroSemana = '?'
+      let dataRange = weekInfo
+
+      const semanaMatch = weekInfo.match(/semana\s*(\d+)/i)
+      if (semanaMatch) {
+        numeroSemana = semanaMatch[1]
+        dataRange = weekInfo.replace(/semana\s*\d+/i, '').trim()
+      } else {
+        const weekMatch = weekInfo.match(/^(\d+)\s*(.*)$/)
+        if (weekMatch) {
+          numeroSemana = weekMatch[1]
+          dataRange = weekMatch[2].trim()
+        }
+      }
 
       // Verificar se é férias/feriado
       const todasPreps = row.slice(1).flat().join(' ').toLowerCase()
@@ -224,11 +234,77 @@ async function main() {
     }
   }
 
+  // v8.8: Se não existe cardápio base Regular, CRIAR automaticamente
   if (!cardapio) {
-    console.error('❌ Cardápio Regular base não encontrado!')
-    console.error('   Crie um cardápio com categoria_escola=REGULAR e escola_id=null')
-    console.error('   Ou use --cardapio-id=XXXX')
-    process.exit(1)
+    console.log('  ⚠️  Cardápio Regular base não encontrado. Criando automaticamente...')
+
+    // Buscar nutricionista ativo (necessário para criar cardápio)
+    const nutricionista = await prisma.nutricionista.findFirst({
+      where: { ativo: true },
+    })
+    if (!nutricionista) {
+      console.error('❌ Nenhum nutricionista ativo encontrado. Crie um nutricionista primeiro.')
+      process.exit(1)
+    }
+
+    const ano = new Date().getFullYear()
+    const semestre = new Date().getMonth() >= 6 ? 2 : 1
+
+    console.log(`  📝 Criando cardápio: "Cardápio Regular ${ano}/${semestre}"`)
+    console.log(`     Nutricionista: ${nutricionista.nome} (CRN: ${nutricionista.crn})`)
+
+    if (MODO_APLICAR) {
+      cardapio = await prisma.cardapioNutricional.create({
+        data: {
+          nome: `Cardápio Regular ${ano}/${semestre}`,
+          escola_id: null,
+          nutricionista_id: nutricionista.id,
+          categoria_escola: 'REGULAR',
+          fase_escolar: 'FUND_FINAL',
+          ano,
+          semestre,
+          status: 'RASCUNHO',
+          criado_em: new Date().toISOString(),
+          atualizado_em: new Date().toISOString(),
+          ciclo_semanas: 5,
+          repetir_ciclo: true,
+          // Criar 22 semanas automaticamente
+          semanas: {
+            create: Array.from({ length: 22 }, (_, i) => ({
+              numero: i + 1,
+              data_inicio: '',
+              data_fim: '',
+              dias: {
+                create: [
+                  { dia_semana: 'segunda' },
+                  { dia_semana: 'terca' },
+                  { dia_semana: 'quarta' },
+                  { dia_semana: 'quinta' },
+                  { dia_semana: 'sexta' },
+                ],
+              },
+            })),
+          },
+        },
+        include: { semanas: { select: { id: true, numero: true, dias: { select: { id: true, dia_semana: true } } } } },
+      })
+      console.log(`  ✅ Cardápio criado! ID: ${cardapio.id}`)
+      console.log(`     ${cardapio.semanas.length} semanas criadas (1-22)`)
+    } else {
+      console.log('  (dry-run — cardápio seria criado com 22 semanas)')
+      // Criar objeto fake para o dry-run continuar
+      cardapio = {
+        id: 'dry-run-id',
+        nome: `Cardápio Regular ${ano}/${semestre}`,
+        ano,
+        semestre,
+        semanas: Array.from({ length: 22 }, (_, i) => ({
+          id: `dry-run-semana-${i + 1}`,
+          numero: i + 1,
+          dias: ['segunda', 'terca', 'quarta', 'quinta', 'sexta'].map(d => ({ id: `dry-run-dia-${i}-${d}`, dia_semana: d })),
+        })),
+      }
+    }
   }
   console.log(`  ✓ Cardápio: "${cardapio.nome}" (${cardapio.ano}/${cardapio.semestre})`)
   console.log(`  ✓ ${cardapio.semanas.length} semanas no cardápio`)
@@ -305,27 +381,36 @@ async function main() {
     }
   }
 
-  // ── MAPEAR SEMANAS ODT → SEMANAS DO CARDÁPIO ──
-  console.log('\n── MAPEANDO SEMANAS ODT → CARDÁPIO ──')
+  // ── MAPEAR SEMANAS ODT → SEMANAS DO CARDÁPIO (POR NÚMERO DIRETO) ──
+  console.log('\n── MAPEANDO SEMANAS ODT → CARDÁPIO (por número) ──')
 
-  // Filtrar semanas que NÃO são férias e ordenar por data
-  const semanasParaImportar = semanas.filter(s => !s.eh_ferias)
-  console.log(`  Semanas a importar: ${semanasParaImportar.length}`)
-  console.log(`  Semanas no cardápio: ${cardapio.semanas.length}`)
-
-  // Mapear: semana ODT[i] → semana cardápio[i+1] (sequencial)
-  // Se houver mais semanas ODT que cardápio, truncar
-  // Se houver menos, pular as últimas
+  // v8.8: Mapear por número da semana (não mais sequencial)
+  // "Semana 1" do ODT → semana 1 do cardápio
+  // "Semana 5" do ODT → semana 5 do cardápio
   const mapeamentoSemanas: Array<{ odt: SemanaCardapio; cardapio_semana: any }> = []
-  for (let i = 0; i < Math.min(semanasParaImportar.length, cardapio.semanas.length); i++) {
-    const semanaOdt = semanasParaImportar[i]
-    const semanaCardapio = cardapio.semanas[i]
-    mapeamentoSemanas.push({ odt: semanaOdt, cardapio_semana: semanaCardapio })
-    console.log(`  Semana ${semanaCardapio.numero} ← ODT "${semanaOdt.numero_semana} ${semanaOdt.data_range}"`)
+  let semanasNaoEncontradas = 0
+
+  for (const semOdt of semanas) {
+    if (semOdt.eh_ferias) continue
+    const numSemana = parseInt(semOdt.numero_semana)
+    if (isNaN(numSemana)) {
+      console.log(`  ⚠️  Semana "${semOdt.numero_semana}" não tem número válido — pulando`)
+      continue
+    }
+    // Buscar a semana do cardápio pelo número
+    const semanaCardapio = cardapio.semanas.find(s => s.numero === numSemana)
+    if (!semanaCardapio) {
+      console.log(`  ⚠️  Semana ${numSemana} não existe no cardápio (tem ${cardapio.semanas.length} semanas) — pulando`)
+      semanasNaoEncontradas++
+      continue
+    }
+    mapeamentoSemanas.push({ odt: semOdt, cardapio_semana: semanaCardapio })
+    console.log(`  ✓ Semana ${numSemana} → "${semOdt.data_range || 'sem data'}" (${semOdt.dias.reduce((a, d) => a + d.preparacoes.length, 0)} preparações)`)
   }
 
-  if (semanasParaImportar.length > cardapio.semanas.length) {
-    console.log(`  ⚠️  ${semanasParaImportar.length - cardapio.semanas.length} semanas do ODT não cabem no cardápio`)
+  console.log(`\n  Total mapeado: ${mapeamentoSemanas.length} semanas`)
+  if (semanasNaoEncontradas > 0) {
+    console.log(`  ⚠️  ${semanasNaoEncontradas} semanas não encontradas no cardápio`)
   }
 
   // ── PREVIEW ──
