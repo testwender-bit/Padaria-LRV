@@ -32,6 +32,7 @@ import {
   type NutrienteDia,
   type ResumoNutricionalSemana,
   type FaseEscolar,
+  limparNomeIngrediente,
 } from '@/lib/nutricao-utils'
 import { detectarAlergenosPreparacao, ALERGENOS_LIST } from '@/lib/alergenos-utils'
 import { normalizeText } from '@/lib/busca-utils'
@@ -575,7 +576,7 @@ export default function CardapioEditorPage() {
   }
 
   // Toggle preparation selection
-  // v8.8: ao selecionar, limpa a busca para mostrar todos + mantém foco na lista
+  // v8.8: ao selecionar, limpa a busca para mostrar todos
   function togglePrepSelection(prepId: string) {
     setAddSelectedPrepIds(prev => {
       const next = new Set(prev)
@@ -2245,13 +2246,14 @@ export default function CardapioEditorPage() {
                     )
                     const isSelected = addSelectedPrepIds.has(p.id)
                     const ehNovo = isSelected && !addInitialPrepIds.has(p.id)
-                    // Calcular info nutricional rápida (kcal + proteína)
+                    // v8.8: Calcular info nutricional (kcal + proteína) usando quantidade_gramas base (100%)
+                    // Mesma lógica da página de preparações — NÃO usar percapitas[0] que pode ser BERCARIO
                     const kcal = p.ingredientes.reduce((sum, ing) => {
-                      const g = ing.mesma_percapita ? ing.quantidade_gramas : (ing.percapitas?.[0]?.quantidade_gramas || ing.quantidade_gramas)
+                      const g = ing.quantidade_gramas
                       return sum + (g * (ing.alimento.energia_kcal || 0)) / 100
                     }, 0)
                     const prot = p.ingredientes.reduce((sum, ing) => {
-                      const g = ing.mesma_percapita ? ing.quantidade_gramas : (ing.percapitas?.[0]?.quantidade_gramas || ing.quantidade_gramas)
+                      const g = ing.quantidade_gramas
                       return sum + (g * (ing.alimento.proteinas_g || 0)) / 100
                     }, 0)
                     return (
