@@ -1466,14 +1466,27 @@ export default function CardapioEditorPage() {
       })
     }
 
-    // Busca por nome (sem acento)
-    const q = normalizeText(addPrepSearch)
+    // v8.8: Busca inteligente — por palavras (AND), sem acento
+    const q = normalizeText(addPrepSearch).trim()
     if (q) {
-      list = list.filter((p) => normalizeText(p.nome).includes(q))
+      const queryWords = q.split(/\s+/).filter(w => w.length > 0)
+      list = list.filter((p) => {
+        const nome = normalizeText(p.nome)
+        return queryWords.every(qw => nome.includes(qw))
+      })
     }
 
+    // v8.8: Ordenar — selecionados PRIMEIRO (fixados no topo), depois alfabético
+    const selIds = addSelectedPrepIds
+    list = [...list].sort((a, b) => {
+      const aSel = selIds.has(a.id) ? 0 : 1
+      const bSel = selIds.has(b.id) ? 0 : 1
+      if (aSel !== bSel) return aSel - bSel
+      return a.nome.localeCompare(b.nome)
+    })
+
     return list
-  }, [preparacoes, addFilter, addSemAlergenos, addPrepSearch])
+  }, [preparacoes, addFilter, addSemAlergenos, addPrepSearch, addSelectedPrepIds])
 
   if (loading) {
     return (
@@ -2194,61 +2207,33 @@ export default function CardapioEditorPage() {
               })}
             </div>
 
-            {/* Selected count + chips dos itens selecionados */}
+            {/* v8.8: Contador compacto (sem chips — selecionados aparecem no topo da lista) */}
             {addSelectedPrepIds.size > 0 && (
-              <div className="flex flex-col gap-1.5 px-2 py-1.5 rounded-lg bg-[#1A3A5C]/5 border border-[#1A3A5C]/10 flex-shrink-0">
-                {/* Linha 1: contador + mudanças */}
-                <div className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-[#1A3A5C]" />
-                  <span className="text-xs font-medium text-[#1A3A5C]">{addSelectedPrepIds.size} selecionada(s)</span>
-                  {(() => {
-                    const paraAdd = Array.from(addSelectedPrepIds).filter(id => !addInitialPrepIds.has(id)).length
-                    const paraRem = Array.from(addInitialPrepIds).filter(id => !addSelectedPrepIds.has(id)).length
-                    if (paraAdd > 0 || paraRem > 0) {
-                      return (
-                        <span className="text-[10px] text-[#D4A017] font-medium ml-1">
-                          ({paraAdd > 0 ? `+${paraAdd}` : ''}{paraAdd > 0 && paraRem > 0 ? ' ' : ''}{paraRem > 0 ? `-${paraRem}` : ''})
-                        </span>
-                      )
-                    }
-                    return null
-                  })()}
-                  <button
-                    onClick={() => setAddSelectedPrepIds(new Set())}
-                    className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
-                  >
-                    Limpar seleção
-                  </button>
-                </div>
-                {/* Linha 2: chips dos itens selecionados (clicáveis para remover) */}
-                <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
-                  {Array.from(addSelectedPrepIds).map(prepId => {
-                    const prep = preparacoes.find(p => p.id === prepId)
-                    if (!prep) return null
-                    const ehNovo = !addInitialPrepIds.has(prepId)
-                    const ehRemover = false  // já foi removido se não está no set
+              <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-[#1A3A5C]/5 border border-[#1A3A5C]/10 flex-shrink-0">
+                <Check className="w-3.5 h-3.5 text-[#1A3A5C]" />
+                <span className="text-xs font-medium text-[#1A3A5C]">{addSelectedPrepIds.size} selecionada(s)</span>
+                {(() => {
+                  const paraAdd = Array.from(addSelectedPrepIds).filter(id => !addInitialPrepIds.has(id)).length
+                  const paraRem = Array.from(addInitialPrepIds).filter(id => !addSelectedPrepIds.has(id)).length
+                  if (paraAdd > 0 || paraRem > 0) {
                     return (
-                      <button
-                        key={prepId}
-                        onClick={() => togglePrepSelection(prepId)}
-                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border transition-colors ${
-                          ehNovo
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
-                            : 'bg-[#1A3A5C]/10 border-[#1A3A5C]/20 text-[#1A3A5C] hover:bg-red-50 hover:border-red-300 hover:text-red-600'
-                        }`}
-                        title={ehNovo ? 'Nova (clique para remover)' : 'Existente (clique para remover)'}
-                      >
-                        {ehNovo && <span className="text-[8px]">+</span>}
-                        <span className="truncate max-w-[120px]">{prep.nome}</span>
-                        <X className="w-2.5 h-2.5 flex-shrink-0" />
-                      </button>
+                      <span className="text-[10px] text-[#D4A017] font-medium ml-1">
+                        ({paraAdd > 0 ? `+${paraAdd}` : ''}{paraAdd > 0 && paraRem > 0 ? ' ' : ''}{paraRem > 0 ? `-${paraRem}` : ''})
+                      </span>
                     )
-                  })}
-                </div>
+                  }
+                  return null
+                })()}
+                <button
+                  onClick={() => setAddSelectedPrepIds(new Set())}
+                  className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
+                >
+                  Limpar
+                </button>
               </div>
             )}
 
-            {/* Preparations list with checkboxes — flex-1 para precher espaço restante */}
+            {/* v8.8: Lista com selecionados fixados no topo + info nutricional */}
             <ScrollArea className="flex-1 min-h-0 border rounded-lg">
               <div className="p-1">
                 {filteredPreparacoes.length === 0 ? (
@@ -2263,24 +2248,46 @@ export default function CardapioEditorPage() {
                         grupo: ing.alimento.grupo,
                       }))
                     )
+                    const isSelected = addSelectedPrepIds.has(p.id)
+                    const ehNovo = isSelected && !addInitialPrepIds.has(p.id)
+                    // Calcular info nutricional rápida (kcal + proteína)
+                    const kcal = p.ingredientes.reduce((sum, ing) => {
+                      const g = ing.mesma_percapita ? ing.quantidade_gramas : (ing.percapitas?.[0]?.quantidade_gramas || ing.quantidade_gramas)
+                      return sum + (g * (ing.alimento.energia_kcal || 0)) / 100
+                    }, 0)
+                    const prot = p.ingredientes.reduce((sum, ing) => {
+                      const g = ing.mesma_percapita ? ing.quantidade_gramas : (ing.percapitas?.[0]?.quantidade_gramas || ing.quantidade_gramas)
+                      return sum + (g * (ing.alimento.proteinas_g || 0)) / 100
+                    }, 0)
                     return (
                       <label
                         key={p.id}
                         className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors text-xs ${
-                          addSelectedPrepIds.has(p.id)
-                            ? 'bg-[#1A3A5C]/10 border border-[#1A3A5C]/20'
+                          isSelected
+                            ? ehNovo
+                              ? 'bg-emerald-50 border border-emerald-300'
+                              : 'bg-[#1A3A5C]/10 border border-[#1A3A5C]/30'
                             : 'hover:bg-gray-50 border border-transparent'
                         }`}
                       >
                         <Checkbox
-                          checked={addSelectedPrepIds.has(p.id)}
+                          checked={isSelected}
                           onCheckedChange={() => togglePrepSelection(p.id)}
                           className="flex-shrink-0"
                         />
                         {p.favorita && (
                           <Star className="w-3 h-3 text-[#D4A017] flex-shrink-0 fill-[#D4A017]" />
                         )}
+                        {ehNovo && (
+                          <span className="text-[8px] font-bold text-emerald-600 bg-emerald-100 px-1 rounded flex-shrink-0">NOVO</span>
+                        )}
                         <span className="font-medium truncate flex-1 min-w-0">{p.nome}</span>
+                        {/* v8.8: Info nutricional rápida */}
+                        {kcal > 0 && (
+                          <span className="text-[9px] text-muted-foreground flex-shrink-0 whitespace-nowrap">
+                            {kcal.toFixed(0)}kcal · {prot.toFixed(1)}g P
+                          </span>
+                        )}
                         {alergenos.length > 0 && (
                           <div className="flex items-center gap-0.5 flex-shrink-0">
                             {alergenos.map((sigla) => (
