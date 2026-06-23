@@ -2133,7 +2133,7 @@ export default function CardapioEditorPage() {
 
       {/* ═══ Add Preparações Dialog (Multi-Select) ═══ */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col gap-3 p-5 overflow-hidden">
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-3 p-5 overflow-hidden">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-[#1A3A5C] text-sm">Gerenciar Preparações</DialogTitle>
           </DialogHeader>
@@ -2282,46 +2282,40 @@ export default function CardapioEditorPage() {
                           <span className="text-[8px] font-bold text-emerald-600 bg-emerald-100 px-1 rounded flex-shrink-0">NOVO</span>
                         )}
                         <span className="font-medium truncate flex-1 min-w-0">{p.nome}</span>
-                        {/* v8.8: Info nutricional rápida */}
-                        {kcal > 0 && (
-                          <span className="text-[9px] text-muted-foreground flex-shrink-0 whitespace-nowrap">
-                            {kcal.toFixed(0)}kcal · {prot.toFixed(1)}g P
-                          </span>
-                        )}
-                        {alergenos.length > 0 && (
-                          <div className="flex items-center gap-0.5 flex-shrink-0">
-                            {alergenos.map((sigla) => (
-                              <span
-                                key={sigla}
-                                className="inline-flex items-center justify-center w-4 h-4 rounded-sm border border-gray-300 text-[8px] font-bold text-gray-600"
-                                title={sigla}
-                              >
-                                {sigla}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {p.vezes_usada > 0 && (
-                          <span className="text-[9px] text-muted-foreground flex-shrink-0">
-                            {p.vezes_usada}×
-                          </span>
-                        )}
-                        <span className="text-[10px] text-muted-foreground flex-shrink-0">
-                          {p.ingredientes.length} ing.
-                        </span>
-                        {/* v8: Botão editar preparação — abre sub-dialog (não abre nova aba) */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            openEditPrepInDialog(p.id)
-                          }}
-                          className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded p-0.5 flex-shrink-0 transition-colors"
-                          title="Editar preparação"
-                        >
-                          <Pencil className="w-3 h-3" />
-                        </button>
+                        {/* v8.8: Info nutricional + alérgenos + editar — grupo compacto à direita */}
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {kcal > 0 && (
+                            <span className="text-[9px] text-muted-foreground whitespace-nowrap">
+                              {kcal.toFixed(0)}kcal · {prot.toFixed(1)}g P
+                            </span>
+                          )}
+                          {alergenos.length > 0 && (
+                            <div className="flex items-center gap-0.5">
+                              {alergenos.map((sigla) => (
+                                <span
+                                  key={sigla}
+                                  className="inline-flex items-center justify-center w-4 h-4 rounded-sm border border-gray-300 text-[8px] font-bold text-gray-600"
+                                  title={sigla}
+                                >
+                                  {sigla}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {/* Botão editar */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              openEditPrepInDialog(p.id)
+                            }}
+                            className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded p-0.5 transition-colors"
+                            title="Editar preparação"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        </div>
                       </label>
                     )
                   })
