@@ -12,6 +12,11 @@
 //   - Ovos: 0% (ferro do ovo é não-heme)
 //   - Preparações com carne: ~25% (diluído por outros ingredientes)
 //   - Outros grupos: 0%
+//
+// v8.8: Atualizado para grupos da TACO 4ª edição oficial:
+//   "Carnes e derivados" (era "Carnes e ovos")
+//   "Ovos e derivados" (novo grupo separado)
+//   "Alimentos preparados" (era "Preparações")
 // ============================================================
 
 export interface TacoItemBasico {
@@ -31,13 +36,15 @@ export function estimarFerroHeme(item: TacoItemBasico): number {
 
   if (ferroTotal <= 0) return 0
 
-  // Grupo "Carnes e ovos"
-  if (grupo === 'Carnes e ovos') {
-    // Ovos: ferro é NÃO-heme
-    if (nome.includes('ovo')) return 0
+  // v8.8: "Carnes e derivados" (TACO 4ª ed) — inclui carnes bovinas, suínas, aves, vísceras
+  // Também aceita "Carnes e ovos" (nome antigo) por compatibilidade
+  if (grupo === 'Carnes e derivados' || grupo === 'Carnes e ovos') {
+    // Ovos: ferro é NÃO-heme (se cair aqui por compatibilidade)
+    if (nome.includes('ovo') && !nome.includes('nov')) return 0
 
     // Vísceras / miúdos → 70%
-    const visceras = ['fígado', 'figado', 'coração', 'coracao', 'moela', 'rins', 'figadinho']
+    const visceras = ['fígado', 'figado', 'coração', 'coracao', 'moela', 'rins', 'figadinho',
+                      'bucho', 'tripe', 'dobradinha']
     if (visceras.some((v) => nome.includes(v))) {
       return +(ferroTotal * 0.7).toFixed(3)
     }
@@ -51,14 +58,21 @@ export function estimarFerroHeme(item: TacoItemBasico): number {
     // Carnes vermelhas bovinas e suínas → 60%
     const bovinos = ['boi', 'carne', 'patinho', 'alcatra', 'maminha', 'contrafilé',
       'contrafile', 'coxão', 'coxao', 'filé mignon', 'file mignon', 'picanha',
-      'acém', 'acem', 'músculo', 'musculo', 'lagarto', 'fraldinha', 'macaxeira']
-    const suinos = ['porco', 'lombo', 'pernil', 'panceta', 'bacon', 'costelinha', 'linguiça', 'linguica']
+      'acém', 'acem', 'músculo', 'musculo', 'lagarto', 'fraldinha', 'macaxeira',
+      'charque', 'jerked', 'seca', 'defumada']
+    const suinos = ['porco', 'lombo', 'pernil', 'panceta', 'bacon', 'costelinha',
+      'linguiça', 'linguica', 'presunto', 'apresuntado', 'salame', 'salaminho']
     if (bovinos.some((v) => nome.includes(v)) || suinos.some((v) => nome.includes(v))) {
       return +(ferroTotal * 0.6).toFixed(3)
     }
 
-    // Default para "Carnes e ovos" não-classificados acima → 50%
+    // Default para "Carnes e derivados" não-classificados acima → 50%
     return +(ferroTotal * 0.5).toFixed(3)
+  }
+
+  // v8.8: "Ovos e derivados" (TACO 4ª ed) — ferro do ovo é NÃO-heme
+  if (grupo === 'Ovos e derivados') {
+    return 0
   }
 
   // Grupo "Pescados e frutos do mar" → 40%
@@ -66,13 +80,16 @@ export function estimarFerroHeme(item: TacoItemBasico): number {
     return +(ferroTotal * 0.4).toFixed(3)
   }
 
-  // Grupo "Preparações" — verificar nome para identificar carnes
-  if (grupo === 'Preparações') {
+  // v8.8: "Alimentos preparados" (TACO 4ª ed) ou "Preparações" (antigo)
+  // Verificar nome para identificar carnes
+  if (grupo === 'Alimentos preparados' || grupo === 'Preparações') {
     const carnesPrep = ['frango', 'galinha', 'carne', 'boi', 'porco', 'peixe',
       'moqueca', 'ensopado', 'ensopada', 'ensop', 'cozido', 'cozida',
       'estragado', 'picadinho', 'ragu', 'bolo de carne', 'empadão', 'empadao',
       'croquete', 'almôndega', 'almondega', 'hambúrguer', 'hamburguer',
-      'salsicha', 'linguiça', 'linguica', 'bacon']
+      'salsicha', 'linguiça', 'linguica', 'bacon', 'caldo', 'sopa',
+      'feijoada', 'estrogonofe', 'bobó', 'bobo', 'vatapá', 'vatapa',
+      'torta salgada', 'rissole', 'bolinho', 'lasanha', 'macarrão']
     if (carnesPrep.some((v) => nome.includes(v))) {
       // Preparações diluem o ferro: 25% do total é heme
       return +(ferroTotal * 0.25).toFixed(3)
