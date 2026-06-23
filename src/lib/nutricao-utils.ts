@@ -555,6 +555,10 @@ export const DIAS_SEMANA_NUTRI = [
  *   "Óleo de soja" → "Óleo de Soja" (mantido)
  */
 export function limparNomeIngrediente(nome: string): string {
+  // v8.8: Remover vírgulas do formato TACO ANTES de tudo
+  // "Carne, bovina, cupim, cru" → "Carne bovina cupim cru"
+  let limpo = nome.replace(/,/g, ' ').replace(/\s+/g, ' ').trim()
+
   // Sufixos de preparo/cozimento a remover (apenas no final do nome)
   const sufixosRemover = [
     ' cozido e amassado', ' cozida e amassada',
@@ -584,7 +588,6 @@ export function limparNomeIngrediente(nome: string): string {
   // Ordenar por tamanho decrescente para match mais longo primeiro
   sufixosRemover.sort((a, b) => b.length - a.length)
 
-  let limpo = nome
   for (const sufixo of sufixosRemover) {
     if (limpo.toLowerCase().endsWith(sufixo)) {
       limpo = limpo.substring(0, limpo.length - sufixo.length)
