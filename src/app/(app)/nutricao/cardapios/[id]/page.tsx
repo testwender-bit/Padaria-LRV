@@ -2133,7 +2133,7 @@ export default function CardapioEditorPage() {
 
       {/* ═══ Add Preparações Dialog (Multi-Select) ═══ */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-3 p-5 overflow-hidden">
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col gap-2 p-4 overflow-hidden">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-[#1A3A5C] text-sm">Gerenciar Preparações</DialogTitle>
           </DialogHeader>
@@ -2262,7 +2262,7 @@ export default function CardapioEditorPage() {
                     return (
                       <label
                         key={p.id}
-                        className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors text-xs ${
+                        className={`flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer transition-colors text-xs ${
                           isSelected
                             ? ehNovo
                               ? 'bg-emerald-50 border border-emerald-300'
@@ -2279,22 +2279,22 @@ export default function CardapioEditorPage() {
                           <Star className="w-3 h-3 text-[#D4A017] flex-shrink-0 fill-[#D4A017]" />
                         )}
                         {ehNovo && (
-                          <span className="text-[8px] font-bold text-emerald-600 bg-emerald-100 px-1 rounded flex-shrink-0">NOVO</span>
+                          <span className="text-[7px] font-bold text-emerald-600 bg-emerald-100 px-0.5 rounded flex-shrink-0 leading-tight">NEW</span>
                         )}
                         <span className="font-medium truncate flex-1 min-w-0">{p.nome}</span>
-                        {/* v8.8: Info nutricional + alérgenos + editar — grupo compacto à direita */}
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {/* Info compacta à direita */}
+                        <div className="flex items-center gap-1 flex-shrink-0">
                           {kcal > 0 && (
-                            <span className="text-[9px] text-muted-foreground whitespace-nowrap">
-                              {kcal.toFixed(0)}kcal · {prot.toFixed(1)}g P
+                            <span className="text-[8px] text-muted-foreground whitespace-nowrap tabular-nums">
+                              {kcal.toFixed(0)}kcal
                             </span>
                           )}
                           {alergenos.length > 0 && (
-                            <div className="flex items-center gap-0.5">
+                            <div className="flex items-center gap-px">
                               {alergenos.map((sigla) => (
                                 <span
                                   key={sigla}
-                                  className="inline-flex items-center justify-center w-4 h-4 rounded-sm border border-gray-300 text-[8px] font-bold text-gray-600"
+                                  className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm border border-gray-300 text-[7px] font-bold text-gray-600"
                                   title={sigla}
                                 >
                                   {sigla}
@@ -2302,7 +2302,6 @@ export default function CardapioEditorPage() {
                               ))}
                             </div>
                           )}
-                          {/* Botão editar */}
                           <button
                             type="button"
                             onClick={(e) => {
@@ -2313,7 +2312,7 @@ export default function CardapioEditorPage() {
                             className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded p-0.5 transition-colors"
                             title="Editar preparação"
                           >
-                            <Pencil className="w-3 h-3" />
+                            <Pencil className="w-2.5 h-2.5" />
                           </button>
                         </div>
                       </label>
