@@ -10,7 +10,7 @@ export const PREPARACAO_CATEGORIAS = [
   {
     value: 'PREPARACAO',
     label: 'Preparação',
-    descricao: 'Prato normal (refeição, acompanhamento)',
+    descricao: 'Prato normal (refeição principal)',
     cor: '#1A3A5C',
     icone: 'utensils',
   },
@@ -31,9 +31,23 @@ export const PREPARACAO_CATEGORIAS = [
   {
     value: 'BEBIDA',
     label: 'Bebida',
-    descricao: 'Suco, leite, chá, iogurte',
+    descricao: 'Suco, leite, chá, iogurte, vitamina',
     cor: '#1E40AF',
     icone: 'cup',
+  },
+  {
+    value: 'ACOMPANHAMENTO',
+    label: 'Acompanhamento',
+    descricao: 'Legumes, purê, macarrão, salada (exceto arroz/feijão que têm categoria própria por palavra-chave)',
+    cor: '#166534',
+    icone: 'salad',
+  },
+  {
+    value: 'FRUTA',
+    label: 'Fruta',
+    descricao: 'Fruta in natura, salada de frutas, frozen de fruta',
+    cor: '#15803D',
+    icone: 'apple',
   },
   {
     value: 'SOBREMESA',

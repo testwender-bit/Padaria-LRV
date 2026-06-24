@@ -496,14 +496,13 @@ export default function CardapioEditorPage() {
     }
   }
 
-  // ─── v5: Reordenar TODOS os slots de um dia para a ordem canônica ───
-  // Botão "Reordenar dia" no header do dia — reseta ordens manuais e
-  // reaplica a ordenação automática baseada em perfil (PAO_LANCHE / COMIDA / CUSCUZ).
-  async function handleReordenarDia(diaSemana: string, semanaNumero: number) {
+  // ─── v6: Reordenar TODA a SEMANA (todos os slots de todos os dias) ───
+  // Botão "Reordenar" no header da semana — reseta ordens manuais e
+  // reaplica a ordenação automática baseada em perfil + categoria do banco.
+  async function handleReordenarSemana(semanaNumero: number) {
     if (!cardapio || !semanaAtual) return
 
-    // Atualização otimista: aplica ordem 0 em todos os itens do dia localmente
-    // para a UI refletir imediatamente o auto-sort.
+    // Atualização otimista: aplica ordem 0 em todos os itens da semana localmente
     setCardapio(prev => {
       if (!prev) return prev
       return {
@@ -512,25 +511,21 @@ export default function CardapioEditorPage() {
           if (s.numero !== semanaNumero) return s
           return {
             ...s,
-            dias: s.dias.map(d => {
-              if (d.dia_semana !== diaSemana) return d
-              return {
-                ...d,
-                itens: d.itens.map(i => ({ ...i, ordem: 0 })),
-              }
-            }),
+            dias: s.dias.map(d => ({
+              ...d,
+              itens: d.itens.map(i => ({ ...i, ordem: 0 })),
+            })),
           }
         }),
       }
     })
 
     try {
-      const resp = await fetch(`/api/nutricao/cardapios/${cardapioId}/reordenar-dia`, {
+      const resp = await fetch(`/api/nutricao/cardapios/${cardapioId}/reordenar-semana`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           semana_numero: semanaNumero,
-          dia_semana: diaSemana,
         }),
       })
 
@@ -540,13 +535,12 @@ export default function CardapioEditorPage() {
       }
 
       const data = await resp.json()
-      toast.success(`Dia reordenado (${data.itens_reordenados} itens)`)
+      toast.success(`Semana reordenada (${data.slots_reordenados} slots, ${data.itens_reordenados} itens)`)
 
       // Recarrega o cardápio para refletir as ordens persistidas
       await recarregarCardapio()
     } catch (e) {
-      toast.error('Erro ao reordenar dia: ' + (e instanceof Error ? e.message : ''))
-      // Em caso de erro, recarrega para desfazer a atualização otimista
+      toast.error('Erro ao reordenar semana: ' + (e instanceof Error ? e.message : ''))
       await recarregarCardapio()
     }
   }
@@ -1743,6 +1737,19 @@ export default function CardapioEditorPage() {
               {semanaAtual.diferenciada ? 'Restaurar' : 'Diferenciar'}
             </Button>
           )}
+          {/* v6: Botão "Reordenar semana" — re-aplica ordem canônica em todos os slots da semana */}
+          {semanaAtual && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[10px] text-[#1A3A5C] hover:bg-[#1A3A5C]/10 ml-2"
+              onClick={() => handleReordenarSemana(currentSemana)}
+              title="Reordenar toda a semana (aplica ordem canônica: bebida → pão → fruta / salada → arroz → feijão → proteína → acompanhamento → fruta / cuscuz → acompanhamento → fruta)"
+            >
+              <ArrowDownUp className="w-3 h-3 mr-0.5" />
+              Reordenar
+            </Button>
+          )}
           {/* Legenda semáforo */}
           <div className="hidden md:flex items-center gap-2 ml-3 pl-3 border-l border-gray-200">
             <span className="text-[9px] text-muted-foreground">Semáforo:</span>
@@ -1909,13 +1916,6 @@ export default function CardapioEditorPage() {
                       })()}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      <button
-                        onClick={() => handleReordenarDia(dia.value, currentSemana)}
-                        className="text-white/70 hover:text-[#D4A017] transition-colors"
-                        title="Reordenar dia (aplica ordem canônica: bebida → pão → fruta / salada → arroz → feijão → proteína → acompanhamento → fruta / cuscuz → acompanhamento → fruta)"
-                      >
-                        <ArrowDownUp className="w-3 h-3" />
-                      </button>
                       <button
                         onClick={() => openCopyDialog(dia.value, currentSemana)}
                         className="text-white/70 hover:text-white transition-colors"
