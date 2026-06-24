@@ -115,17 +115,18 @@ testar(
 )
 
 testar(
-  'Slot com 3 itens ordenados (1, 2, 3) + 2 itens novos (ordem=0) → novos vão pro FIM na ordem canônica',
+  'Slot com 3 itens ordenados (1, 2, 3) + 2 itens novos (ordem=0) → novos inseridos por prioridade (v6.4)',
   [
     criarItem('1', 'Arroz branco', undefined, 1),
     criarItem('2', 'Feijão', undefined, 2),
     criarItem('3', 'Carne moída', undefined, 3),
-    criarItem('4', 'Banana', 'FRUTA', 0), // novo
-    criarItem('5', 'Salada de alface', 'ACOMPANHAMENTO', 0), // novo
+    criarItem('4', 'Banana', 'FRUTA', 0), // novo, prio 6 (última)
+    criarItem('5', 'Salada de alface', 'ACOMPANHAMENTO', 0), // novo, prio 0 (primeira)
   ],
-  ['Arroz branco', 'Feijão', 'Carne moída', 'Salada de alface', 'Banana']
-  // Novos vão pro fim, mas ordenados entre si pela prioridade canônica
-  // (Salada vem antes de Banana porque ACOMPANHAMENTO < FRUTA no perfil COMIDA)
+  ['Salada de alface', 'Arroz branco', 'Feijão', 'Carne moída', 'Banana']
+  // v6.4: itens sem ordem são INSERIDOS na posição correta por prioridade
+  // Salada (prio 0) entra ANTES do Arroz (prio 1)
+  // Banana (prio 6) entra DEPOIS do Carne (prio 3) — no fim
 )
 
 testar(

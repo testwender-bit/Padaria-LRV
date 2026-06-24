@@ -1,25 +1,33 @@
-# Patch v6.3 — Deslocamento em cadeia + Não expandir se base já tem 22 semanas
+# Patch v6.4 — Fix "Suco de maracujá não obedece ordem" + Botão "Trocar dia"
 
-Corrige 2 bugs reportados na replicação de cardápio:
+Corrige 2 problemas reportados:
 
-1. **Bug do deslocamento:** ao realocar pão de terça→sexta, o código anterior deixava a terça vazia (perdia a comida que estava lá). Você queria **deslocamento em cadeia**: a comida da sexta vai pra quinta, a da quinta vai pra quarta, a da quarta vai pra terça — preenchendo todos os dias, só mudando o dia do pão.
-2. **Bug da expansão forçada:** ao replicar um cardápio base que já tinha 22 semanas completas, o sistema clonava só as 5 primeiras e re-expandia as 17 restantes como réplicas — **perdendo 17 semanas customizadas**.
+1. **Bug "Suco de maracujá não obedece ordem"** — quando um slot tinha itens com ordem manual (Pão=1, Banana=2) e você adicionava Suco de maracujá (novo, sem ordem), ele ia para o FIM da lista — ignorando que Bebida deveria vir primeiro.
+2. **Feature "Trocar dia"** — queria poder trocar TODAS as preparações de um dia com outro dia (sem precisar mover item por item).
 
 ---
 
 ## 📦 Arquivos deste patch
 
-### Modificados (1 arquivo)
+### Modificados (2 arquivos)
 
 | Arquivo | O que mudou |
 |---|---|
-| `src/app/api/nutricao/cardapios/[id]/replicar/route.ts` | (1) Reescrita da função `realocarComDeslocamento` para fazer **deslocamento em cadeia** em vez de deslocamento simples. (2) `semanasBase` agora clona TODAS as 22 semanas se o base já está completo. (3) Bloco de expansão só roda se `!baseCompleto`. (4) Novo bloco `else if (baseCompleto)` só atualiza datas das semanas clonadas. |
+| `src/lib/ordenacao-preparacoes.ts` | Fix do "caso misto" na função `atribuirOrdemParaItensSemOrdem`: itens sem ordem agora são **inseridos na posição correta por prioridade** em vez de irem para o fim da lista |
+| `src/app/(app)/nutricao/cardapios/[id]/page.tsx` | (1) Novo state `diaTrocaOrigem` para o modo de troca. (2) Novo handler `handleTrocarDia`. (3) Botão "Trocar dia" (ícone `ArrowLeftRight`) no header de cada dia. (4) Card do dia fica clicável quando em modo de troca — origem fica destacada em dourado com badge "ORIGEM". (5) Import do ícone `ArrowLeftRight` do lucide-react |
 
-### Novos (1 arquivo)
+### Novos (2 arquivos)
 
 | Arquivo | Função |
 |---|---|
-| `scripts/test-deslocamento-cadeia.ts` | 6 testes da lógica de deslocamento em cadeia (simula em memória, sem precisar de banco) |
+| `src/app/api/nutricao/cardapios/[id]/trocar-dia/route.ts` | Endpoint POST que troca TODOS os itens entre dois dias da semana (snapshot + delete + create cruzado) |
+| `scripts/test-caso-misto.ts` | 8 testes do fix do caso misto (incluindo o caso exato do Suco de maracujá) |
+
+### Atualizados (1 arquivo)
+
+| Arquivo | Mudança |
+|---|---|
+| `scripts/test-ordenacao-v6.ts` | Atualizado teste "Slot com 3 itens ordenados + 2 novos" para refletir a nova regra (itens novos inseridos por prioridade, não no fim) |
 
 ---
 
@@ -28,22 +36,21 @@ Corrige 2 bugs reportados na replicação de cardápio:
 ### Passo 1 — Aplicar o patch
 
 ```bash
-unzip -o patch-v6.3-deslocamento-cadeia-base-completo.zip
+unzip -o patch-v6.4-trocar-dia-suco-maracuja.zip
 ```
 
-### Passo 2 — Rodar o teste da cadeia (validar fix)
+### Passo 2 — Rodar os testes
 
 ```bash
-npx tsx scripts/test-deslocamento-cadeia.ts
-```
+# Teste do fix do caso misto (8 casos)
+npx tsx scripts/test-caso-misto.ts
 
-Deve mostrar `6 passou(aram) · 0 falhou(aram)` cobrindo:
-- Caso do usuário (pão na terça → sexta, comida da sexta vai pra quinta, da quinta pra quarta, da quarta pra terça)
-- Cadeia inversa (sexta → terça)
-- Cadeia curta (3 dias)
-- Dias adjacentes (2 dias = swap)
-- Intermediário bloqueado (swap puro como fallback)
-- Dia destino vazio (cadeia ainda funciona)
+# Teste do caso da torta (5 casos, ainda passa)
+npx tsx scripts/test-caso-torta.ts
+
+# Teste v6 (18 casos, atualizado)
+npx tsx scripts/test-ordenacao-v6.ts
+```
 
 ### Passo 3 — Restart do dev server
 
@@ -53,61 +60,58 @@ npm run dev
 
 ### Passo 4 — Validar no navegador
 
-**Caso 1 — Deslocamento em cadeia:**
+**Validação 1 — Bug do Suco de maracujá:**
 
-1. Cardápio base com pão na terça, e comida (arroz/feijão/proteína) na quarta, quinta e sexta
-2. Replicar para escola que recebe pão na sexta
-3. Abrir o cardápio da escola criado
-4. Verificar:
-   - Terça tem a comida que era da quarta ✅
-   - Quarta tem a comida que era da quinta ✅
-   - Quinta tem a comida que era da sexta ✅
-   - Sexta tem só o pão ✅
-   - **Nenhum dia vazio**
+1. Abra um cardápio
+2. Em um slot (lanche, por exemplo), reordene manualmente alguns itens (use os botões ↑/↓ para criar ordem manual: Pão=1, Banana=2)
+3. Adicione "Suco de maracujá" ao slot
+4. **Deve aparecer PRIMEIRO** (não no fim) ✅
+   - Antes: Pão → Banana → Suco ❌
+   - Agora: Suco → Pão → Banana ✅
 
-**Caso 2 — Base com 22 semanas:**
+**Validação 2 — Botão "Trocar dia":**
 
-1. Cardápio base com 22 semanas customizadas (cada semana diferente)
-2. Replicar para escola
-3. Abrir o cardápio da escola criado
-4. Verificar:
-   - Tem 22 semanas (não 5 replicadas) ✅
-   - Cada semana mantém o conteúdo original do base ✅
-   - Semanas 6-22 não são réplicas da 1-5, são cópias fiéis das semanas 6-22 do base ✅
+1. Abra um cardápio com vários dias preenchidos
+2. No header de um dia (ex: quinta), clique no botão **⟷** (ícone ArrowLeftRight)
+   - O header fica **dourado** com badge "ORIGEM"
+   - Aparece toast: "Clique em outro dia para trocar com Quinta"
+3. Clique em **outro dia** (ex: sexta) — em qualquer lugar do card dele
+   - Os dois dias trocam de lugar: quinta fica com o conteúdo da sexta, e vice-versa
+   - Aparece toast: "Dias trocados (N itens)"
+4. **Para cancelar:** clique no botão ⟷ do dia origem de novo (ou clique no mesmo dia origem)
 
 ### Passo 5 — Commit e push
 
 ```bash
-git add src/app/api/nutricao/cardapios/[id]/replicar/route.ts \
-        scripts/test-deslocamento-cadeia.ts \
+git add src/lib/ordenacao-preparacoes.ts \
+        src/app/api/nutricao/cardapios/[id]/trocar-dia/route.ts \
+        src/app/(app)/nutricao/cardapios/[id]/page.tsx \
+        scripts/test-caso-misto.ts \
+        scripts/test-ordenacao-v6.ts \
         PATCH-README.md
 
-git commit -m "fix(replicacao): deslocamento em cadeia + nao expandir base completo (v6.3)
+git commit -m "feat(cardapio): trocar dia inteiro + fix caso misto ordenacao (v6.4)
 
-Bug 1 - Deslocamento em cadeia:
-- Antes: ao mover pão de terça→sexta, comida da sexta ia pra quinta
-  e terça ficava VAZIA (perdia conteúdo)
-- Agora: comida da sexta→quinta, quinta→quarta, quarta→terça
-  Cadeia rotativa preenche todos os dias, nenhum fica vazio
-- Algoritmo: snapshot de todos os dias da cadeia, apaga, reatribui
-  circularmente (cada dia recebe conteúdo do próximo)
-- Fallback: se intermediário bloqueado, faz swap puro
+Bug 1 - Suco de maracujá não obedecia ordem:
+- Causa: no 'caso misto' (itens com ordem manual + itens sem ordem),
+  itens sem ordem iam para o FIM da lista ignorando prioridade canônica
+- Fix: itens sem ordem agora são INSERIDOS na posição correta
+  baseada na prioridade (BEBIDA entra antes de PAO com ordem manual)
+- 8 testes do caso misto (todos passam)
 
-Bug 2 - Não expandir se base completo:
-- Antes: replicar sempre expandia para 22 semanas, mesmo se base já tinha 22
-  Filtrava só as 5 primeiras (ciclo) e replicava como cópias
-  Perdia 17 semanas customizadas
-- Agora: se base tem >=22 semanas, clona TODAS sem expandir
-  Só atualiza as datas (escola pode começar em data diferente)
-- Novo bloco else if (baseCompleto) só atualiza datas
+Feature 2 - Botão 'Trocar dia':
+- Novo endpoint POST /trocar-dia (snapshot + delete + create cruzado)
+- Botão ArrowLeftRight no header de cada dia
+- Modo de 2 cliques: clica origem (fica dourado com badge ORIGEM),
+  depois clica destino → trocam todos os itens entre si
+- Visual: cards ficam clicáveis em modo troca, com hover dourado
+- Atualização otimista para resposta imediata na UI
+- Cancela clicando no mesmo dia origem
 
-Testes:
-- 6 testes do deslocamento em cadeia (todos passam)
-- 5 testes do caso da torta continuam passando
-- 18 testes v6 continuam passando
-- 18 testes v5 continuam passando
-- 23 testes alérgenos continuam passando
-- Total: 70 testes, todos passam"
+Testes atualizados:
+- test-ordenacao-v6: 1 teste ajustado para nova regra de inserção por prioridade
+- 8 novos testes do caso misto (test-caso-misto.ts)
+- Total: 78 testes, todos passam"
 
 git push
 ```
@@ -116,75 +120,103 @@ git push
 
 ## 🎯 Detalhes técnicos
 
-### Fix 1: Deslocamento em cadeia
+### Fix 1: Bug do "caso misto"
 
-**Antes (v5):**
-```
-Pão da terça → sexta
-Comida da sexta → quinta (deslocamento simples)
-Terça fica VAZIA (só tinha o pão)
-```
-
-**Agora (v6.3):**
-```
-Pão da terça → sexta
-Comida da sexta → quinta
-Comida da quinta → quarta
-Comida da quarta → terça (preenche o buraco)
-Resultado: nenhum dia vazio, todos com comida
+**Antes (v6–v6.3):**
+```typescript
+// Caso misto: itens com ordem + itens sem ordem
+const comOrdemSorted = [...comOrdem].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0))
+const semOrdemSorted = [...semOrdem].sort(/* por prioridade */)
+return [...comOrdemSorted, ...semOrdemSorted]  // ❌ sem ordem sempre no fim
 ```
 
-#### Algoritmo
+**Agora (v6.4):**
+```typescript
+const resultado = [...comOrdemSorted]  // começa com os que têm ordem
 
-1. Constrói a cadeia de dias entre origem e destino:
-   - terça→sexta → `[terça, quarta, quinta, sexta]`
-   - sexta→terça → `[sexta, quinta, quarta, terça]`
-2. Verifica se algum dia intermediário está bloqueado (envolvido em outra troca de pão/lanche)
-   - Se sim, faz swap puro (terça↔sexta)
-3. Snapshot em memória de todos os itens da cadeia
-4. Apaga todos os itens de todos os dias da cadeia
-5. Reatribui **circularmente**: cada dia recebe o conteúdo do **próximo** dia da cadeia
-   - terça ← quarta
-   - quarta ← quinta
-   - quinta ← sexta
-   - sexta ← terça (pão) ✅
+for (const itemSemOrdem of semOrdemSorted) {
+  const prioSemOrdem = getPrioridadePorPerfil(...)
+
+  // Encontra PRIMEIRO item com-ordem cuja prioridade é MAIOR que a do sem-ordem
+  let posicaoInsercao = resultado.length  // default: fim
+  for (let i = 0; i < resultado.length; i++) {
+    const prioItemComOrdem = getPrioridadePorPerfil(...)
+    if (prioSemOrdem < prioItemComOrdem) {
+      posicaoInsercao = i
+      break
+    }
+  }
+
+  resultado.splice(posicaoInsercao, 0, itemSemOrdem)  // insere na posição certa
+}
+return resultado
+```
 
 #### Exemplo visual
 
-```
-Estado inicial:           Estado final (pão na sexta):
-terça  : [Pão]            terça  : [Arroz, Feijão, Carne]   ← veio da quarta
-quarta : [Arroz, Carne]   quarta : [Arroz, Feijão, Frango]  ← veio da quinta
-quinta : [Arroz, Frango]  quinta : [Arroz, Feijão, Peixe]   ← veio da sexta
-sexta  : [Arroz, Peixe]   sexta  : [Pão]                     ← veio da terça ✅
-```
+Slot com: Pão (ordem=1, prio 1), Banana (ordem=2, prio 6), Suco (sem ordem, prio 0)
 
-### Fix 2: Não expandir se base completo
+| Versão | Resultado | Por quê |
+|---|---|---|
+| v6–v6.3 | Pão → Banana → Suco ❌ | Suco (sem ordem) ia pro fim |
+| v6.4 | Suco → Pão → Banana ✅ | Suco (prio 0) entra ANTES do Pão (prio 1) |
 
-**Antes (v5/v6):**
+#### Regra definitiva
+
+- Item sem ordem com prioridade **MENOR** que algum item com ordem → entra **ANTES** desse item
+- Item sem ordem com prioridade **IGUAL ou MAIOR** → entra **DEPOIS** dos itens com ordem
+
+Isso garante que:
+- Bebida/Suco (prio 0) sempre entram primeiro, mesmo sem ordem manual
+- Salada (prio 0) sempre entra primeiro
+- Fruta (prio 6) sempre entra por último
+- Itens com mesma prioridade respeitam ordem manual primeiro
+
+### Feature 2: Botão "Trocar dia"
+
+**State:**
 ```typescript
-const semanasBase = original.semanas.filter((s) => s.numero <= ciclo)  // só 5 primeiras
-// ...
-if (expandir && original.semanas.length >= ciclo) {  // sempre expande
-  // gera 17 réplicas como cópias da semana 1-5
+const [diaTrocaOrigem, setDiaTrocaOrigem] = useState<string | null>(null)
+// null = modo desativado
+// 'quinta' = quinta é a origem, esperando clique no destino
+```
+
+**Fluxo:**
+1. Usuário clica no botão ⟷ do dia quinta
+   - `setDiaTrocaOrigem('quinta')`
+   - Header fica dourado com badge "ORIGEM"
+   - Toast: "Clique em outro dia para trocar com Quinta"
+2. Usuário clica em qualquer lugar do card da sexta
+   - `handleTrocarDia('sexta', currentSemana)` é chamado
+   - Atualização otimista: troca os dias no state local
+   - POST /trocar-dia com body `{ semana_numero, dia_a: 'quinta', dia_b: 'sexta' }`
+   - Toast: "Dias trocados (N itens)"
+   - Recarrega o cardápio do servidor para confirmar
+3. Se clicar no mesmo dia origem → cancela modo
+
+**Endpoint `/trocar-dia`:**
+```typescript
+// 1. Snapshot dos itens de ambos os dias
+const itensA = await tx.cardapioItem.findMany({ where: { dia_id: diaAData.id } })
+const itensB = await tx.cardapioItem.findMany({ where: { dia_id: diaBData.id } })
+
+// 2. Apaga todos os itens de ambos os dias
+await tx.cardapioItem.deleteMany({ where: { dia_id: diaAData.id } })
+await tx.cardapioItem.deleteMany({ where: { dia_id: diaBData.id } })
+
+// 3. Recria itens de A no dia B (preservando ordem, porções, etc)
+for (const item of itensA) {
+  await tx.cardapioItem.create({ data: { dia_id: diaBData.id, ... } })
+}
+
+// 4. Recria itens de B no dia A
+for (const item of itensB) {
+  await tx.cardapioItem.create({ data: { dia_id: diaAData.id, ... } })
 }
 ```
-Resultado: se base tinha 22 semanas customizadas, perdia as 17 últimas.
 
-**Agora (v6.3):**
-```typescript
-const baseCompleto = original.semanas.length >= SEMANAS_SEMESTRE  // 22
-const semanasBase = baseCompleto
-  ? original.semanas                              // clona TODAS as 22
-  : original.semanas.filter((s) => s.numero <= ciclo)  // só as 5 do ciclo
-// ...
-if (expandir && !baseCompleto && original.semanas.length >= ciclo) {
-  // só expande se base está incompleto
-} else if (baseCompleto) {
-  // só atualiza datas das 22 semanas clonadas
-}
-```
-Resultado: se base tem 22 semanas, clona todas as 22 fiéis ao original (apenas troca pão/lanche de dia conforme config da escola).
+Por que snapshot + delete + create (em vez de update direto)?
+Porque `CardapioItem` tem constraint unique `(dia_id, tipo_refeicao_id, preparacao_id)`. Se tentar atualizar `dia_id` diretamente, pode violar a constraint se ambos os dias têm a mesma preparação na mesma refeição.
 
 ---
 
@@ -192,64 +224,63 @@ Resultado: se base tem 22 semanas, clona todas as 22 fiéis ao original (apenas 
 
 | Aspecto | Status |
 |---|---|
-| Não toca em banco de dados (sem migration) | ✅ |
-| Não quebra replicação existente (quem usa 5 semanas continua funcionando) | ✅ |
-| Não quebra replicação com base completo (22 semanas) — agora funciona | ✅ ✅ |
-| Fallback para swap puro se cadeia bloqueada | ✅ |
+| Não toca em banco (sem migration) | ✅ |
+| Não quebra slots só com ordem manual | ✅ — continua respeitando |
+| Não quebra slots só sem ordem | ✅ — continua auto-sort |
+| Não quebra drag-and-drop de item individual | ✅ — ainda funciona |
+| Botão "Trocar dia" só ativo quando explicitamente clicado | ✅ |
+| Modo troca pode ser cancelado | ✅ — clique no mesmo dia origem |
+| Atualização otimista para UI responsiva | ✅ |
+| Transação atômica (rollback em erro) | ✅ |
 | Hot-reload pega mudanças | ✅ |
-| Timeout da transação mantido em 60s | ✅ |
 
 ---
 
 ## ❓ Troubleshooting
 
-### Ainda ficou dia vazio após replicar
-Pode ser que a cadeia tinha um intermediário bloqueado. Verifique se você está trocando pão E lanche na mesma replicação — se ambos atravessam os mesmos dias, o sistema faz swap puro como fallback.
+### Suco de maracujá ainda não obedece ordem
+Pode ser que tem ordem manual > 0 nele. Verifique:
+1. Abra o slot
+2. Clique no botão "Reordenar" no header da semana (reseta ordem manual)
+3. Adicione Suco de maracujá novamente
+4. Deve aparecer primeiro
 
-Para diagnosticar, me mande:
-- Dia do pão no base
-- Dia do pão na escola destino
-- Dia do lanche no base
-- Dia do lanche na escola destino
+Se ainda não funcionar, me avise com:
+- Lista de itens do slot
+- Categoria de cada um (no banco)
+- Ordem manual de cada um (se tiver)
 
-### Cardápio da escola ainda tem só 5 semanas
-Verifique se o cardápio base realmente tem 22 semanas. Abra o base no editor e veja se pode navegar até a semana 22. Se o base tem menos, o sistema continua expandindo (comportamento normal).
+### Botão "Trocar dia" não aparece
+Reinicie o `npm run dev`. A página do editor é grande, hot-reload pode demorar.
 
-### Erro "Transaction not found" (P2028)
-Como a cadeia faz mais queries (snapshot + delete + create para cada dia da cadeia), pode chegar perto do timeout de 60s para muitas escolas simultâneas. Se acontecer, me avise que aumento o timeout ou divido em lotes.
+### Cliquei num dia mas não trocou
+Verifique se:
+1. Você clicou no botão ⟷ primeiro (header deve estar dourado com badge "ORIGEM")
+2. Depois clicou em outro dia diferente (não o mesmo)
+3. O outro dia não estava vazio (se ambos vazios, nada acontece, mas sem erro)
+
+### Erro ao trocar dias
+Pode ser problema de permissão no Supabase. Veja o toast de erro. Se for `Transaction not found` (P2028), me avise que aumento o timeout.
 
 ---
 
 ## 📝 Notas técnicas
 
-### Por que snapshot + delete + create?
+### Por que botão em vez de arrastar o dia inteiro?
 
-Porque o `CardapioItem` tem constraint unique `(dia_id, tipo_refeicao_id, preparacao_id)`. Se tentássemos mover item por item diretamente (update `dia_id`), poderíamos violar a constraint quando dois dias têm a mesma preparação na mesma refeição.
+1. **Mais confiável** — drag-and-drop de containers inteiros é frágil (browser confunde com scroll, especialmente em mobile)
+2. **Mais óbvio** — usuário vê claramente que está trocando dia, sem ambiguidade
+3. **Funciona em mobile** — drag de elementos grandes é difícil no touch
+4. **Mesma lógica do backend** — reusa o padrão snapshot+delete+create já testado
 
-O snapshot em memória garante que podemos apagar tudo e recriar sem conflito.
+### Por que prioridade canônica vence ordem manual?
 
-### Por que circular na reatribuição?
+Porque a regra PNAE é fixa: bebida antes de pão, fruta sempre por último. Se o usuário reordenou Pão=1 e Banana=2 manualmente, mas adiciona Suco depois, o Suco **deve** aparecer antes do Pão (é a regra canônica). O usuário pode sempre reordenar manualmente de novo se quiser uma ordem diferente.
 
-A cadeia é `[terça, quarta, quinta, sexta]`. Se cada dia recebe o conteúdo do **próximo**:
-- terça ← quarta
-- quarta ← quinta
-- quinta ← sexta
-- sexta ← ??? (não tem próximo)
-
-A solução é **circular**: o último recebe do primeiro. Então sexta ← terça (que tinha o pão). Isso fecha o ciclo perfeitamente: pão foi da terça pra sexta, e tudo mais andou uma posição em direção ao início da cadeia.
-
-### Por que direção da cadeia importa?
-
-- terça→sexta: cadeia `[terça, quarta, quinta, sexta]` — comida "anda" para trás (sexta→quinta→quarta→terça)
-- sexta→terça: cadeia `[sexta, quinta, quarta, terça]` — comida "anda" para trás também (terça→quarta→quinta→sexta)
-
-Em ambos os casos, a comida é deslocada **em direção ao buraco deixado pelo pão**. A direção da cadeia define qual é o "próximo" em cada posição.
+Se o usuário quiser FORÇAR uma ordem não-canônica (ex: Suco depois do Pão), basta usar os botões ↑/↓ para dar ordem manual a TODOS os itens do slot — aí a ordem manual vence.
 
 ### Performance
 
-Para uma troca de pão entre terça e sexta (cadeia de 4 dias):
-- 4 findMany (snapshot)
-- 4 deleteMany (limpar)
-- ~12-20 create (recriar itens, média 3-5 por dia)
-
-Para 5 semanas base × 1 troca de pão = ~100 queries. Para 22 semanas × 2 trocas (pão + lanche) = ~880 queries. Ainda dentro do timeout de 60s.
+- Fix do caso misto: O(n²) por slot no pior caso (n = nº de itens, normalmente 3-8)
+- Botão Trocar dia: ~2N queries (snapshot + delete + create), onde N = nº de itens por dia
+- Para 5 dias × 3 refeições × 5 itens = 75 itens por semana, roda em <1s

@@ -17,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, ArrowDownUp
+  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, ArrowDownUp, ArrowLeftRight
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -299,6 +299,10 @@ export default function CardapioEditorPage() {
   const [mobileDayView, setMobileDayView] = useState<string>('segunda')
   // Porções com edição inline em andamento (item_id)
   const [editingPorcoesId, setEditingPorcoesId] = useState<string | null>(null)
+  // v6.4: Modo "Trocar dia" — usuário clica num dia (origem), depois em outro (destino)
+  // e o sistema troca TODOS os itens entre os dois dias (lanche, almoço, hidratação, etc).
+  // Valor: dia_semana de origem ('segunda', 'terca', etc.) ou null se modo desativado.
+  const [diaTrocaOrigem, setDiaTrocaOrigem] = useState<string | null>(null)
   // Versão mobile (sidebar sempre colapsável)
   const [isMobile, setIsMobile] = useState(false)
   // v8: feriados para mostrar badge no editor
@@ -556,6 +560,73 @@ export default function CardapioEditorPage() {
       }
     } catch {
       // silencioso
+    }
+  }
+
+  // ─── v6.4: Trocar dia inteiro (todas as refeições) ───
+  // Modo de 2 cliques: clica no botão "Trocar dia" da origem, depois clica no dia destino.
+  // O sistema troca TODOS os itens entre os dois dias (lanche, almoço, hidratação, etc).
+  async function handleTrocarDia(diaDestino: string, semanaNumero: number) {
+    if (!cardapio || !semanaAtual || !diaTrocaOrigem) return
+
+    if (diaTrocaOrigem === diaDestino) {
+      // Clicou no mesmo dia — cancela modo
+      setDiaTrocaOrigem(null)
+      toast.info('Troca cancelada')
+      return
+    }
+
+    const diaOrigem = diaTrocaOrigem
+
+    // Atualização otimista: troca os itens dos dias localmente
+    setCardapio(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        semanas: prev.semanas.map(s => {
+          if (s.numero !== semanaNumero) return s
+          const diaA = s.dias.find(d => d.dia_semana === diaOrigem)
+          const diaB = s.dias.find(d => d.dia_semana === diaDestino)
+          if (!diaA || !diaB) return s
+          return {
+            ...s,
+            dias: s.dias.map(d => {
+              if (d.dia_semana === diaOrigem) return { ...diaB }
+              if (d.dia_semana === diaDestino) return { ...diaA }
+              return d
+            }),
+          }
+        }),
+      }
+    })
+
+    // Desativa modo troca imediatamente
+    setDiaTrocaOrigem(null)
+
+    try {
+      const resp = await fetch(`/api/nutricao/cardapios/${cardapioId}/trocar-dia`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          semana_numero: semanaNumero,
+          dia_a: diaOrigem,
+          dia_b: diaDestino,
+        }),
+      })
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}))
+        throw new Error(err.error || `HTTP ${resp.status}`)
+      }
+
+      const data = await resp.json()
+      toast.success(`Dias trocados (${data.itens_trocados} itens)`)
+
+      // Recarrega o cardápio para refletir o estado persistido
+      await recarregarCardapio()
+    } catch (e) {
+      toast.error('Erro ao trocar dias: ' + (e instanceof Error ? e.message : ''))
+      await recarregarCardapio()
     }
   }
 
@@ -1890,13 +1961,31 @@ export default function CardapioEditorPage() {
               const diaData = semanaAtual?.dias.find((d) => d.dia_semana === dia.value)
               const resumoDia = getResumoDia(dia.value)
               const semaforo = getDiaTrafficLight(resumoDia.energia)
+              // v6.4: estado visual do modo "Trocar dia"
+              const ehOrigemTroca = diaTrocaOrigem === dia.value
+              const emModoTroca = diaTrocaOrigem !== null
               return (
                 <div
                   key={dia.value}
-                  className="bg-white rounded-xl border border-gray-200 overflow-hidden"
+                  className={`bg-white rounded-xl border overflow-hidden relative transition-all ${
+                    ehOrigemTroca
+                      ? 'border-[#D4A017] ring-2 ring-[#D4A017]'
+                      : emModoTroca
+                        ? 'border-[#D4A017]/40 cursor-pointer hover:border-[#D4A017] hover:ring-1 hover:ring-[#D4A017]/50'
+                        : 'border-gray-200'
+                  }`}
+                  // v6.4: se em modo troca e NÃO é a origem, clicar no card troca com a origem
+                  onClick={(e) => {
+                    if (emModoTroca && !ehOrigemTroca) {
+                      e.preventDefault()
+                      handleTrocarDia(dia.value, currentSemana)
+                    }
+                  }}
                 >
                   {/* Day Header with Copy button + traffic-light dot */}
-                  <div className="bg-[#1A3A5C] text-white py-1.5 px-2 flex items-center justify-between">
+                  <div className={`text-white py-1.5 px-2 flex items-center justify-between ${
+                    ehOrigemTroca ? 'bg-[#D4A017]' : 'bg-[#1A3A5C]'
+                  }`}>
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                         semaforo === 'green' ? 'bg-emerald-400' :
@@ -1914,10 +2003,40 @@ export default function CardapioEditorPage() {
                           </span>
                         ) : null
                       })()}
+                      {/* v6.4: Badge "Origem" quando em modo troca */}
+                      {ehOrigemTroca && (
+                        <span className="ml-1 px-1 py-0 rounded bg-white/20 text-[8px] font-bold flex-shrink-0">
+                          ORIGEM
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
+                      {/* v6.4: Botão "Trocar dia" — ativa modo de troca (2 cliques) */}
                       <button
-                        onClick={() => openCopyDialog(dia.value, currentSemana)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (ehOrigemTroca) {
+                            setDiaTrocaOrigem(null)
+                            toast.info('Troca cancelada')
+                          } else {
+                            setDiaTrocaOrigem(dia.value)
+                            toast.info(`Clique em outro dia para trocar com ${dia.label}`)
+                          }
+                        }}
+                        className={`transition-colors ${
+                          ehOrigemTroca
+                            ? 'text-white'
+                            : 'text-white/70 hover:text-[#D4A017]'
+                        }`}
+                        title={ehOrigemTroca ? 'Cancelar troca' : 'Trocar este dia com outro (clique depois no destino)'}
+                      >
+                        <ArrowLeftRight className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openCopyDialog(dia.value, currentSemana)
+                        }}
                         className="text-white/70 hover:text-white transition-colors"
                         title="Copiar refeições para outro dia"
                       >

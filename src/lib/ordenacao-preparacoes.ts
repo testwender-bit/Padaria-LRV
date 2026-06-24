@@ -403,17 +403,36 @@ function atribuirOrdemParaItensSemOrdem<
   }
 
   // Caso misto: itens com ordem manual + itens sem ordem
-  // 1. Ordena os com ordem manual pela ordem
-  const comOrdemSorted = [...comOrdem].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0))
-  const maiorOrdem = Math.max(...comOrdem.map(i => i.ordem ?? 0))
+  // v6.4 — fix do bug "Suco de maracujá não obedece ordem":
+  // Antes do v6.4: todos os itens sem ordem iam para o FIM da lista,
+  // ignorando a prioridade canônica deles. Resultado: Suco (BEBIDA, prio 0)
+  // ficava depois de Pão (PAO, prio 1) que tinha ordem manual.
+  //
+  // Agora: cada item sem ordem é INSERIDO na posição correta da lista
+  // ordenada, baseada na prioridade canônica dele.
+  // - Se prioridade do sem-ordem é MENOR que a do item com ordem na posição N
+  //   → insere ANTES desse item
+  // - Senão → insere DEPOIS
+  //
+  // Ex: Pão (ordem=1, prio 1), Banana (ordem=2, prio 6), Suco (sem ordem, prio 0)
+  // Resultado v6.4: Suco → Pão → Banana ✅ (Suco entra ANTES do Pão porque prio 0 < 1)
 
-  // 2. Ordena os sem ordem pela prioridade canônica
+  // 1. Ordena os com ordem manual pela ordem (já estão nas posições finais deles)
+  const comOrdemSorted = [...comOrdem].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0))
+
+  // 2. Calcula prioridade de cada item com ordem (vamos precisar para comparar)
   const primeiroItem = itens[0]
   const tipoRefeicaoId = primeiroItem.tipo_refeicao_id || primeiroItem.tipo_refeicao?.id
   const tipoRefeicao = tiposRefeicao.find(t => t.id === tipoRefeicaoId)
   const codigo = tipoRefeicao?.codigo || ''
   const perfil = detectarPerfilSlotAvancado(itens)
 
+  const comOrdemComPrio = comOrdemSorted.map(i => ({
+    item: i,
+    prio: getPrioridadePorPerfil(i.preparacao.nome, codigo, perfil, i.preparacao.categoria),
+  }))
+
+  // 3. Ordena os sem ordem pela prioridade canônica (preserva ordem alfabética dentro da mesma prio)
   const semOrdemSorted = [...semOrdem].sort((a, b) => {
     const prioA = getPrioridadePorPerfil(a.preparacao.nome, codigo, perfil, a.preparacao.categoria)
     const prioB = getPrioridadePorPerfil(b.preparacao.nome, codigo, perfil, b.preparacao.categoria)
@@ -421,8 +440,40 @@ function atribuirOrdemParaItensSemOrdem<
     return a.preparacao.nome.localeCompare(b.preparacao.nome)
   })
 
-  // 3. Concatena: com ordem primeiro (já nas suas posições), sem ordem depois
-  return [...comOrdemSorted, ...semOrdemSorted]
+  // 4. Insere cada item sem ordem na posição correta da lista de com-ordem
+  //    Estratégia: para cada sem-ordem, encontra o PRIMEIRO item com-ordem
+  //    cuja prioridade seja MAIOR que a do sem-ordem, e insere antes dele.
+  //    Se nenhum tem prioridade maior, insere no fim.
+  const resultado = [...comOrdemComPrio.map(x => x.item)]
+
+  for (const itemSemOrdem of semOrdemSorted) {
+    const prioSemOrdem = getPrioridadePorPerfil(
+      itemSemOrdem.preparacao.nome,
+      codigo,
+      perfil,
+      itemSemOrdem.preparacao.categoria
+    )
+
+    // Encontra posição de inserção: primeiro índice onde a prioridade do item com-ordem
+    // é MAIOR que a do sem-ordem
+    let posicaoInsercao = resultado.length  // default: fim da lista
+    for (let i = 0; i < resultado.length; i++) {
+      const prioItemComOrdem = getPrioridadePorPerfil(
+        resultado[i].preparacao.nome,
+        codigo,
+        perfil,
+        resultado[i].preparacao.categoria
+      )
+      if (prioSemOrdem < prioItemComOrdem) {
+        posicaoInsercao = i
+        break
+      }
+    }
+
+    resultado.splice(posicaoInsercao, 0, itemSemOrdem)
+  }
+
+  return resultado
 }
 
 /**
