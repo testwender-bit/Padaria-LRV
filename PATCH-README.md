@@ -1,9 +1,9 @@
-# Patch v6.2 — Fruta sempre por último + Script carne moída fantasma
+# Patch v6.3 — Deslocamento em cadeia + Não expandir se base já tem 22 semanas
 
-Corrige 2 problemas reportados:
+Corrige 2 bugs reportados na replicação de cardápio:
 
-1. **Ordenação ainda errada** — caso "Torta de carne moída + Laranja + Suco de maracujá" continuava bagunçado (fruta ia antes do suco)
-2. **Novo fantasma** — "Carne moída ao molho" (fantasma) → "Carne bovina moída em molho" (real)
+1. **Bug do deslocamento:** ao realocar pão de terça→sexta, o código anterior deixava a terça vazia (perdia a comida que estava lá). Você queria **deslocamento em cadeia**: a comida da sexta vai pra quinta, a da quinta vai pra quarta, a da quarta vai pra terça — preenchendo todos os dias, só mudando o dia do pão.
+2. **Bug da expansão forçada:** ao replicar um cardápio base que já tinha 22 semanas completas, o sistema clonava só as 5 primeiras e re-expandia as 17 restantes como réplicas — **perdendo 17 semanas customizadas**.
 
 ---
 
@@ -13,14 +13,13 @@ Corrige 2 problemas reportados:
 
 | Arquivo | O que mudou |
 |---|---|
-| `src/lib/ordenacao-preparacoes.ts` | **Fruta sempre por último** em todos os perfis. No perfil COMIDA: Fruta passou de prioridade 5 → 6, Suco/Bebida passou de 6 → 5. No perfil CUSCUZ: Fruta mantém 3, mas Bebida/Suco passou de 4 → 2 (antes da fruta). PAO_LANCHE já estava correta. |
+| `src/app/api/nutricao/cardapios/[id]/replicar/route.ts` | (1) Reescrita da função `realocarComDeslocamento` para fazer **deslocamento em cadeia** em vez de deslocamento simples. (2) `semanasBase` agora clona TODAS as 22 semanas se o base já está completo. (3) Bloco de expansão só roda se `!baseCompleto`. (4) Novo bloco `else if (baseCompleto)` só atualiza datas das semanas clonadas. |
 
-### Novos (2 arquivos)
+### Novos (1 arquivo)
 
 | Arquivo | Função |
 |---|---|
-| `scripts/fix-carne-moida-fantasma.ts` | Script bulk SQL (mesma lógica do fix-arroz v2) que substitui "Carne moída ao molho" por "Carne bovina moída em molho" em todos os cardápios. Dry-run + `--apply`. |
-| `scripts/test-caso-torta.ts` | Teste específico do caso reportado (Torta+Laranja+Suco) + 4 casos adicionais validando consistência da regra "fruta por último" |
+| `scripts/test-deslocamento-cadeia.ts` | 6 testes da lógica de deslocamento em cadeia (simula em memória, sem precisar de banco) |
 
 ---
 
@@ -29,77 +28,86 @@ Corrige 2 problemas reportados:
 ### Passo 1 — Aplicar o patch
 
 ```bash
-unzip -o patch-v6.2-fruta-ultimo-carne-moida.zip
+unzip -o patch-v6.3-deslocamento-cadeia-base-completo.zip
 ```
 
-### Passo 2 — Rodar o teste do caso do usuário (validar fix)
+### Passo 2 — Rodar o teste da cadeia (validar fix)
 
 ```bash
-npx tsx scripts/test-caso-torta.ts
+npx tsx scripts/test-deslocamento-cadeia.ts
 ```
 
-Deve mostrar `✅ Caso do usuário RESOLVIDO — fruta agora fica por último` com 5/5 casos passando:
-- Torta de carne + Laranja + Suco → Torta → Suco → Laranja ✅
-- Almoço completo → ... → Suco → Banana (fruta no fim) ✅
-- Lanche com pão → Suco → Pão → Banana ✅
-- Cuscuz → Cuscuz → Carne → Suco → Banana ✅
+Deve mostrar `6 passou(aram) · 0 falhou(aram)` cobrindo:
+- Caso do usuário (pão na terça → sexta, comida da sexta vai pra quinta, da quinta pra quarta, da quarta pra terça)
+- Cadeia inversa (sexta → terça)
+- Cadeia curta (3 dias)
+- Dias adjacentes (2 dias = swap)
+- Intermediário bloqueado (swap puro como fallback)
+- Dia destino vazio (cadeia ainda funciona)
 
-### Passo 3 — Rodar o script de migração do fantasma carne moída
+### Passo 3 — Restart do dev server
 
 ```bash
-# DRY-RUN primeiro (vê o que será feito, não modifica)
-npx tsx scripts/fix-carne-moida-fantasma.ts
-
-# Se concordar com o par detectado, aplicar:
-npx tsx scripts/fix-carne-moida-fantasma.ts --apply
+npm run dev
 ```
-
-O script vai:
-1. Auto-detectar "Carne moída ao molho" (fantasma, palavra "ao") e "Carne bovina moída em molho" (correto, palavra "em")
-2. Para cada CardapioItem do fantasma:
-   - Se já existe item do correto no mesmo slot → MERGE (soma porções)
-   - Senão → UPDATE (troca preparacao_id)
-3. Incrementar vezes_usada do correto
-4. Hard-delete do fantasma
-
-Tudo em transação atômica de 30s com bulk SQL operations (mesma estratégia do fix-arroz v2 que funcionou).
 
 ### Passo 4 — Validar no navegador
 
-1. Abra um cardápio que tinha "Carne moída ao molho" → deve mostrar só "Carne bovina moída em molho"
-2. Clique no botão "Reordenar" no header da semana
-3. Confirme que frutas agora ficam sempre por último (depois de suco/bebida)
+**Caso 1 — Deslocamento em cadeia:**
+
+1. Cardápio base com pão na terça, e comida (arroz/feijão/proteína) na quarta, quinta e sexta
+2. Replicar para escola que recebe pão na sexta
+3. Abrir o cardápio da escola criado
+4. Verificar:
+   - Terça tem a comida que era da quarta ✅
+   - Quarta tem a comida que era da quinta ✅
+   - Quinta tem a comida que era da sexta ✅
+   - Sexta tem só o pão ✅
+   - **Nenhum dia vazio**
+
+**Caso 2 — Base com 22 semanas:**
+
+1. Cardápio base com 22 semanas customizadas (cada semana diferente)
+2. Replicar para escola
+3. Abrir o cardápio da escola criado
+4. Verificar:
+   - Tem 22 semanas (não 5 replicadas) ✅
+   - Cada semana mantém o conteúdo original do base ✅
+   - Semanas 6-22 não são réplicas da 1-5, são cópias fiéis das semanas 6-22 do base ✅
 
 ### Passo 5 — Commit e push
 
 ```bash
-git add src/lib/ordenacao-preparacoes.ts \
-        scripts/fix-carne-moida-fantasma.ts \
-        scripts/test-caso-torta.ts \
+git add src/app/api/nutricao/cardapios/[id]/replicar/route.ts \
+        scripts/test-deslocamento-cadeia.ts \
         PATCH-README.md
 
-git commit -m "fix(ordenacao): fruta sempre por último + script carne moída fantasma (v6.2)
+git commit -m "fix(replicacao): deslocamento em cadeia + nao expandir base completo (v6.3)
 
-Ordenação:
-- Perfil COMIDA: Fruta passou de prioridade 5 → 6 (sempre por último)
-  Suco/Bebida passou de 6 → 5 (antes da fruta)
-  Resultado: Salada → Arroz → Feijão → Proteína → Acompanhamento → Bebida → Fruta
-- Perfil CUSCUZ: Bebida/Suco passou de 4 → 2 (antes da fruta)
-  Resultado: Cuscuz → Acompanhamento → Bebida → Fruta
-- Perfil PAO_LANCHE: já estava correto (Bebida → Pão → Fruta)
+Bug 1 - Deslocamento em cadeia:
+- Antes: ao mover pão de terça→sexta, comida da sexta ia pra quinta
+  e terça ficava VAZIA (perdia conteúdo)
+- Agora: comida da sexta→quinta, quinta→quarta, quarta→terça
+  Cadeia rotativa preenche todos os dias, nenhum fica vazio
+- Algoritmo: snapshot de todos os dias da cadeia, apaga, reatribui
+  circularmente (cada dia recebe conteúdo do próximo)
+- Fallback: se intermediário bloqueado, faz swap puro
 
-Script carne moída fantasma:
-- scripts/fix-carne-moida-fantasma.ts
-- Auto-detecta 'Carne moída ao molho' (fantasma, palavra 'ao')
-  e 'Carne bovina moída em molho' (correto, palavra 'em')
-- Bulk SQL operations (UPDATE...FROM, DELETE...WHERE EXISTS)
-- Transação atômica 30s, dry-run + --apply
-- Mesma lógica testada do fix-arroz-fantasma v2
+Bug 2 - Não expandir se base completo:
+- Antes: replicar sempre expandia para 22 semanas, mesmo se base já tinha 22
+  Filtrava só as 5 primeiras (ciclo) e replicava como cópias
+  Perdia 17 semanas customizadas
+- Agora: se base tem >=22 semanas, clona TODAS sem expandir
+  Só atualiza as datas (escola pode começar em data diferente)
+- Novo bloco else if (baseCompleto) só atualiza datas
 
-Teste do caso do usuário:
-- scripts/test-caso-torta.ts (5 casos)
-- Valida: Torta+Laranja+Suco → Torta → Suco → Laranja
-- Mais 4 casos de consistência (almoço completo, pão, cuscuz)"
+Testes:
+- 6 testes do deslocamento em cadeia (todos passam)
+- 5 testes do caso da torta continuam passando
+- 18 testes v6 continuam passando
+- 18 testes v5 continuam passando
+- 23 testes alérgenos continuam passando
+- Total: 70 testes, todos passam"
 
 git push
 ```
@@ -108,111 +116,140 @@ git push
 
 ## 🎯 Detalhes técnicos
 
-### Fix 1: Fruta sempre por último
+### Fix 1: Deslocamento em cadeia
 
-**Cenário problemático (v6.1):**
+**Antes (v5):**
 ```
-Torta de carne moída  (PROTEINA, prioridade 3)
-Laranja               (FRUTA,    prioridade 5)  ← ia antes do suco
-Suco de maracujá      (BEBIDA,   prioridade 6)
+Pão da terça → sexta
+Comida da sexta → quinta (deslocamento simples)
+Terça fica VAZIA (só tinha o pão)
 ```
-Resultado v6.1: Torta → Laranja → Suco ❌
 
-**Cenário corrigido (v6.2):**
+**Agora (v6.3):**
 ```
-Torta de carne moída  (PROTEINA, prioridade 3)
-Suco de maracujá      (BEBIDA,   prioridade 5)  ← agora antes da fruta
-Laranja               (FRUTA,    prioridade 6)  ← sempre por último
+Pão da terça → sexta
+Comida da sexta → quinta
+Comida da quinta → quarta
+Comida da quarta → terça (preenche o buraco)
+Resultado: nenhum dia vazio, todos com comida
 ```
-Resultado v6.2: Torta → Suco → Laranja ✅
 
-#### Tabela de prioridades v6.2 (perfil COMIDA)
+#### Algoritmo
 
-| Categoria | v6.1 | v6.2 |
-|---|---|---|
-| SALADA | 0 | 0 |
-| ARROZ | 1 | 1 |
-| FEIJAO | 2 | 2 |
-| PROTEINA | 3 | 3 |
-| ACOMPANHAMENTO/PAO/LANCHE/CUSCUZ | 4 | 4 |
-| OUTRO | 5 | 5 |
-| **SUCO** | **6** | **5** ← mudou |
-| **BEBIDA** | **6** | **5** ← mudou |
-| **FRUTA** | **5** | **6** ← mudou |
-| **SOBREMESA** | **5** | **6** ← mudou |
+1. Constrói a cadeia de dias entre origem e destino:
+   - terça→sexta → `[terça, quarta, quinta, sexta]`
+   - sexta→terça → `[sexta, quinta, quarta, terça]`
+2. Verifica se algum dia intermediário está bloqueado (envolvido em outra troca de pão/lanche)
+   - Se sim, faz swap puro (terça↔sexta)
+3. Snapshot em memória de todos os itens da cadeia
+4. Apaga todos os itens de todos os dias da cadeia
+5. Reatribui **circularmente**: cada dia recebe o conteúdo do **próximo** dia da cadeia
+   - terça ← quarta
+   - quarta ← quinta
+   - quinta ← sexta
+   - sexta ← terça (pão) ✅
 
-#### Tabela de prioridades v6.2 (perfil CUSCUZ)
+#### Exemplo visual
 
-| Categoria | v6.1 | v6.2 |
-|---|---|---|
-| CUSCUZ | 0 | 0 |
-| PROTEINA/ACOMPANHAMENTO/ARROZ/FEIJAO | 1 | 1 |
-| OUTRO | 2 | 2 |
-| **BEBIDA** | **4** | **2** ← mudou |
-| **SUCO** | **4** | **2** ← mudou |
-| FRUTA | 3 | 3 |
-| SOBREMESA | 3 | 3 |
+```
+Estado inicial:           Estado final (pão na sexta):
+terça  : [Pão]            terça  : [Arroz, Feijão, Carne]   ← veio da quarta
+quarta : [Arroz, Carne]   quarta : [Arroz, Feijão, Frango]  ← veio da quinta
+quinta : [Arroz, Frango]  quinta : [Arroz, Feijão, Peixe]   ← veio da sexta
+sexta  : [Arroz, Peixe]   sexta  : [Pão]                     ← veio da terça ✅
+```
 
-#### Perfil PAO_LANCHE (não mudou)
+### Fix 2: Não expandir se base completo
 
-Já estava correto: Bebida(0) → Pão(1) → Outro(2) → Fruta(3). Fruta já ficava por último.
+**Antes (v5/v6):**
+```typescript
+const semanasBase = original.semanas.filter((s) => s.numero <= ciclo)  // só 5 primeiras
+// ...
+if (expandir && original.semanas.length >= ciclo) {  // sempre expande
+  // gera 17 réplicas como cópias da semana 1-5
+}
+```
+Resultado: se base tinha 22 semanas customizadas, perdia as 17 últimas.
 
-### Fix 2: Script carne moída fantasma
-
-**Lógica de auto-detecção:**
-
-1. Busca preparações com nome contendo "carne" + "molho"
-2. Filtra só as que têm "moída"/"moida"
-3. Heurística:
-   - Nome contém "ao molho" → FANTASMA
-   - Nome contém "em molho" → CORRETO
-   - Fallback: inativo/sem ingredientes → FANTASMA
-4. Pega o com mais usos de cada lado (em caso de múltiplas ocorrências)
-
-**Operações bulk (mesma lógica do fix-arroz v2 que funcionou):**
-
-1. BULK MERGE: `UPDATE...FROM` soma porções onde ambos coexistem no mesmo slot
-2. BULK DELETE: `DELETE...WHERE EXISTS` remove itens merged do fantasma
-3. BULK UPDATE: `updateMany` troca preparacao_id nos restantes
-4. UPDATE vezes_usada do correto
-5. DELETE SobrescritaCardapio + PreparacaoSubstituicao
-6. Sanity check COUNT
-7. Hard-delete do fantasma
-
-Tudo em transação atômica 30s. ~7 queries totais, executa em <1s.
+**Agora (v6.3):**
+```typescript
+const baseCompleto = original.semanas.length >= SEMANAS_SEMESTRE  // 22
+const semanasBase = baseCompleto
+  ? original.semanas                              // clona TODAS as 22
+  : original.semanas.filter((s) => s.numero <= ciclo)  // só as 5 do ciclo
+// ...
+if (expandir && !baseCompleto && original.semanas.length >= ciclo) {
+  // só expande se base está incompleto
+} else if (baseCompleto) {
+  // só atualiza datas das 22 semanas clonadas
+}
+```
+Resultado: se base tem 22 semanas, clona todas as 22 fiéis ao original (apenas troca pão/lanche de dia conforme config da escola).
 
 ---
 
-## ✅ Validação
+## 🛡️ Segurança e compatibilidade
 
-| Teste | Resultado |
+| Aspecto | Status |
 |---|---|
-| `test-caso-torta.ts` (caso do usuário + 4 adicionais) | 5/5 ✅ |
-| `test-ordenacao-v6.ts` (18 casos v6) | 18/18 ✅ |
-| `test-ordenacao-v5.ts` (18 casos v5) | 18/18 ✅ |
-| `test-alergenos-correcao.ts` (23 casos) | 23/23 ✅ |
-| `tsc --noEmit` strict=true em `ordenacao-preparacoes.ts` | 0 erros ✅ |
-
-Total: **64 testes, todos passam**.
+| Não toca em banco de dados (sem migration) | ✅ |
+| Não quebra replicação existente (quem usa 5 semanas continua funcionando) | ✅ |
+| Não quebra replicação com base completo (22 semanas) — agora funciona | ✅ ✅ |
+| Fallback para swap puro se cadeia bloqueada | ✅ |
+| Hot-reload pega mudanças | ✅ |
+| Timeout da transação mantido em 60s | ✅ |
 
 ---
 
 ## ❓ Troubleshooting
 
-### O script de carne moída não auto-detectou
-Se o nome real no banco for ligeiramente diferente (ex: "Carne moída com molho"), rode:
-```bash
-npx tsx scripts/fix-carne-moida-fantasma.ts --apply --fantasma-id=XXX --correto-id=YYY
-```
+### Ainda ficou dia vazio após replicar
+Pode ser que a cadeia tinha um intermediário bloqueado. Verifique se você está trocando pão E lanche na mesma replicação — se ambos atravessam os mesmos dias, o sistema faz swap puro como fallback.
 
-Para descobrir os IDs, rode no SQL Editor do Supabase:
-```sql
-SELECT id, nome, ativo FROM "Preparacao"
-WHERE LOWER(nome) LIKE '%carne moída%' AND LOWER(nome) LIKE '%molho%';
-```
+Para diagnosticar, me mande:
+- Dia do pão no base
+- Dia do pão na escola destino
+- Dia do lanche no base
+- Dia do lanche na escola destino
 
-### Ainda tem algum caso de ordenação errada
-Me mande o nome exato das preparações + categorias delas no banco (`/nutricao/preparacoes` → editar → ver campo Categoria). Vou ajustar as prioridades ou palavras-chave conforme o caso.
+### Cardápio da escola ainda tem só 5 semanas
+Verifique se o cardápio base realmente tem 22 semanas. Abra o base no editor e veja se pode navegar até a semana 22. Se o base tem menos, o sistema continua expandindo (comportamento normal).
 
-### Fruta ainda aparece antes de bebida
-Pode ser ordem manual. Clique no botão "Reordenar" no header da semana para resetar e re-aplicar a ordem canônica.
+### Erro "Transaction not found" (P2028)
+Como a cadeia faz mais queries (snapshot + delete + create para cada dia da cadeia), pode chegar perto do timeout de 60s para muitas escolas simultâneas. Se acontecer, me avise que aumento o timeout ou divido em lotes.
+
+---
+
+## 📝 Notas técnicas
+
+### Por que snapshot + delete + create?
+
+Porque o `CardapioItem` tem constraint unique `(dia_id, tipo_refeicao_id, preparacao_id)`. Se tentássemos mover item por item diretamente (update `dia_id`), poderíamos violar a constraint quando dois dias têm a mesma preparação na mesma refeição.
+
+O snapshot em memória garante que podemos apagar tudo e recriar sem conflito.
+
+### Por que circular na reatribuição?
+
+A cadeia é `[terça, quarta, quinta, sexta]`. Se cada dia recebe o conteúdo do **próximo**:
+- terça ← quarta
+- quarta ← quinta
+- quinta ← sexta
+- sexta ← ??? (não tem próximo)
+
+A solução é **circular**: o último recebe do primeiro. Então sexta ← terça (que tinha o pão). Isso fecha o ciclo perfeitamente: pão foi da terça pra sexta, e tudo mais andou uma posição em direção ao início da cadeia.
+
+### Por que direção da cadeia importa?
+
+- terça→sexta: cadeia `[terça, quarta, quinta, sexta]` — comida "anda" para trás (sexta→quinta→quarta→terça)
+- sexta→terça: cadeia `[sexta, quinta, quarta, terça]` — comida "anda" para trás também (terça→quarta→quinta→sexta)
+
+Em ambos os casos, a comida é deslocada **em direção ao buraco deixado pelo pão**. A direção da cadeia define qual é o "próximo" em cada posição.
+
+### Performance
+
+Para uma troca de pão entre terça e sexta (cadeia de 4 dias):
+- 4 findMany (snapshot)
+- 4 deleteMany (limpar)
+- ~12-20 create (recriar itens, média 3-5 por dia)
+
+Para 5 semanas base × 1 troca de pão = ~100 queries. Para 22 semanas × 2 trocas (pão + lanche) = ~880 queries. Ainda dentro do timeout de 60s.

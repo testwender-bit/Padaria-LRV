@@ -206,9 +206,14 @@ export async function POST(
             },
           })
 
-          // ── Clona as semanas base (apenas as primeiras N = ciclo_semanas) ──
+          // ── Clona as semanas base ──
+          // v6.3: se o base já tem 22 semanas (semestre completo), clona TODAS
+          //       se tem menos, clona só as do ciclo (1..ciclo) e expande depois
           const ciclo = original.ciclo_semanas || 5
-          const semanasBase = original.semanas.filter((s) => s.numero <= ciclo)
+          const baseCompleto = original.semanas.length >= SEMANAS_SEMESTRE
+          const semanasBase = baseCompleto
+            ? original.semanas  // clona todas as 22 (já está completo)
+            : original.semanas.filter((s) => s.numero <= ciclo)  // só as do ciclo
 
           // Pré-calcula as trocas para esta escola
           const trocas: Array<{ tipo: 'PAO' | 'LANCHE'; dia_origem: string; dia_destino: string; dia_deslocado: string | null; semanas_afetadas: number }> = []
@@ -318,7 +323,9 @@ export async function POST(
           }
 
           // ── Expande para 22 semanas (réplicas) se solicitado ──
-          if (expandir && original.semanas.length >= ciclo) {
+          // v6.3: só expande se o base NÃO está completo (tem menos de 22 semanas)
+          //       se já tem 22, as semanas já foram clonadas acima — não expandir de novo
+          if (expandir && !baseCompleto && original.semanas.length >= ciclo) {
             const dataInicioBase = original.semanas[0]?.data_inicio
               ? new Date(original.semanas[0].data_inicio + 'T12:00:00')
               : new Date()
@@ -384,6 +391,23 @@ export async function POST(
                 }
               }
             }
+          } else if (baseCompleto) {
+            // v6.3: base já tem 22 semanas — apenas atualiza as datas
+            //       (a escola destino pode começar em data diferente do base)
+            const dataInicioBase = original.semanas[0]?.data_inicio
+              ? new Date(original.semanas[0].data_inicio + 'T12:00:00')
+              : new Date()
+            const datasSemanas = gerarDatasSemanasSemestre(dataInicioBase, SEMANAS_SEMESTRE)
+
+            for (let i = 0; i < semanasBase.length; i++) {
+              const d = datasSemanas[i]
+              if (d) {
+                await tx.cardapioSemanaNutri.updateMany({
+                  where: { cardapio_id: card.id, numero: i + 1 },
+                  data: { data_inicio: d.data_inicio, data_fim: d.data_fim },
+                })
+              }
+            }
           }
 
           criados.push({
@@ -417,16 +441,46 @@ export async function POST(
 }
 
 // ============================================================
-// Helper v5: Realoca o conteúdo de diaOrigem → diaDestino
-// com DESLOCAMENTO do conteúdo atual de diaDestino para o dia
-// útil mais próximo que não esteja bloqueado (envolvido em outra troca).
+// Helper v6.3: Realoca o conteúdo de diaOrigem → diaDestino
+// com DESLOCAMENTO EM CADEIA.
 //
 // Ex: base tem pão na terça, escola quer pão na sexta.
-//   - Move o conteúdo da sexta (comida) para a quinta (ou quarta se quinta bloqueada)
-//   - Move o pão da terça para a sexta
-//   - Terça fica vazia do pão (continua com o resto que tinha)
+//   Cadeia:
+//   - Pão da terça → sexta
+//   - Comida da sexta → quinta
+//   - Comida da quinta → quarta
+//   - Comida da quarta → terça (preenche o buraco deixado pelo pão)
+//   Resultado: nenhum dia fica vazio, todos continuam com comida,
+//   apenas o pão mudou para a sexta e a cadeia rotacionou.
 //
-// Se diaDestino estiver vazio, simplesmente move sem deslocar nada.
+// Algoritmo:
+//   1. Detecta a cadeia de dias entre origem e destino (em direção ao destino)
+//      ex: terça→sexta → cadeia = [terça, quarta, quinta, sexta] (4 dias)
+//          sexta→terça → cadeia = [sexta, quinta, quarta, terça] (4 dias)
+//   2. Move o conteúdo do último dia da cadeia para o primeiro, em ordem reversa:
+//      - Move itens da sexta → terça (último → primeiro da cadeia)
+//      - Move itens da quinta → sexta
+//      - Move itens da quarta → quinta
+//      - Move itens da terça (pão) → quarta
+//      Resultado: pão foi para a quarta (não sexta!) — ERRADO
+//
+//   Para corrigir: vamos fazer em 2 fases:
+//   FASE 1: Salvar todos os itens da cadeia em memória (snapshots)
+//   FASE 2: Para cada dia da cadeia (do destino → origem):
+//     - Coloca no dia atual o conteúdo do dia anterior da cadeia
+//   Resultado:
+//     - terça recebe conteúdo da quarta (era o último antes do destino)
+//     - quarta recebe conteúdo da quinta
+//     - quinta recebe conteúdo da sexta
+//     - sexta recebe conteúdo da terça (pão) ✅
+//
+// Direção da cadeia:
+//   - Se destino > origem (ex: terça→sexta): cadeia cresce para frente
+//   - Se destino < origem (ex: sexta→terça): cadeia cresce para trás
+//
+// Limites:
+//   - Cadeia não atravessa dias bloqueados (envolvidos em outra troca)
+//   - Se a cadeia não conseguir chegar à origem (bloqueada), faz swap puro
 // ============================================================
 async function realocarComDeslocamento(
   tx: Parameters<Parameters<typeof db.$transaction>[0]>[0],
@@ -440,19 +494,85 @@ async function realocarComDeslocamento(
 
   if (!diaOrigemId || !diaDestinoId) return
 
-  // 1. Carrega itens do dia origem (vai para o destino)
-  const itensOrigem = await tx.cardapioItem.findMany({ where: { dia_id: diaOrigemId } })
+  // 1. Constrói a cadeia de dias entre origem e destino
+  //    Cadeia inclui todos os dias entre origem e destino (exclusive origem, inclusive destino)
+  //    ex: terça→sexta → [quarta, quinta, sexta]
+  //    ex: sexta→terça → [quinta, quarta, terça]
+  const idxOrigem = ORDEM_DIAS.indexOf(diaOrigem)
+  const idxDestino = ORDEM_DIAS.indexOf(diaDestino)
+  if (idxOrigem === -1 || idxDestino === -1) return
 
-  // 2. Carrega itens do dia destino (vai ser deslocado para outro dia)
-  const itensDestino = await tx.cardapioItem.findMany({ where: { dia_id: diaDestinoId } })
+  // Verifica se algum dia intermediário está bloqueado (exceto origem/destino que já estão na lista)
+  // Se sim, não dá pra fazer cadeia — faz swap puro
+  const intermediariosBloqueados: string[] = []
+  if (idxDestino > idxOrigem) {
+    // cadeia cresce para frente: origem+1 .. destino
+    for (let i = idxOrigem + 1; i < idxDestino; i++) {
+      if (diasBloqueados.has(ORDEM_DIAS[i])) {
+        intermediariosBloqueados.push(ORDEM_DIAS[i])
+      }
+    }
+  } else if (idxDestino < idxOrigem) {
+    // cadeia cresce para trás: origem-1 .. destino
+    for (let i = idxOrigem - 1; i > idxDestino; i--) {
+      if (diasBloqueados.has(ORDEM_DIAS[i])) {
+        intermediariosBloqueados.push(ORDEM_DIAS[i])
+      }
+    }
+  }
 
-  // 3. Se destino está vazio, basta mover origem → destino (sem deslocamento)
-  if (itensDestino.length === 0) {
-    await tx.cardapioItem.deleteMany({ where: { dia_id: diaOrigemId } })
-    for (const item of itensOrigem) {
+  // Se há intermediários bloqueados, não dá pra fazer cadeia — swap puro
+  if (intermediariosBloqueados.length > 0) {
+    await trocarItensEntreDias(tx, diaOrigemId, diaDestinoId)
+    return
+  }
+
+  // 2. Constrói a cadeia completa (incluindo origem e destino)
+  const cadeia: string[] = [diaOrigem]
+  if (idxDestino > idxOrigem) {
+    for (let i = idxOrigem + 1; i <= idxDestino; i++) {
+      cadeia.push(ORDEM_DIAS[i])
+    }
+  } else if (idxDestino < idxOrigem) {
+    for (let i = idxOrigem - 1; i >= idxDestino; i--) {
+      cadeia.push(ORDEM_DIAS[i])
+    }
+  }
+  // cadeia agora é ex: [terça, quarta, quinta, sexta] ou [sexta, quinta, quarta, terça]
+
+  // 3. Snapshot: carrega itens de todos os dias da cadeia
+  const itensPorDia: Record<string, Awaited<ReturnType<typeof tx.cardapioItem.findMany>>> = {}
+  for (const dia of cadeia) {
+    const diaId = diasClonados[dia]
+    if (!diaId) continue
+    itensPorDia[dia] = await tx.cardapioItem.findMany({ where: { dia_id: diaId } })
+  }
+
+  // 4. Apaga todos os itens de todos os dias da cadeia
+  for (const dia of cadeia) {
+    const diaId = diasClonados[dia]
+    if (!diaId) continue
+    await tx.cardapioItem.deleteMany({ where: { dia_id: diaId } })
+  }
+
+  // 5. Reatribui: cada dia recebe o conteúdo do dia SEGUINTE da cadeia
+  //    (o último dia recebe o conteúdo do primeiro = origem)
+  //    ex: cadeia [terça, quarta, quinta, sexta]
+  //    - terça recebe conteúdo da quarta
+  //    - quarta recebe conteúdo da quinta
+  //    - quinta recebe conteúdo da sexta
+  //    - sexta recebe conteúdo da terça (pão) ✅
+  for (let i = 0; i < cadeia.length; i++) {
+    const diaAtual = cadeia[i]
+    const diaProximo = cadeia[(i + 1) % cadeia.length]  // circular: último volta pro primeiro
+    const diaAtualId = diasClonados[diaAtual]
+    if (!diaAtualId) continue
+
+    const itensParaReceber = itensPorDia[diaProximo] || []
+    for (const item of itensParaReceber) {
       await tx.cardapioItem.create({
         data: {
-          dia_id: diaDestinoId,
+          dia_id: diaAtualId,
           tipo_refeicao_id: item.tipo_refeicao_id,
           preparacao_id: item.preparacao_id,
           porcoes: item.porcoes,
@@ -460,84 +580,6 @@ async function realocarComDeslocamento(
         },
       })
     }
-    return
-  }
-
-  // 4. Acha o dia útil mais próximo de diaDestino que NÃO esteja bloqueado
-  //    Estratégia: alternar entre dia anterior e dia seguinte, expandindo raio.
-  //    Ex: destino = sexta → tenta quinta (1 antes), depois segunda (4 antes, vai
-  //    pra próxima semana? Não — semanal, então tenta segunda desta semana),
-  //    depois quarta (2 antes), depois terça (3 antes).
-  //
-  //    Na prática, vamos simplesmente iterar em ordem de distância crescente
-  //    considerando só dias úteis da mesma semana.
-  const idxDestino = ORDEM_DIAS.indexOf(diaDestino)
-  if (idxDestino === -1) return
-
-  let diaDeslocado: string | null = null
-  // distâncias 1, 2, 3, 4 (max em semana de 5 dias úteis)
-  for (let dist = 1; dist < ORDEM_DIAS.length; dist++) {
-    // tenta primeiro "antes" (preferência do usuário), depois "depois"
-    const candidatos: string[] = []
-    const antes = idxDestino - dist
-    const depois = idxDestino + dist
-    if (antes >= 0) candidatos.push(ORDEM_DIAS[antes])
-    if (depois < ORDEM_DIAS.length) candidatos.push(ORDEM_DIAS[depois])
-
-    for (const candidato of candidatos) {
-      if (diasBloqueados.has(candidato)) continue
-      // candidato é válido! Usa ele.
-      diaDeslocado = candidato
-      break
-    }
-    if (diaDeslocado) break
-  }
-
-  // 5. Se não achou dia disponível (todos bloqueados), faz swap puro como fallback
-  //    (cobre caso extremo de pão na terça e lanche na quinta, escola quer pão na
-  //    quinta e lanche na terça — dai destino do pão = origem do lanche e vice-versa)
-  if (!diaDeslocado) {
-    await trocarItensEntreDias(tx, diaOrigemId, diaDestinoId)
-    return
-  }
-
-  // 6. Move o conteúdo do diaDestino → diaDeslocado (PROPAGANDO ordem)
-  const diaDeslocadoId = diasClonados[diaDeslocado]
-  if (!diaDeslocadoId) {
-    //Dia deslocado não existe no mapa (improvável) — fallback para swap
-    await trocarItensEntreDias(tx, diaOrigemId, diaDestinoId)
-    return
-  }
-
-  // 6a. Limpa o dia deslocado (caso tenha algo — não deveria, mas por segurança)
-  await tx.cardapioItem.deleteMany({ where: { dia_id: diaDeslocadoId } })
-
-  // 6b. Move itensDestino → diaDeslocado
-  for (const item of itensDestino) {
-    await tx.cardapioItem.create({
-      data: {
-        dia_id: diaDeslocadoId,
-        tipo_refeicao_id: item.tipo_refeicao_id,
-        preparacao_id: item.preparacao_id,
-        porcoes: item.porcoes,
-        ordem: item.ordem || 0,
-      },
-    })
-  }
-
-  // 7. Limpa diaDestino (já foi movido para diaDeslocado) e move itensOrigem → diaDestino
-  await tx.cardapioItem.deleteMany({ where: { dia_id: diaDestinoId } })
-  await tx.cardapioItem.deleteMany({ where: { dia_id: diaOrigemId } })
-  for (const item of itensOrigem) {
-    await tx.cardapioItem.create({
-      data: {
-        dia_id: diaDestinoId,
-        tipo_refeicao_id: item.tipo_refeicao_id,
-        preparacao_id: item.preparacao_id,
-        porcoes: item.porcoes,
-        ordem: item.ordem || 0,
-      },
-    })
   }
 }
 
