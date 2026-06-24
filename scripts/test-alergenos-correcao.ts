@@ -25,6 +25,11 @@ interface CasoTeste {
 const casos: CasoTeste[] = [
   // ── CASOS DO BUG (devem voltar a funcionar) ──
   {
+    descricao: 'Couve, manteiga, crua (nome TACO real) — NÃO deve ter leite',
+    alimento: { nome: 'Couve, manteiga, crua' },
+    esperado: [],
+  },
+  {
     descricao: 'Couve manteiga (sem grupo) — NÃO deve ter leite',
     alimento: { nome: 'Couve manteiga' },
     esperado: [],
@@ -42,6 +47,11 @@ const casos: CasoTeste[] = [
   {
     descricao: 'Couve-manteiga (hífen) — NÃO deve ter leite',
     alimento: { nome: 'Couve-manteiga' },
+    esperado: [],
+  },
+  {
+    descricao: 'Ervilha, manteiga, crua (nome TACO real) — NÃO deve ter leite',
+    alimento: { nome: 'Ervilha, manteiga, crua' },
     esperado: [],
   },
   {

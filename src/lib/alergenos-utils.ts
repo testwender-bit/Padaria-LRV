@@ -80,17 +80,21 @@ const PADROES_LEITE = [
 
 // ── Exceções: alimentos que contêm a palavra "manteiga"/"leite"/"queijo"
 //    mas NÃO são alérgenos (são nomes de plantas / variedades) ──
-// Importante: testar com nome normalizado (lowercase, sem acentos).
+// Importante: testar com nome normalizado (lowercase, sem acentos, sem pontuação).
 // Se o nome do alimento bate com algum destes padrões, NÃO marcamos 'L'.
+//
+// Os nomes TACO costumam ter vírgulas e estado físico
+// (ex.: "Couve, manteiga, crua"). Por isso, a comparação é feita sobre o nome
+// normalizado removendo vírgulas e espaços extras, e cada exceção é testada
+// como substring nesse nome limpo.
 const EXCECOES_LEITE = [
   // Verduras cuja variedade se chama "manteiga" (não contêm leite)
-  'couve manteiga', 'couve-manteiga',
+  // Exemplos TACO: "Couve, manteiga, crua" → normalizado: "couve manteiga crua"
+  'couve manteiga',
+  // Outras variedades de plantas com nome "manteiga":
+  'ervilha manteiga',
   // "Banana maçã" / "Banana prata" etc não entram aqui, mas se algum dia
   // houver "banana manteiga" como variedade, adicionar aqui.
-  // Outras variedades de plantas com nome "manteiga":
-  'ervilha manteiga', 'ervilha-manteiga',
-  // Manjericão NÃO é exceção (não tem a palavra manteiga), mas
-  // "manjerona" também não — mantemos apenas os estritamente necessários.
 ]
 
 const PADROES_OVO = [
@@ -181,11 +185,17 @@ export function detectarAlergenosAlimento(alimento: AlimentoBasco): AlergenoSigl
   if (!nome && !grupo) return []
 
   // ── LEITE ──
-  // Primeiro verifica exceções (couve manteiga etc — não são alérgenos)
-  const nomeNorm = nome
+  // Primeiro verifica exceções (couve manteiga etc — não são alérgenos).
+  // Importante: nomes TACO costumam ter vírgulas e estado físico
+  // (ex.: "Couve, manteiga, crua"). Normalizamos removendo vírgulas e
+  // espaços extras para que 'couve manteiga' case com "couve, manteiga, crua".
+  const nomeSemPontuacao = nome
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-  const ehExcecaoLeite = EXCECOES_LEITE.some((p) => nomeNorm.includes(p))
+    .replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .replace(/[,\-.]/g, ' ')         // vírgulas, pontos e hífens viram espaço
+    .replace(/\s+/g, ' ')            // colapsa espaços múltiplos
+    .trim()
+  const ehExcecaoLeite = EXCECOES_LEITE.some((p) => nomeSemPontuacao.includes(p))
   if (ehExcecaoLeite) {
     // Não marca como leite — é uma variedade de planta com "manteiga" no nome
   } else if (grupo === 'leite e derivados') {
