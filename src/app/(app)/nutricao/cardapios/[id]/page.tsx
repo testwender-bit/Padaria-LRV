@@ -17,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon
+  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, ArrowDownUp
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -493,6 +493,75 @@ export default function CardapioEditorPage() {
         toast.error('Erro ao salvar ordem')
       }
       return
+    }
+  }
+
+  // ─── v5: Reordenar TODOS os slots de um dia para a ordem canônica ───
+  // Botão "Reordenar dia" no header do dia — reseta ordens manuais e
+  // reaplica a ordenação automática baseada em perfil (PAO_LANCHE / COMIDA / CUSCUZ).
+  async function handleReordenarDia(diaSemana: string, semanaNumero: number) {
+    if (!cardapio || !semanaAtual) return
+
+    // Atualização otimista: aplica ordem 0 em todos os itens do dia localmente
+    // para a UI refletir imediatamente o auto-sort.
+    setCardapio(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        semanas: prev.semanas.map(s => {
+          if (s.numero !== semanaNumero) return s
+          return {
+            ...s,
+            dias: s.dias.map(d => {
+              if (d.dia_semana !== diaSemana) return d
+              return {
+                ...d,
+                itens: d.itens.map(i => ({ ...i, ordem: 0 })),
+              }
+            }),
+          }
+        }),
+      }
+    })
+
+    try {
+      const resp = await fetch(`/api/nutricao/cardapios/${cardapioId}/reordenar-dia`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          semana_numero: semanaNumero,
+          dia_semana: diaSemana,
+        }),
+      })
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}))
+        throw new Error(err.error || `HTTP ${resp.status}`)
+      }
+
+      const data = await resp.json()
+      toast.success(`Dia reordenado (${data.itens_reordenados} itens)`)
+
+      // Recarrega o cardápio para refletir as ordens persistidas
+      await recarregarCardapio()
+    } catch (e) {
+      toast.error('Erro ao reordenar dia: ' + (e instanceof Error ? e.message : ''))
+      // Em caso de erro, recarrega para desfazer a atualização otimista
+      await recarregarCardapio()
+    }
+  }
+
+  // Recarrega o cardápio do servidor (preserva semana selecionada)
+  async function recarregarCardapio() {
+    if (!cardapioId) return
+    try {
+      const resp = await fetch(`/api/nutricao/cardapios/${cardapioId}`)
+      if (resp.ok) {
+        const data = await resp.json()
+        setCardapio(data)
+      }
+    } catch {
+      // silencioso
     }
   }
 
@@ -1839,13 +1908,22 @@ export default function CardapioEditorPage() {
                         ) : null
                       })()}
                     </div>
-                    <button
-                      onClick={() => openCopyDialog(dia.value, currentSemana)}
-                      className="text-white/70 hover:text-white transition-colors flex-shrink-0"
-                      title="Copiar refeições para outro dia"
-                    >
-                      <Copy className="w-3 h-3" />
-                    </button>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => handleReordenarDia(dia.value, currentSemana)}
+                        className="text-white/70 hover:text-[#D4A017] transition-colors"
+                        title="Reordenar dia (aplica ordem canônica: bebida → pão → fruta / salada → arroz → feijão → proteína → acompanhamento → fruta / cuscuz → acompanhamento → fruta)"
+                      >
+                        <ArrowDownUp className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => openCopyDialog(dia.value, currentSemana)}
+                        className="text-white/70 hover:text-white transition-colors"
+                        title="Copiar refeições para outro dia"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Refeição slots */}

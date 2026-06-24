@@ -134,6 +134,7 @@ export async function POST(
                     tipo_refeicao_id: item.tipo_refeicao_id,
                     preparacao_id: item.preparacao_id,
                     porcoes: item.porcoes,
+                    ordem: item.ordem || 0,  // v5: PROPAGAR ordem (era perdida)
                   },
                 })
               }

@@ -4,11 +4,29 @@
 // Define a ordem de exibição das preparações dentro de cada
 // refeição, baseada em palavras-chave no nome da preparação.
 //
-// Regras:
-//   Café da manhã: Bebidas primeiro, depois sólidos
-//   Fruta da manhã: Frutas primeiro, depois acompanhamento
-//   Almoço/Lanche/Jantar: Salada → Arroz → Feijão → Proteína → Acompanhamento → Suco
-//   Hidratação: Frutas primeiro, depois acompanhamento
+// v5 — Nova arquitetura baseada em PERFIS de refeição:
+//
+//   PERFIL_PAO_LANCHE (quando o slot tem pão ou lanche especial)
+//     → Bebida/Vitamina → Pão/Lanche → Fruta
+//
+//   PERFIL_COMIDA (refeições com arroz/proteína/salada — default)
+//     → Salada → Arroz → Feijão → Proteína → Acompanhamento → Fruta → Suco
+//
+//   PERFIL_CUSCUZ (quando tem cuscuz — precede pão)
+//     → Cuscuz → Acompanhamento (proteína/legume) → Fruta
+//
+// A detecção do perfil é feita POR SLOT (dia + refeição):
+//   varre os itens, se tem cuscuz → CUSCUZ
+//   senão se tem PAO ou LANCHE especial → PAO_LANCHE
+//   senão → COMIDA
+//
+// Cafe da manhã / fruta da manhã / hidratação continuam com lógica própria.
+//
+// Botão "Reordenar dia": reseta ordem=0 de todos os itens do slot e
+// re-aplica a ordenação canônica. Endpoints:
+//   - POST /api/nutricao/cardapios/[id]/reordenar-dia
+//     body: { semana_numero, dia_semana, tipo_refeicao_id? }
+//     se tipo_refeicao_id omitido, reordena todos os slots do dia
 // ============================================================
 
 // ── Palavras-chave por categoria ──
@@ -55,7 +73,21 @@ const KW_PAO = [
   'pão com manteiga', 'pao com manteiga',
   'pão com nata', 'pao com nata',
   'pão com requeijão', 'pao com requeijao',
-  'cuscuz',
+]
+
+const KW_LANCHE_ESPECIAL = [
+  // Lanches especiais (categoria LANCHE em Preparacao.categoria)
+  // Detectados via palavra-chave para a ordenação (não tem acesso ao campo
+  // categoria do banco aqui — só ao nome da preparação).
+  // Lista mantida curta porque a maioria dos "lanches especiais" usa nome
+  // específico como "rosca", "bolinho", "pão doce", etc.
+  'rosca', 'pão doce', 'pao doce', 'brioche',
+  'croissant', 'pão de leite', 'pao de leite',
+  'pão de batata', 'pao de batata',
+]
+
+const KW_CUSCUZ = [
+  'cuscuz', 'cuscu',
 ]
 
 const KW_BEBIDA = [
@@ -86,7 +118,7 @@ const KW_FRUTA = [
 
 const KW_ACOMPANHAMENTO = [
   'purê', 'pure', 'batata', 'legumes', 'legume', 'abóbora', 'abobora',
-  'couve', 'repolho', 'quiabo', 'maxixe', 'chuchu', 'cuscu',
+  'couve', 'repolho', 'quiabo', 'maxixe', 'chuchu',
   'farofa', 'polenta', 'mandioca', 'macarrão', 'macarrao', 'espaguete',
   'nhoque', 'lasanha', 'canjica', 'angu', 'creme de milho', 'creme de ervilha',
   'sopa de', 'caldo', 'curau', 'bolinho', 'fubá', 'fuba',
@@ -104,46 +136,103 @@ const KW_ACOMPANHAMENTO = [
   'macarrão de sopa', 'macarrao de sopa',
 ]
 
-type Categoria = 'SALADA' | 'ARROZ' | 'FEIJAO' | 'PROTEINA' | 'ACOMPANHAMENTO' | 'SUCO' | 'BEBIDA' | 'FRUTA' | 'PAO' | 'OUTRO'
+type Categoria =
+  | 'SALADA' | 'ARROZ' | 'FEIJAO' | 'PROTEINA' | 'ACOMPANHAMENTO'
+  | 'SUCO' | 'BEBIDA' | 'FRUTA' | 'PAO' | 'LANCHE' | 'CUSCUZ' | 'OUTRO'
+
+// Normaliza nome removendo acentos, pontuação e espaços extras
+// (mesma lógica aplicada em alergenos-utils.ts para casar com nomes TACO)
+function normalizarNome(s: string): string {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[,\-.]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
 function detectarCategoria(nome: string): Categoria {
-  const n = nome.toLowerCase().trim()
+  const n = normalizarNome(nome)
 
-  // 1. SALADA primeiro (sempre)
+  // 1. CUSCUZ primeiro (tem regra própria no perfil dele)
+  if (KW_CUSCUZ.some(kw => n.includes(kw))) return 'CUSCUZ'
+
+  // 2. SALADA (sempre)
   if (KW_SALADA.some(kw => n.includes(kw))) return 'SALADA'
 
-  // 2. PROTEINA antes de ARROZ/PAO/FEIJAO (para pegar "Arroz com frango", "Pão com salsicha", "Feijoada")
+  // 3. PROTEINA antes de ARROZ/PAO/FEIJAO (para pegar "Arroz com frango", "Pão com salsicha", "Feijoada")
   if (KW_PROTEINA.some(kw => n.includes(kw))) return 'PROTEINA'
 
-  // 3. PAO antes de BEBIDA/FRUTA (para pegar "Pão com doce de leite", "Pão com doce de fruta")
+  // 4. LANCHE especial antes de PAO (para diferenciar "rosca" de "pão francês")
+  if (KW_LANCHE_ESPECIAL.some(kw => n.includes(kw))) return 'LANCHE'
+
+  // 5. PAO antes de BEBIDA/FRUTA (para pegar "Pão com doce de leite", "Pão com doce de fruta")
   if (KW_PAO.some(kw => n.includes(kw))) return 'PAO'
 
-  // 4. BEBIDA antes de FRUTA (para pegar "Mingau de aveia com banana", "Vitamina de Goiaba")
+  // 6. BEBIDA antes de FRUTA (para pegar "Mingau de aveia com banana", "Vitamina de Goiaba")
   if (KW_BEBIDA.some(kw => n.includes(kw))) return 'BEBIDA'
 
-  // 5. ARROZ (após PROTEINA, para não pegar "Arroz com frango")
+  // 7. ARROZ (após PROTEINA, para não pegar "Arroz com frango")
   if (KW_ARROZ.some(kw => n.includes(kw))) return 'ARROZ'
 
-  // 6. FEIJAO
+  // 8. FEIJAO
   if (KW_FEIJAO.some(kw => n.includes(kw))) return 'FEIJAO'
 
-  // 7. SUCO
+  // 9. SUCO
   if (KW_SUCO.some(kw => n.includes(kw))) return 'SUCO'
 
-  // 8. FRUTA (após BEBIDA, para não pegar "Mingau com banana")
+  // 10. FRUTA (após BEBIDA, para não pegar "Mingau com banana")
   if (KW_FRUTA.some(kw => n.includes(kw))) return 'FRUTA'
 
-  // 9. ACOMPANHAMENTO
+  // 11. ACOMPANHAMENTO
   if (KW_ACOMPANHAMENTO.some(kw => n.includes(kw))) return 'ACOMPANHAMENTO'
 
   return 'OUTRO'
 }
 
+// ── Perfis de refeição ──
+type PerfilRefeicao = 'PAO_LANCHE' | 'COMIDA' | 'CUSCUZ'
+
+/**
+ * Detecta o perfil de uma refeição (slot = dia + tipo_refeicao) baseado
+ * nos itens que ela contém.
+ *
+ * - Se tem cuscuz → CUSCUZ (precede tudo)
+ * - Senão, se tem pão (PAO) ou lanche especial (LANCHE) → PAO_LANCHE
+ * - Senão → COMIDA
+ */
+export function detectarPerfilSlot(nomesPreparacoes: string[]): PerfilRefeicao {
+  const categorias = nomesPreparacoes.map(detectarCategoria)
+  if (categorias.includes('CUSCUZ')) return 'CUSCUZ'
+  if (categorias.includes('PAO') || categorias.includes('LANCHE')) return 'PAO_LANCHE'
+  return 'COMIDA'
+}
+
 /**
  * Retorna a prioridade de uma preparação dentro de uma refeição.
  * Menor número = aparece primeiro.
+ *
+ * Em refeições do tipo LANCHE/ALMOCO/JANTAR, a prioridade depende do PERFIL
+ * do slot (PAO_LANCHE / COMIDA / CUSCUZ). Por isso, ao ordenar um slot,
+ * prefira usar sortItensByRefeicao() que detecta o perfil automaticamente.
+ *
+ * Esta função mantém compatibilidade com chamadas antigas que passam só o
+ * codigo do tipo de refeição (assume COMIDA se não consegue detectar perfil).
  */
 export function getPrioridadePrep(nome: string, tipoRefeicaoCodigo: string): number {
+  return getPrioridadePorPerfil(nome, tipoRefeicaoCodigo, 'COMIDA')
+}
+
+/**
+ * Retorna a prioridade de uma preparação dado o perfil do slot.
+ * Menor número = aparece primeiro.
+ */
+function getPrioridadePorPerfil(
+  nome: string,
+  tipoRefeicaoCodigo: string,
+  perfil: PerfilRefeicao
+): number {
   const categoria = detectarCategoria(nome)
 
   switch (tipoRefeicaoCodigo) {
@@ -162,14 +251,45 @@ export function getPrioridadePrep(nome: string, tipoRefeicaoCodigo: string): num
     case 'JANTAR':
     case 'LANCHE_1':
     case 'LANCHE_2':
-      // salada → arroz → feijão → proteína → pão/acompanhamento → fruta/outro → suco/bebida
+      if (perfil === 'PAO_LANCHE') {
+        // Bebida/Vitamina → Pão/Lanche → Fruta
+        switch (categoria) {
+          case 'BEBIDA': return 0
+          case 'SUCO': return 0
+          case 'PAO': return 1
+          case 'LANCHE': return 1
+          case 'CUSCUZ': return 1
+          case 'OUTRO': return 2
+          case 'FRUTA': return 3
+          default: return 2 // proteína/acompanhamento no meio se aparecer junto
+        }
+      }
+      if (perfil === 'CUSCUZ') {
+        // Cuscuz → Acompanhamento (proteína ou legume) → Fruta
+        switch (categoria) {
+          case 'CUSCUZ': return 0
+          case 'PROTEINA': return 1
+          case 'ACOMPANHAMENTO': return 1
+          case 'ARROZ': return 1
+          case 'FEIJAO': return 1
+          case 'OUTRO': return 2
+          case 'FRUTA': return 3
+          case 'BEBIDA': return 4
+          case 'SUCO': return 4
+          default: return 2
+        }
+      }
+      // perfil COMIDA
+      // Salada → Arroz → Feijão → Proteína → Acompanhamento → Fruta → Suco
       switch (categoria) {
         case 'SALADA': return 0
         case 'ARROZ': return 1
         case 'FEIJAO': return 2
         case 'PROTEINA': return 3
-        case 'PAO': return 4
         case 'ACOMPANHAMENTO': return 4
+        case 'PAO': return 4 // pão entra como acompanhamento em refeição COMIDA
+        case 'LANCHE': return 4
+        case 'CUSCUZ': return 4
         case 'OUTRO': return 5
         case 'FRUTA': return 5
         case 'SUCO': return 6
@@ -189,8 +309,12 @@ export function getPrioridadePrep(nome: string, tipoRefeicaoCodigo: string): num
 
 /**
  * Ordena itens de uma refeição baseado nas regras de prioridade.
- * Se ALGUM item tem `ordem` > 0 (definida manualmente), respeita a ordem manual.
- * Caso contrário, aplica auto-sort.
+ *
+ * v5 — agora detecta o PERFIL do slot (PAO_LANCHE / COMIDA / CUSCUZ)
+ * automaticamente, baseado nos itens presentes.
+ *
+ * Se ALGUM item tem `ordem` > 0 (definida manualmente), respeita a ordem
+ * manual para TODOS. Caso contrário, aplica auto-sort.
  */
 export function sortItensByRefeicao<
   T extends {
@@ -215,11 +339,47 @@ export function sortItensByRefeicao<
   const tipoRefeicao = tiposRefeicao.find(t => t.id === tipoRefeicaoId)
   const codigo = tipoRefeicao?.codigo || ''
 
+  // Detecta perfil do slot baseado nos itens
+  const perfil = detectarPerfilSlot(itens.map(i => i.preparacao.nome))
+
   return [...itens].sort((a, b) => {
-    const prioA = getPrioridadePrep(a.preparacao.nome, codigo)
-    const prioB = getPrioridadePrep(b.preparacao.nome, codigo)
+    const prioA = getPrioridadePorPerfil(a.preparacao.nome, codigo, perfil)
+    const prioB = getPrioridadePorPerfil(b.preparacao.nome, codigo, perfil)
     if (prioA !== prioB) return prioA - prioB
     // Mesma prioridade → ordem alfabética
+    return a.preparacao.nome.localeCompare(b.preparacao.nome)
+  })
+}
+
+/**
+ * Calcula a ordem canônica de itens de um slot, SEM respeitar ordem manual.
+ * Usado pelo endpoint "reordenar-dia" (botão "Reordenar") — reseta toda a
+ * ordenação manual e re-aplica a canônica.
+ *
+ * Retorna array com a NOVA ordem de cada item (não muta o input).
+ * Item na posição 0 deve ficar primeiro.
+ */
+export function calcularOrdemCanonicaSlot<
+  T extends {
+    preparacao: { nome: string }
+    tipo_refeicao_id?: string
+    tipo_refeicao?: { id: string; codigo: string }
+    id: string
+  }
+>(itens: T[], tiposRefeicao: Array<{ id: string; codigo: string }>): T[] {
+  if (itens.length <= 1) return [...itens]
+
+  const primeiroItem = itens[0]
+  const tipoRefeicaoId = primeiroItem.tipo_refeicao_id || primeiroItem.tipo_refeicao?.id
+  const tipoRefeicao = tiposRefeicao.find(t => t.id === tipoRefeicaoId)
+  const codigo = tipoRefeicao?.codigo || ''
+
+  const perfil = detectarPerfilSlot(itens.map(i => i.preparacao.nome))
+
+  return [...itens].sort((a, b) => {
+    const prioA = getPrioridadePorPerfil(a.preparacao.nome, codigo, perfil)
+    const prioB = getPrioridadePorPerfil(b.preparacao.nome, codigo, perfil)
+    if (prioA !== prioB) return prioA - prioB
     return a.preparacao.nome.localeCompare(b.preparacao.nome)
   })
 }
