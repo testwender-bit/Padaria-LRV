@@ -78,6 +78,21 @@ const PADROES_LEITE = [
   'bolo de queijo', 'empadao de queijo', 'empadão de queijo',
 ]
 
+// ── Exceções: alimentos que contêm a palavra "manteiga"/"leite"/"queijo"
+//    mas NÃO são alérgenos (são nomes de plantas / variedades) ──
+// Importante: testar com nome normalizado (lowercase, sem acentos).
+// Se o nome do alimento bate com algum destes padrões, NÃO marcamos 'L'.
+const EXCECOES_LEITE = [
+  // Verduras cuja variedade se chama "manteiga" (não contêm leite)
+  'couve manteiga', 'couve-manteiga',
+  // "Banana maçã" / "Banana prata" etc não entram aqui, mas se algum dia
+  // houver "banana manteiga" como variedade, adicionar aqui.
+  // Outras variedades de plantas com nome "manteiga":
+  'ervilha manteiga', 'ervilha-manteiga',
+  // Manjericão NÃO é exceção (não tem a palavra manteiga), mas
+  // "manjerona" também não — mantemos apenas os estritamente necessários.
+]
+
 const PADROES_OVO = [
   // Ovos diretos
   'ovo cozido', 'ovo frito', 'ovo mexido', 'ovo poch',
@@ -166,7 +181,14 @@ export function detectarAlergenosAlimento(alimento: AlimentoBasco): AlergenoSigl
   if (!nome && !grupo) return []
 
   // ── LEITE ──
-  if (grupo === 'leite e derivados') {
+  // Primeiro verifica exceções (couve manteiga etc — não são alérgenos)
+  const nomeNorm = nome
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+  const ehExcecaoLeite = EXCECOES_LEITE.some((p) => nomeNorm.includes(p))
+  if (ehExcecaoLeite) {
+    // Não marca como leite — é uma variedade de planta com "manteiga" no nome
+  } else if (grupo === 'leite e derivados') {
     encontrado.add('L')
   } else {
     for (const p of PADROES_LEITE) {
