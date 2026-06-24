@@ -373,7 +373,6 @@ function atribuirOrdemParaItensSemOrdem<
     tipo_refeicao_id?: string
     tipo_refeicao?: { id: string; codigo: string }
     ordem?: number
-    id: string
   }
 >(itens: T[], tiposRefeicao: Array<{ id: string; codigo: string }>): T[] {
   const comOrdem = itens.filter(i => (i.ordem ?? 0) > 0)
