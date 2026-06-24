@@ -297,6 +297,7 @@ function getPrioridadePorPerfil(
     case 'LANCHE_2':
       if (perfil === 'PAO_LANCHE') {
         // Bebida/Vitamina → Pão/Lanche → Fruta
+        // (fruta sempre por último — v6.2)
         switch (categoria) {
           case 'BEBIDA': return 0
           case 'SUCO': return 0
@@ -310,7 +311,8 @@ function getPrioridadePorPerfil(
         }
       }
       if (perfil === 'CUSCUZ') {
-        // Cuscuz → Acompanhamento (proteína ou legume) → Fruta
+        // Cuscuz → Acompanhamento (proteína ou legume) → Bebida → Fruta
+        // (fruta sempre por último — v6.2)
         switch (categoria) {
           case 'CUSCUZ': return 0
           case 'PROTEINA': return 1
@@ -318,15 +320,16 @@ function getPrioridadePorPerfil(
           case 'ARROZ': return 1
           case 'FEIJAO': return 1
           case 'OUTRO': return 2
+          case 'BEBIDA': return 2
+          case 'SUCO': return 2
           case 'FRUTA': return 3
           case 'SOBREMESA': return 3
-          case 'BEBIDA': return 4
-          case 'SUCO': return 4
           default: return 2
         }
       }
       // perfil COMIDA
-      // Salada → Arroz → Feijão → Proteína → Acompanhamento → Fruta → Suco
+      // v6.2: Salada → Arroz → Feijão → Proteína → Acompanhamento → Bebida → Fruta
+      // (fruta sempre por último, depois da bebida)
       switch (categoria) {
         case 'SALADA': return 0
         case 'ARROZ': return 1
@@ -337,10 +340,10 @@ function getPrioridadePorPerfil(
         case 'LANCHE': return 4
         case 'CUSCUZ': return 4
         case 'OUTRO': return 5
-        case 'FRUTA': return 5
-        case 'SOBREMESA': return 5
-        case 'SUCO': return 6
-        case 'BEBIDA': return 6
+        case 'SUCO': return 5
+        case 'BEBIDA': return 5
+        case 'FRUTA': return 6
+        case 'SOBREMESA': return 6
         default: return 5
       }
 
