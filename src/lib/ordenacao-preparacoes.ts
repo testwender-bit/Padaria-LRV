@@ -268,39 +268,42 @@ export function getPrioridadePrep(
 }
 
 /**
- * v8.9 — Detecta o perfil FORÇADO pelo tipo de refeição.
- * LANCHE / LANCHE_1 / LANCHE_2 são SEMPRE perfil PAO_LANCHE
- * (bebida primeiro), independente de ter pão ou não.
- * Só ALMOCO / JANTAR usam detecção por itens (COMIDA / CUSCUZ).
- */
-function detectarPerfilForcado(tipoRefeicaoCodigo: string): PerfilRefeicao | null {
-  switch (tipoRefeicaoCodigo) {
-    case 'LANCHE':
-    case 'LANCHE_1':
-    case 'LANCHE_2':
-    case 'CAFE_MANHA':
-    case 'FRUTA_MANHA':
-    case 'HIDRATACAO':
-      return 'PAO_LANCHE'  // Bebida primeiro, sempre
-    case 'ALMOCO':
-    case 'JANTAR':
-      return null  // Deixa detectar por itens (COMIDA ou CUSCUZ)
-    default:
-      return null
-  }
-}
-
-/**
- * v8.9 — Wrapper que decide o perfil: forçado pelo tipo de refeição
- * OU detectado pelos itens (apenas para ALMOCO/JANTAR).
+ * v8.9.1 — Detecção de perfil POR SLOT (dia + refeição), não por tipo de refeição.
+ *
+ * Lógica DEFINITIVA:
+ *   1. Se tem cuscuz → CUSCUZ
+ *   2. Se tem arroz, feijão, proteína OU salada → COMIDA (refeição completa)
+ *   3. Se tem pão ou lanche especial → PAO_LANCHE (snack com pão)
+ *   4. Caso contrário (só bebida/suco/fruta) → PAO_LANCHE (bebida primeiro)
+ *
+ * Isso garante que:
+ *   - Dia com "Pão + Suco + Banana" → PAO_LANCHE → Suco → Pão → Banana ✅
+ *   - Dia com "Arroz + Feijão + Carne + Salada" → COMIDA → Salada → Arroz → Feijão → Carne ✅
+ *   - Dia com "Suco + Arroz + Feijão" → COMIDA → Arroz → Feijão → Suco (último) ✅
+ *   - Dia com "Suco + Banana" → PAO_LANCHE → Suco → Banana ✅
  */
 function detectarPerfilFinal<T extends { preparacao: { nome: string; categoria?: string } }>(
   itens: T[],
-  tipoRefeicaoCodigo: string
+  _tipoRefeicaoCodigo: string  // não usado — perfil é por slot, não por tipo
 ): PerfilRefeicao {
-  const forçado = detectarPerfilForcado(tipoRefeicaoCodigo)
-  if (forçado) return forçado
-  return detectarPerfilSlotAvancado(itens)
+  if (itens.length === 0) return 'PAO_LANCHE'
+
+  const categorias = itens.map(i => detectarCategoria(i.preparacao.nome, i.preparacao.categoria))
+
+  // 1. Cuscuz tem perfil próprio
+  if (categorias.includes('CUSCUZ')) return 'CUSCUZ'
+
+  // 2. Se tem arroz, feijão, proteína ou salada → é COMIDA (refeição completa)
+  const temComida = categorias.some(c =>
+    c === 'ARROZ' || c === 'FEIJAO' || c === 'PROTEINA' || c === 'SALADA'
+  )
+  if (temComida) return 'COMIDA'
+
+  // 3. Se tem pão ou lanche → PAO_LANCHE
+  if (categorias.includes('PAO') || categorias.includes('LANCHE')) return 'PAO_LANCHE'
+
+  // 4. Caso contrário (bebida/suco/fruta/acompanhamento) → PAO_LANCHE (bebida primeiro)
+  return 'PAO_LANCHE'
 }
 
 /**
