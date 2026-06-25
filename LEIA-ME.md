@@ -1,30 +1,55 @@
-# Patch v8.10 — Replicar Cardápio de Escola + Remover "Tornar em Base"
+# Patch v8.11 — Suco primeiro quando há Cuscuz
 
 ## O que muda
-1. **Removido o botão "Transformar em Base"** do editor de cardápio.
-   - Antes: um cardápio vinculado a uma escola podia ser transformado em modelo base
-     (escola_id = null), o que quebrava o vínculo com a escola original.
-   - Agora: esse botão não existe mais. O cardápio permanece vinculado à escola.
 
-2. **"Replicar p/ Escolas" agora funciona para qualquer cardápio** (base ou de escola).
-   - Antes: só cardápios base (sem escola) podiam ser replicados; a página /replicar
-     barrava cardápios com escola_id preenchido.
-   - Agora: qualquer cardápio pode ser replicado para outras escolas.
-   - A escola de origem (se houver) é automaticamente excluída da lista de seleção.
-   - O `cardapio_base_id` das cópias preserva o do original (mantém o vínculo
-     com o base verdadeiro, mesmo quando a origem é uma instância de escola).
+**Bug corrigido:** Quando um slot de refeição tinha CUSCUZ + SUCO (ou outra bebida),
+o suco aparecia DEPOIS do cuscuz e da proteína — enquanto em dias de PAO_LANCHE
+o suco já aparecia primeiro. Inconsistente.
+
+**Exemplo real do banco (Anjo da Guarda, Semana 3, sexta):**
+- ANTES: Cuscuz → Leite com cacau (bebida em 2º)
+- DEPOIS: **Leite com cacau → Cuscuz** (bebida em 1º ✓)
+
+## Mudança na lógica
+
+No arquivo `ordenacao-preparacoes.ts`, função `getPrioridadePorPerfil`,
+perfil `CUSCUZ`:
+
+| Categoria  | Antes (v8.9) | Agora (v8.11) |
+|------------|--------------|---------------|
+| BEBIDA     | 2            | **0** (primeiro) |
+| SUCO       | 2            | **0** (primeiro) |
+| CUSCUZ     | 0            | 1             |
+| PROTEINA   | 1            | 2             |
+| ACOMPANHAMENTO | 1        | 2             |
+| ARROZ      | 1            | 2             |
+| FEIJAO     | 1            | 2             |
+| OUTRO      | 2            | 3             |
+| FRUTA      | 3            | 4             |
+| SOBREMESA  | 3            | 4             |
+
+Agora o perfil CUSCUZ segue a mesma regra do PAO_LANCHE para bebidas: **bebida sempre primeiro**, depois o carboidrato (cuscuz), depois a proteína, depois a fruta.
 
 ## Arquivos
-- `cardapio-editor-page.tsx` → sobrescreve `src/app/(app)/nutricao/cardapios/[id]/page.tsx`
-- `replicar-page.tsx` → sobrescreve `src/app/(app)/nutricao/cardapios/[id]/replicar/page.tsx`
-- `replicar-route.ts` → sobrescreve `src/app/api/nutricao/cardapios/[id]/replicar/route.ts`
+
+1. `ordenacao-preparacoes.ts` → substitui `src/lib/ordenacao-preparacoes.ts`
+2. `recalcular-ordenacao-v11.ts` → coloque em `scripts/recalcular-ordenacao-v11.ts`
 
 ## Como aplicar
-1. Faça backup do projeto atual.
-2. Renomeie os 3 arquivos acima para os caminhos indicados e substitua os originais.
-3. Rode `npx prisma generate` (não há mudança de schema, mas boa prática).
-4. Rode `npm run build` ou reinicie o `npm run dev`.
 
-## Verificação
-- TypeScript: `npx tsc --noEmit` ✓
-- ESLint: `npx eslint <arquivos>` ✓
+1. Substitua os 2 arquivos nos caminhos indicados.
+2. Reinicie o `npm run dev` — a UI e o PDF já vão mostrar a nova ordem (a
+   ordenação é dinâmica, aplicada em runtime por `sortItensByRefeicao`).
+3. **OPCIONAL:** rode o script para persistir a ordem no banco:
+   ```bash
+   npx tsx scripts/recalcular-ordenacao-v11.ts          # dry-run (relatório)
+   npx tsx scripts/recalcular-ordenacao-v11.ts --apply   # aplicar
+   ```
+   O script pode demorar vários minutos no Supabase free tier (~6500 itens).
+
+## Observação
+
+Apenas 22% dos itens no banco têm `ordem > 0` (ordem manual); os outros 78%
+têm `ordem=0` e são ordenados dinamicamente em runtime. Isso significa que a
+maioria dos slots já vai mostrar a nova ordem automaticamente sem precisar
+rodar o script.

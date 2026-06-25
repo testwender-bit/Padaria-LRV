@@ -17,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, ArrowDownUp, ArrowLeftRight
+  Copy, Check, Repeat, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, ArrowDownUp, ArrowLeftRight
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -1458,26 +1458,6 @@ export default function CardapioEditorPage() {
     }
   }
 
-  // v8.9: Transformar cardápio em base (escola_id = null)
-  async function handleTransformarEmBase() {
-    if (!cardapio) return
-    setSaving(true)
-    try {
-      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ escola_id: null, cardapio_base_id: null }),
-      })
-      if (!res.ok) throw new Error('Erro ao transformar em base')
-      toast.success('Cardápio transformado em base!')
-      loadData()
-    } catch {
-      toast.error('Erro ao transformar em base')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   async function handleApprove() {
     if (!cardapio) return
     setSaving(true)
@@ -1774,41 +1754,12 @@ export default function CardapioEditorPage() {
             {cardapio.semanas?.[0]?.data_inicio ? formatDate(cardapio.semanas[0].data_inicio) : 'Definir data'}
           </button>
 
-          {/* Botão Replicar p/ Escolas (somente se for base) */}
-          {!cardapio.escola_id && (
-            <Link href={`/nutricao/cardapios/${cardapioId}/replicar`}>
-              <Button variant="outline" size="sm" className="text-xs h-8 border-purple-200 text-purple-700 hover:bg-purple-50">
-                <Copy className="w-3 h-3 mr-1" /> Replicar p/ Escolas
-              </Button>
-            </Link>
-          )}
-
-          {/* v8.9: Botão Transformar em Base (somente se NÃO for base) */}
-          {cardapio.escola_id && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs h-8 border-amber-200 text-amber-700 hover:bg-amber-50"
-              onClick={() => {
-                if (confirm('Transformar este cardápio em BASE? Ele deixará de pertencer a uma escola e virará modelo base para replicação.')) {
-                  handleTransformarEmBase()
-                }
-              }}
-              disabled={saving}
-              title="Transforma este cardápio em modelo base (escola_id = null)"
-            >
-              <Layers className="w-3 h-3 mr-1" /> Transformar em Base
+          {/* Botão Replicar p/ Escolas (disponível para QUALQUER cardápio — base ou de escola) */}
+          <Link href={`/nutricao/cardapios/${cardapioId}/replicar`}>
+            <Button variant="outline" size="sm" className="text-xs h-8 border-purple-200 text-purple-700 hover:bg-purple-50">
+              <Copy className="w-3 h-3 mr-1" /> Replicar p/ Escolas
             </Button>
-          )}
-
-          {/* v8.9: Botão Replicar (disponível para QUALQUER cardápio, não só base) */}
-          {cardapio.escola_id && (
-            <Link href={`/nutricao/cardapios/${cardapioId}/replicar`}>
-              <Button variant="outline" size="sm" className="text-xs h-8 border-purple-200 text-purple-700 hover:bg-purple-50">
-                <Copy className="w-3 h-3 mr-1" /> Replicar p/ Escolas
-              </Button>
-            </Link>
-          )}
+          </Link>
 
           {/* Botão Comparar com Base (somente se for instância de escola) */}
           {cardapio.escola_id && (

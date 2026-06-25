@@ -16,7 +16,8 @@
 //     → Salada → Arroz → Feijão → Proteína → Acompanhamento → Fruta → Suco
 //
 //   PERFIL_CUSCUZ (quando tem cuscuz — precede pão)
-//     → Cuscuz → Acompanhamento (proteína/legume) → Fruta
+//     v8.11: Bebida/Suco → Cuscuz → Acompanhamento (proteína/legume) → Fruta
+//     (mesma regra de bebida do PAO_LANCHE — suco sempre primeiro quando houver)
 //
 // A detecção do perfil é feita POR SLOT (dia + refeição).
 //
@@ -350,20 +351,27 @@ function getPrioridadePorPerfil(
         }
       }
       if (perfil === 'CUSCUZ') {
-        // Cuscuz → Acompanhamento (proteína ou legume) → Bebida → Fruta
-        // (fruta sempre por último — v6.2)
+        // v8.11 — Bebida/Suco PRIMEIRO (igual ao PAO_LANCHE), depois Cuscuz, depois
+        //          acompanhamento (proteína ou legume), depois fruta por último.
+        //
+        // Antes: CUSCUZ(0) → PROTEINA(1) → BEBIDA(2) → FRUTA(3)
+        //   Bug: quando o slot tinha cuscuz + suco, o suco aparecia DEPOIS do cuscuz,
+        //   enquanto em dias de pão o suco aparecia primeiro. Inconsistente.
+        //
+        // Agora: BEBIDA(0) → CUSCUZ(1) → PROTEINA/ACOMPANHAMENTO(2) → OUTRO(3) → FRUTA(4)
+        //   Em dias sem bebida, o cuscuz fica primeiro naturalmente.
         switch (categoria) {
-          case 'CUSCUZ': return 0
-          case 'PROTEINA': return 1
-          case 'ACOMPANHAMENTO': return 1
-          case 'ARROZ': return 1
-          case 'FEIJAO': return 1
-          case 'OUTRO': return 2
-          case 'BEBIDA': return 2
-          case 'SUCO': return 2
-          case 'FRUTA': return 3
-          case 'SOBREMESA': return 3
-          default: return 2
+          case 'BEBIDA': return 0
+          case 'SUCO': return 0
+          case 'CUSCUZ': return 1
+          case 'PROTEINA': return 2
+          case 'ACOMPANHAMENTO': return 2
+          case 'ARROZ': return 2
+          case 'FEIJAO': return 2
+          case 'OUTRO': return 3
+          case 'FRUTA': return 4
+          case 'SOBREMESA': return 4
+          default: return 3
         }
       }
       // perfil COMIDA

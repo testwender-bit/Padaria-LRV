@@ -27,6 +27,7 @@ interface CardapioInfo {
   semestre: number
   ciclo_semanas: number
   escola_id: string | null
+  escola?: { id: string; nome: string } | null
   categoria_escola: string
   semanas: {
     id: string
@@ -73,6 +74,14 @@ interface ReplicarResponse {
     tem_lanche: boolean
     dias_pao_base: string[]
     dias_lanche_base: string[]
+  }
+  // v8.10: info extra sobre a origem
+  origem?: {
+    id: string
+    nome: string
+    escola_id: string | null
+    eh_base: boolean
+    pulas_por_coincidencia: number
   }
 }
 
@@ -164,9 +173,11 @@ export default function ReplicarCardapioPage() {
   }, [cardapio])
 
   // Escolas filtradas pela mesma categoria do cardápio base
+  // v8.10: Se o cardápio origem estiver vinculado a uma escola, exclui essa escola
+  //       da lista (não faz sentido replicar para a mesma escola — já é ela).
   const escolasFiltradas = useMemo(() => {
     if (!cardapio) return []
-    return escolas.filter((e) => e.ativo && e.categoria === cardapio.categoria_escola)
+    return escolas.filter((e) => e.ativo && e.categoria === cardapio.categoria_escola && e.id !== cardapio.escola_id)
   }, [escolas, cardapio])
 
   function toggleEscola(escolaId: string) {
@@ -296,38 +307,10 @@ export default function ReplicarCardapioPage() {
     )
   }
 
-  // Validação: cardápio precisa ser base (escola_id = null)
-  if (cardapio.escola_id !== null) {
-    return (
-      <div className="space-y-4 max-w-3xl mx-auto py-12">
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="p-6 text-center space-y-3">
-            <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto" />
-            <h2 className="text-lg font-bold text-amber-800">Este não é um cardápio base</h2>
-            <p className="text-sm text-amber-700">
-              A replicação só pode ser feita a partir de um <strong>cardápio base</strong> (sem escola vinculada).
-              Este cardápio está associado à escola <strong>{cardapio.nome}</strong>.
-            </p>
-            <p className="text-xs text-amber-600">
-              Para modificar este cardápio, use o editor. Para replicar, volte ao cardápio base original.
-            </p>
-            <div className="flex justify-center gap-2 pt-2">
-              <Link href={`/nutricao/cardapios/${cardapioId}`}>
-                <Button variant="outline" size="sm">
-                  <ArrowLeft className="w-3 h-3 mr-1" /> Voltar ao editor
-                </Button>
-              </Link>
-              <Link href="/nutricao/cardapios">
-                <Button size="sm" className="bg-[#1A3A5C] hover:bg-[#1A3A5C]/90">
-                  Ver todos os cardápios
-                </Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
+  // v8.10: cardápios vinculados a escola agora também podem ser replicados
+  //       (antes era bloqueado). Mostra um aviso informativo quando for o caso.
+  const ehCardapioDeEscola = cardapio.escola_id !== null
+  const escolaOrigemNome = cardapio.escola?.nome || escolas.find((e) => e.id === cardapio.escola_id)?.nome || ''
 
   const totalSemanasBase = cardapio.ciclo_semanas || 5
   const escolasSelecionadasCount = Object.keys(configs).length
@@ -353,10 +336,31 @@ export default function ReplicarCardapioPage() {
             </h1>
             <p className="text-xs text-muted-foreground">
               {cardapio.nome} · {cardapio.ano}/{cardapio.semestre} · {totalSemanasBase} semanas base
+              {ehCardapioDeEscola && escolaOrigemNome && (
+                <span className="ml-1 text-amber-700">· origem: {escolaOrigemNome}</span>
+              )}
             </p>
           </div>
         </div>
       </motion.div>
+
+      {/* v8.10: Aviso quando o cardápio origem está vinculado a uma escola */}
+      {ehCardapioDeEscola && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.05 }}>
+          <Card className="border-blue-200 bg-blue-50">
+            <CardContent className="p-3 flex items-start gap-2">
+              <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-blue-800">
+                <strong>Replicando a partir de um cardápio de escola.</strong>
+                <br />
+                Este cardápio pertence à escola <strong>{escolaOrigemNome}</strong> e será replicado para as
+                escolas selecionadas abaixo. A escola de origem é excluída da lista para evitar duplicação.
+                O vínculo com o cardápio base original (se existir) é preservado nas cópias.
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Resumo do base */}
       <motion.div
@@ -745,6 +749,17 @@ export default function ReplicarCardapioPage() {
                   </p>
                 </div>
               </div>
+
+              {/* v8.10: aviso se a escola de origem foi pulada */}
+              {resultado.origem && resultado.origem.pulas_por_coincidencia > 0 && (
+                <div className="p-2 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
+                  <span>
+                    {resultado.origem.pulas_por_coincidencia} escola(s) pulada(s) automaticamente por
+                    coincidirem com a escola de origem (<strong>{resultado.origem.nome}</strong>).
+                  </span>
+                </div>
+              )}
 
               {/* Lista de criados */}
               {resultado.criados.length > 0 && (

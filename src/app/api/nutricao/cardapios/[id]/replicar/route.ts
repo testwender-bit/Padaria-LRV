@@ -6,8 +6,13 @@ import { isoToPt } from '@/lib/preparacao-categorias'
 // ============================================================
 // POST /api/nutricao/cardapios/[id]/replicar
 // ============================================================
-// Replica um CARDÁPIO BASE (escola_id = null) para múltiplas escolas,
+// Replica um CARDÁPIO (base ou de escola) para múltiplas escolas,
 // aplicando a realocação de pão/lanche para o dia definido pela escola.
+//
+// v8.10: agora aceita também cardápios vinculados a escola (escola_id != null).
+//       - A escola de origem é automaticamente pulada (não replica para si mesma).
+//       - O cardapio_base_id das cópias preserva o do original (se existir),
+//         senão usa o próprio id do original como base.
 //
 // Body:
 //   {
@@ -20,7 +25,7 @@ import { isoToPt } from '@/lib/preparacao-categorias'
 //   }
 //
 // Lógica (v5):
-//   1. Carrega o cardápio base completo (semanas, dias, itens com preparacao.categoria)
+//   1. Carrega o cardápio origem completo (semanas, dias, itens com preparacao.categoria)
 //   2. Detecta quais dias da semana têm preparações de categoria=PAO e categoria=LANCHE
 //   3. Para cada escola destino:
 //      - Cria um CardapioNutricional com dia_pao_frances / dia_lanche preenchidos
@@ -105,15 +110,16 @@ export async function POST(
     })
 
     if (!original) {
-      return NextResponse.json({ error: 'Cardápio base não encontrado' }, { status: 404 })
+      return NextResponse.json({ error: 'Cardápio origem não encontrado' }, { status: 404 })
     }
 
-    if (original.escola_id !== null) {
-      return NextResponse.json(
-        { error: 'Cardápio de origem deve ser um MODELO BASE (escola_id = null). Para replicar uma instância, replique o base original.' },
-        { status: 400 }
-      )
-    }
+    // v8.10: removido o bloqueio de cardápio não-base — agora qualquer cardápio
+    //       pode ser replicado. A escola de origem (se houver) é pulada no loop abaixo.
+
+    // v8.10: determine o cardapio_base_id que será atribuído às cópias:
+    //       - se o original já tem cardapio_base_id (é instância), repassa o mesmo
+    //       - se o original é um base (escola_id = null), usa o próprio id
+    const baseIdParaCopias = original.cardapio_base_id || original.id
 
     // ── Detecta quais dias do base têm pão e lanche ──
     // (faz um scan das semanas base para saber em qual dia caiu o pão/lanche)
@@ -145,9 +151,23 @@ export async function POST(
       return NextResponse.json({ error: 'Nenhuma escola ativa encontrada' }, { status: 404 })
     }
 
+    // v8.10: filtra escolas que coincidem com a escola de origem (não replica para si mesma)
+    const escolasDestino = original.escola_id
+      ? escolas.filter((e) => e.id !== original.escola_id)
+      : escolas
+
+    if (escolasDestino.length === 0) {
+      return NextResponse.json({
+        error: 'Todas as escolas selecionadas coincidem com a escola de origem. Selecione escolas diferentes da origem.',
+      }, { status: 400 })
+    }
+
     const criadoEm = new Date().toISOString().replace('T', ' ').substring(0, 19)
     const expandir = body.expandir_para_semestre !== false  // default: true
     const sobrescrever = body.sobrescrever_existente === true
+
+    // v8.10: se a origem for uma escola, avisa no resultado quantas foram puladas
+    let pulasPorOrigem = 0
 
     // ── Transação principal — timeout aumentado para 60s (deslocamento faz mais queries) ──
     const result = await db.$transaction(async (tx) => {
@@ -159,7 +179,7 @@ export async function POST(
       }> = []
       const erros: Array<{ escola_id: string; motivo: string }> = []
 
-      for (const escola of escolas) {
+      for (const escola of escolasDestino) {
         try {
           const configEscola = body.escolas.find((e) => e.escola_id === escola.id)!
 
@@ -196,7 +216,7 @@ export async function POST(
               semestre: original.semestre,
               status: 'RASCUNHO',
               origem_id: original.id,
-              cardapio_base_id: original.id,
+              cardapio_base_id: baseIdParaCopias,  // v8.10: preserva vínculo com o base verdadeiro
               ciclo_semanas: original.ciclo_semanas,
               repetir_ciclo: expandir,
               dia_pao_frances: configEscola.dia_pao,
@@ -424,7 +444,30 @@ export async function POST(
         }
       }
 
-      return { criados, erros, base_info: { tem_pao: diasPaoArray.length > 0, tem_lanche: diasLancheArray.length > 0, dias_pao_base: diasPaoArray, dias_lanche_base: diasLancheArray } }
+      // v8.10: se a origem é um cardápio de escola, conta quantas entradas
+      //       foram puladas por coincidirem com a escola de origem
+      if (original.escola_id) {
+        pulasPorOrigem = body.escolas.filter((e) => e.escola_id === original.escola_id).length
+      }
+
+      return {
+        criados,
+        erros,
+        base_info: {
+          tem_pao: diasPaoArray.length > 0,
+          tem_lanche: diasLancheArray.length > 0,
+          dias_pao_base: diasPaoArray,
+          dias_lanche_base: diasLancheArray,
+        },
+        // v8.10: info extra sobre a origem
+        origem: {
+          id: original.id,
+          nome: original.nome,
+          escola_id: original.escola_id,
+          eh_base: original.escola_id === null,
+          pulas_por_coincidencia: pulasPorOrigem,
+        },
+      }
     }, {
       timeout: 60000,  // 60s — deslocamento faz mais queries que swap
       maxWait: 10000,
