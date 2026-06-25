@@ -1,94 +1,101 @@
-# Patch v8.13 — Bifásica como "Creche + Lanche Pré-Escola extra"
+# Patch v8.14 — Bifásica Refinada + Fix de Transação + PDF Slots Vazios
 
-## O que muda
+## 3 correções neste patch
 
-A categoria **BIFASICA** deixa de usar `LANCHE_1 + LANCHE_2` e passa a funcionar
-como uma **creche estendida** com 6 slots:
+### 1. Bug: "Transaction not found" ao criar/clonar cardápio
+
+**Causa:** O Supabase free tier com `pgbouncer=true` em modo transação mata
+transações longas. Criar um cardápio novo envolvia 133 INSERTs em UMA transação
+(1 cardápio + 22 semanas + 110 dias). O pgbouncer fechava a conexão antes de
+terminar, gerando "Transaction API error: Transaction not found".
+
+**Fix:** Removida a `$transaction` das APIs:
+- `src/app/api/nutricao/cardapios/route.ts` (POST — criar cardápio)
+- `src/app/api/nutricao/cardapios/[id]/clonar/route.ts` (POST — clonar cardápio)
+
+Agora fazem creates sequenciais com `createMany` para os dias (1 query por
+semana em vez de 5). Em caso de erro no meio, deleta o cardápio criado
+(cascade cuida da limpeza).
+
+### 2. Bug: PDF não mostrava slots vazios (ex: LANCHE_PRE_ESCOLA)
+
+**Causa:** O PDF só listava tipos de refeição que tinham pelo menos 1 item na
+semana. Como a bifásica recém-clonada da creche tem o slot LANCHE_PRE_ESCOLA
+vazio em todos os dias, ele não aparecia no PDF.
+
+**Fix:** Agora o PDF carrega TODOS os tipos da categoria via
+`/api/nutricao/categorias-refeicao` e mescla com os tipos que aparecem nos
+itens. Slots vazios aparecem como "—" (ou "≡ igual à creche" para
+LANCHE_PRE_ESCOLA).
+
+### 3. Bifásica v8.14 (refinamento da estrutura)
 
 ```
 1. CAFE_MANHA (Café da Manhã) — 07h30 — 20%
-   ↳ FRUTA_MANHA (Fruta da Manhã) — 08h45 — 10%  [SUB — aninhado]
-2. ALMOCO (Almoço) — 10h00 — 30%
-3. HIDRATACAO (Hidratação) — 13h30 — 5%
-4. LANCHE_PRE_ESCOLA (Lanche Pré-Escola) — 09h00 — 10%  ← NOVO
-5. JANTAR (Jantar) — 15h30 — 25%
+   ↳ FRUTA (Fruta) — 08h45 / 13h30 — 15% [SUB — mesma fruta 2x, cálculo 1x]
+2. LANCHE_PRE_ESCOLA (Lanche Pré-Escola) — 09h00 / 15h00 — 10%  [slot próprio]
+3. ALMOCO (Almoço) — 10h00 — 30%
+4. JANTAR (Jantar) — 15h30 — 25%
+Total: 100% · 4 linhas no PDF · cabe em 1 folha A4 paisagem ✓
 ```
 
-A Fruta da Manhã agora é um **sub-slot** dentro do Café da Manhã (mesma caixa visual),
-economizando espaço vertical no PDF e no editor. O novo slot LANCHE_PRE_ESCOLA
-permite que a bifásica tenha um lanche extra (ex: na quinta-feira).
-
-## Replicação CRECHE → BIFASICA
-
-Agora é possível replicar um cardápio CRECHE para uma escola BIFASICA. O sistema:
-- Copia os 5 slots da creche (CAFE_MANHA, FRUTA_MANHA, ALMOCO, HIDRATACAO, JANTAR)
-- Deixa o slot LANCHE_PRE_ESCOLA vazio (preenchido manualmente depois)
-- Usa a categoria DA ESCOLA DESTINO (BIFASICA) no novo cardápio
-
-## "Igual creche" no PDF
-
-Quando o slot LANCHE_PRE_ESCOLA está vazio em um dia que não é feriado, o PDF
-mostra o texto "igual creche" (itálico cinza) em vez de "—".
+Mudanças:
+- FRUTA_MANHA renomeado para "Fruta" (genérico, 2 horários)
+- HIDRATACAO removido da BIFASICA (5% absorvido pela FRUTA)
+- LANCHE_PRE_ESCOLA vira slot próprio (deixou de ser sub), 2 horários
+- LANCHE_PRE_ESCOLA fica cronologicamente acima do ALMOCO (09h00 < 10h00)
 
 ## Arquivos
 
-| Arquivo | O que faz |
-|---------|-----------|
-| `prisma/schema.prisma` | Adiciona campo `sub_de_codigo` em `TipoRefeicao` |
-| `scripts/setup-bifasica-v813.ts` | Cria `LANCHE_PRE_ESCOLA`, reconfigura BIFASICA, marca FRUTA_MANHA como sub |
-| `src/app/(app)/nutricao/cardapios/[id]/page.tsx` | Editor: renderiza slot sub aninhado dentro do pai |
-| `src/app/(app)/nutricao/cardapios/[id]/pdf/page.tsx` | PDF: aninha sub na mesma célula + placeholder "igual creche" |
-| `src/app/(app)/nutricao/cardapios/[id]/replicar/page.tsx` | Relaxa filtro para permitir CRECHE ↔ BIFASICA |
+| Arquivo | O que mudou |
+|---------|-------------|
+| `prisma/schema.prisma` | Campo `sub_de_codigo` em `TipoRefeicao` (v8.13) |
+| `scripts/setup-bifasica-v813.ts` | Setup v8.14: renomeia FRUTA, remove HIDRATACAO, LANCHE_PRE_ESCOLA slot próprio |
+| `src/app/(app)/nutricao/cardapios/[id]/page.tsx` | Editor: múltiplos subs + fix WebkitAppearance |
+| `src/app/(app)/nutricao/cardapios/[id]/pdf/page.tsx` | PDF: carrega categorias-refeicao + mostra slots vazios |
+| `src/app/(app)/nutricao/cardapios/[id]/replicar/page.tsx` | Replicação CRECHE ↔ BIFASICA |
+| `src/app/api/nutricao/cardapios/route.ts` | POST: sem $transaction, usa createMany |
+| `src/app/api/nutricao/cardapios/[id]/route.ts` | Inclui `sub_de_codigo` no select |
 | `src/app/api/nutricao/cardapios/[id]/replicar/route.ts` | Usa categoria da escola destino |
-| `src/app/api/nutricao/cardapios/[id]/route.ts` | Inclui `sub_de_codigo` no select de horários |
-| `src/app/print.css` | Classes CSS para sub-slot e placeholder "igual creche" |
+| `src/app/api/nutricao/cardapios/[id]/clonar/route.ts` | Sem $transaction, usa createMany |
+| `src/app/print.css` | Classes para sub-slot e badge "igual à creche" |
 
 ## Como aplicar
 
 1. **Descompacte** o zip na RAIZ do projeto (preserva pastas):
    ```bash
-   unzip patch-bifasica-v813.zip -d .
+   unzip patch-bifasica-v814.zip -d .
    ```
 
-2. **Rode `prisma db push`** (necessário porque o schema mudou):
+2. **Rode `prisma db push`** (necessário por causa do campo `sub_de_codigo`):
    ```bash
    npx prisma generate
    npx prisma db push --accept-data-loss
    ```
+   ⚠️ **NÃO causa perda de dados** — apenas adiciona coluna nullable.
 
-3. **Rode o script de setup** (cria LANCHE_PRE_ESCOLA e reconfigura BIFASICA):
+3. **Rode o script de setup v8.14** (idempotente):
    ```bash
-   npx tsx scripts/setup-bifasica-v813.ts          # dry-run
-   npx tsx scripts/setup-bifasica-v813.ts --apply   # aplicar
+   npx tsx scripts/setup-bifasica-v813.ts --apply
    ```
 
 4. Faça commit e push:
    ```bash
-   git add prisma/schema.prisma scripts/setup-bifasica-v813.ts
-   git add "src/app/(app)/nutricao/cardapios/[id]/page.tsx"
-   git add "src/app/(app)/nutricao/cardapios/[id]/pdf/page.tsx"
-   git add "src/app/(app)/nutricao/cardapios/[id]/replicar/page.tsx"
-   git add "src/app/api/nutricao/cardapios/[id]/replicar/route.ts"
-   git add "src/app/api/nutricao/cardapios/[id]/route.ts"
-   git add src/app/print.css
-   git commit -m "feat(v8.13): bifásica como creche + lanche pré-escola extra"
+   git add -A
+   git commit -m "fix(v8.14): transação + PDF slots vazios + bifásica refinada"
    git push
    ```
 
-## Fluxo de uso recomendado
+## Após aplicar — teste os 2 bugs corrigidos
 
-1. **Crie** um cardápio base de CRECHE (sem escola)
-2. **Configure** as 5 refeições da creche normalmente (CAFE_MANHA com FRUTA_MANHA aninhada, ALMOCO, HIDRATACAO, JANTAR)
-3. **Replicar** para a escola bifásica (Chico Mendes): botão "Replicar p/ Escolas"
-4. **Abra** o cardápio bifásico criado e adicione o lanche extra na quinta-feira
-   no slot LANCHE_PRE_ESCOLA
-5. **Gere o PDF** — os outros dias mostrarão "igual creche" no slot do lanche pré-escola
+1. **Criar cardápio:** `/nutricao/cardapios` → "Novo Cardápio" → preencha → Criar
+   - Antes: erro 500 "Transaction not found"
+   - Agora: deve criar com sucesso e redirecionar para o editor
 
-## Observações
+2. **Clonar creche → bifásica:** abra um cardápio CRECHE → "Clonar" → selecione escola bifásica
+   - Antes: erro 500 (mesmo motivo)
+   - Agora: deve clonar com sucesso
 
-- Cardápios BIFASICA existentes (com LANCHE_1/LANCHE_2) continuam funcionando,
-  mas os itens em LANCHE_1/LANCHE_2 ficarão órfãos. Recomenda-se recriar.
-- A Fruta da Manhã agora é SUB do Café da Manhã em TODAS as categorias que
-  tenham ambos (CRECHE e BIFASICA) — não apenas na bifásica.
-- O espaço vertical economizado no PDF (sub-aninhamento) permite que a bifásica
-  caiba em 1 folha A4 landscape.
+3. **PDF da bifásica:** abra um cardápio BIFASICA → "PDF"
+   - Antes: faltava a linha LANCHE_PRE_ESCOLA (slot vazio)
+   - Agora: mostra 4 linhas incluindo LANCHE_PRE_ESCOLA com "—" nos dias vazios

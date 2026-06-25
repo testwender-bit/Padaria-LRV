@@ -67,47 +67,50 @@ export async function POST(
     const semestreExtenso = original.semestre === 1 ? '1º semestre' : '2º semestre'
     const nomeClone = `Cardápio ${semestreExtenso} — ${escolaDestino.nome_curto || escolaDestino.nome}`
 
-    // Deep clone em transação
-    const novoCardapio = await db.$transaction(async (tx) => {
-      // Verifica se já existe cardápio para esta escola + ano + semestre
-      const existente = await tx.cardapioNutricional.findFirst({
-        where: {
-          escola_id: escolaIdDestino,
-          ano: original.ano,
-          semestre: original.semestre,
-        },
-      })
+    // v8.14: NÃO usa $transaction (Supabase free tier + pgbouncer mata transações longas).
+    // Faz creates sequenciais. Em caso de erro no meio, deleta o cardápio criado (cascade limpa tudo).
+    // Clonar envolve 22 semanas × 5 dias × N itens = centenas de INSERTs — não cabe em transação.
 
-      if (existente) {
-        // Sobrescreve: deleta o anterior (cascade deleta semanas → dias → itens)
-        await tx.cardapioNutricional.delete({ where: { id: existente.id } })
-      }
+    // Verifica se já existe cardápio para esta escola + ano + semestre
+    const existente = await db.cardapioNutricional.findFirst({
+      where: {
+        escola_id: escolaIdDestino,
+        ano: original.ano,
+        semestre: original.semestre,
+      },
+    })
 
-      // Criar novo cardápio
-      const card = await tx.cardapioNutricional.create({
-        data: {
-          nome: nomeClone,
-          escola_id: escolaIdDestino,
-          nutricionista_id: body.nutricionista_id || original.nutricionista_id,
-          categoria_escola: original.categoria_escola,
-          fase_escolar: original.fase_escolar,
-          ano: original.ano,
-          semestre: original.semestre,
-          status: 'RASCUNHO',
-          origem_id: original.id,
-          cardapio_base_id: original.cardapio_base_id || original.id,
-          ciclo_semanas: original.ciclo_semanas,
-          repetir_ciclo: original.repetir_ciclo,
-          dia_pao_frances: original.dia_pao_frances,
-          dia_lanche: original.dia_lanche,
-          criado_em: criadoEm,
-          atualizado_em: criadoEm,
-        },
-      })
+    if (existente) {
+      // Sobrescreve: deleta o anterior (cascade deleta semanas → dias → itens)
+      await db.cardapioNutricional.delete({ where: { id: existente.id } })
+    }
 
-      // Clonar semanas, dias e itens
+    // Criar novo cardápio
+    const card = await db.cardapioNutricional.create({
+      data: {
+        nome: nomeClone,
+        escola_id: escolaIdDestino,
+        nutricionista_id: body.nutricionista_id || original.nutricionista_id,
+        categoria_escola: original.categoria_escola,
+        fase_escolar: original.fase_escolar,
+        ano: original.ano,
+        semestre: original.semestre,
+        status: 'RASCUNHO',
+        origem_id: original.id,
+        cardapio_base_id: original.cardapio_base_id || original.id,
+        ciclo_semanas: original.ciclo_semanas,
+        repetir_ciclo: original.repetir_ciclo,
+        dia_pao_frances: original.dia_pao_frances,
+        dia_lanche: original.dia_lanche,
+        criado_em: criadoEm,
+        atualizado_em: criadoEm,
+      },
+    })
+
+    try {
+      // Clonar semanas, dias e itens (sequencial, sem transação)
       for (const semana of original.semanas) {
-        const novaSemana = await tx.cardapioSemanaNutri.create({
+        const novaSemana = await db.cardapioSemanaNutri.create({
           data: {
             cardapio_id: card.id,
             numero: semana.numero,
@@ -118,38 +121,41 @@ export async function POST(
         })
 
         for (const dia of semana.dias) {
-          const novoDia = await tx.cardapioDiaNutri.create({
+          const novoDia = await db.cardapioDiaNutri.create({
             data: {
               semana_id: novaSemana.id,
               dia_semana: dia.dia_semana,
             },
           })
 
-          for (const item of dia.itens) {
-            await tx.cardapioItem.create({
-              data: {
+          // v8.14: se há itens, usa createMany (1 query em vez de N)
+          if (dia.itens.length > 0) {
+            await db.cardapioItem.createMany({
+              data: dia.itens.map(item => ({
                 dia_id: novoDia.id,
                 tipo_refeicao_id: item.tipo_refeicao_id,
                 preparacao_id: item.preparacao_id,
                 porcoes: item.porcoes,
                 ordem: item.ordem || 0,
-              },
+              })),
             })
           }
         }
       }
+    } catch (innerError) {
+      // Erro no meio do clone — deleta o cardápio (cascade limpa semanas/dias/itens)
+      console.error('Erro ao clonar semanas/dias/itens, deletando cardápio:', innerError)
+      await db.cardapioNutricional.delete({ where: { id: card.id } }).catch(() => {})
+      throw innerError
+    }
 
-      // Retornar cardápio completo
-      return tx.cardapioNutricional.findUnique({
-        where: { id: card.id },
-        include: {
-          escola: true,
-          nutricionista: true,
-        },
-      })
-    }, {
-      timeout: 30000,
-      maxWait: 10000,
+    // Retornar cardápio completo
+    const novoCardapio = await db.cardapioNutricional.findUnique({
+      where: { id: card.id },
+      include: {
+        escola: true,
+        nutricionista: true,
+      },
     })
 
     return NextResponse.json(novoCardapio, { status: 201 })

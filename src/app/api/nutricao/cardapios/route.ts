@@ -87,25 +87,28 @@ export async function POST(request: Request) {
 
     const diasDaSemana = ['segunda', 'terca', 'quarta', 'quinta', 'sexta']
 
-    const cardapio = await db.$transaction(async (tx) => {
-      const criadoEm = new Date().toISOString().replace('T', ' ').substring(0, 19)
+    // v8.14: NÃO usa $transaction (Supabase free tier + pgbouncer mata transações longas).
+    // Em vez disso, faz creates sequenciais. Em caso de erro no meio, deleta o cardápio
+    // criado (cascade cuida das semanas e dias).
+    const criadoEm = new Date().toISOString().replace('T', ' ').substring(0, 19)
 
-      const card = await tx.cardapioNutricional.create({
-        data: {
-          nome: body.nome,
-          escola_id: body.escola_id || null,
-          nutricionista_id: body.nutricionista_id,
-          categoria_escola: body.categoria_escola,
-          fase_escolar: body.fase_escolar || 'FUND_FINAL',
-          ano: body.ano,
-          semestre: body.semestre,
-          status: 'RASCUNHO',
-          origem_id: null,
-          criado_em: criadoEm,
-          atualizado_em: criadoEm,
-        },
-      })
+    const card = await db.cardapioNutricional.create({
+      data: {
+        nome: body.nome,
+        escola_id: body.escola_id || null,
+        nutricionista_id: body.nutricionista_id,
+        categoria_escola: body.categoria_escola,
+        fase_escolar: body.fase_escolar || 'FUND_FINAL',
+        ano: body.ano,
+        semestre: body.semestre,
+        status: 'RASCUNHO',
+        origem_id: null,
+        criado_em: criadoEm,
+        atualizado_em: criadoEm,
+      },
+    })
 
+    try {
       // Gerar 22 semanas com 5 dias cada (segunda a sexta)
       for (let semanaNum = 1; semanaNum <= 22; semanaNum++) {
         const dataInicio = new Date(proximaSegunda)
@@ -117,7 +120,7 @@ export async function POST(request: Request) {
         const dataInicioStr = dataInicio.toISOString().split('T')[0]
         const dataFimStr = dataFim.toISOString().split('T')[0]
 
-        const semana = await tx.cardapioSemanaNutri.create({
+        const semana = await db.cardapioSemanaNutri.create({
           data: {
             cardapio_id: card.id,
             numero: semanaNum,
@@ -126,31 +129,34 @@ export async function POST(request: Request) {
           },
         })
 
-        // Criar 5 dias por semana
-        for (let diaIdx = 0; diaIdx < 5; diaIdx++) {
-          await tx.cardapioDiaNutri.create({
-            data: {
-              semana_id: semana.id,
-              dia_semana: diasDaSemana[diaIdx],
-            },
-          })
-        }
+        // v8.14: usa createMany para os 5 dias (1 query em vez de 5)
+        await db.cardapioDiaNutri.createMany({
+          data: diasDaSemana.map(dia => ({
+            semana_id: semana.id,
+            dia_semana: dia,
+          })),
+        })
       }
+    } catch (innerError) {
+      // Erro no meio da criação — deleta o cardápio (cascade limpa semanas/dias)
+      console.error('Erro ao criar semanas/dias, deletando cardápio:', innerError)
+      await db.cardapioNutricional.delete({ where: { id: card.id } }).catch(() => {})
+      throw innerError
+    }
 
-      // Retornar cardápio completo com semanas e dias
-      return tx.cardapioNutricional.findUnique({
-        where: { id: card.id },
-        include: {
-          escola: true,
-          nutricionista: true,
-          semanas: {
-            include: {
-              dias: true,
-            },
-            orderBy: { numero: 'asc' },
+    // Retornar cardápio completo com semanas e dias
+    const cardapio = await db.cardapioNutricional.findUnique({
+      where: { id: card.id },
+      include: {
+        escola: true,
+        nutricionista: true,
+        semanas: {
+          include: {
+            dias: true,
           },
+          orderBy: { numero: 'asc' },
         },
-      })
+      },
     })
 
     return NextResponse.json(cardapio, { status: 201 })

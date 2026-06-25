@@ -1717,7 +1717,7 @@ export default function CardapioEditorPage() {
                 onChange={(e) => handleSaveSemestre(Number(e.target.value))}
                 disabled={saving}
                 className="inline-block bg-transparent border-0 text-xs text-muted-foreground cursor-pointer hover:text-[#1A3A5C] focus:outline-none focus:ring-0"
-                style={{ appearance: 'none', '-webkit-appearance': 'none' } as React.CSSProperties}
+                style={{ appearance: 'none', WebkitAppearance: 'none' } as React.CSSProperties}
                 title="Clique para alterar o semestre"
               >
                 <option value={1}>1</option>
@@ -2086,15 +2086,10 @@ export default function CardapioEditorPage() {
                       const slotKey = `${dia.value}-${cr.tipo_refeicao_id}`
                       const isDragOver = dragOverSlot === slotKey
 
-                      // v8.13: busca slot sub (se existir) — ex: FRUTA_MANHA é sub de CAFE_MANHA
-                      const slotSub = refeicoesForCategoria.find(
+                      // v8.13.2: busca TODOS os slots sub (pode ter múltiplos) — ex: FRUTA_MANHA + LANCHE_PRE_ESCOLA são subs de CAFE_MANHA
+                      const slotsSub = refeicoesForCategoria.filter(
                         sub => sub.tipo_refeicao.sub_de_codigo === cr.tipo_refeicao.codigo
                       )
-                      const itensSub = slotSub
-                        ? getItensForSlot(dia.value, slotSub.tipo_refeicao_id)
-                        : []
-                      const slotSubKey = slotSub ? `${dia.value}-${slotSub.tipo_refeicao_id}` : ''
-                      const isDragOverSub = slotSub && dragOverSlot === slotSubKey
 
                       return (
                         <div
@@ -2234,9 +2229,14 @@ export default function CardapioEditorPage() {
                             <Plus className="w-2.5 h-2.5 mr-0.5" /> Adicionar
                           </Button>
 
-                          {/* v8.13: SUB slot (ex: Fruta da Manhã dentro de Café da Manhã) */}
-                          {slotSub && (
+                          {/* v8.13.2: SUB slots (pode ter múltiplos — ex: Fruta da Manhã + Lanche Pré-Escola dentro de Café da Manhã) */}
+                          {slotsSub.map((slotSub) => {
+                            const slotSubKey = `${dia.value}-${slotSub.tipo_refeicao_id}`
+                            const isDragOverSub = dragOverSlot === slotSubKey
+                            const itensSub = getItensForSlot(dia.value, slotSub.tipo_refeicao_id)
+                            return (
                             <div
+                              key={slotSub.tipo_refeicao_id}
                               className={`mt-1.5 ml-2 pl-2 border-l-2 border-[#D4A017]/40 rounded-sm transition-colors ${
                                 isDragOverSub ? 'bg-[#D4A017]/5' : ''
                               }`}
@@ -2253,9 +2253,9 @@ export default function CardapioEditorPage() {
                                 setDragOverSlot(null)
                                 if (draggedItem) {
                                   if (e.altKey) {
-                                    handleDuplicateItem(draggedItem, currentSemana, dia.value, slotSub!.tipo_refeicao_id)
+                                    handleDuplicateItem(draggedItem, currentSemana, dia.value, slotSub.tipo_refeicao_id)
                                   } else {
-                                    handleMoveItem(draggedItem, currentSemana, dia.value, slotSub!.tipo_refeicao_id)
+                                    handleMoveItem(draggedItem, currentSemana, dia.value, slotSub.tipo_refeicao_id)
                                   }
                                   setDraggedItem(null)
                                   setDragAltHint(false)
@@ -2347,7 +2347,8 @@ export default function CardapioEditorPage() {
                                 <Plus className="w-2 h-2 mr-0.5" /> Add
                               </Button>
                             </div>
-                          )}
+                            )
+                          })}
                         </div>
                       )
                     })}

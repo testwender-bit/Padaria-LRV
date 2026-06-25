@@ -251,21 +251,46 @@ function SemanaPrintPage({
   semana,
   cardapio,
   feriados = [],
+  categoriasRefeicao = [],
 }: {
   semana: CardapioSemana
   cardapio: CardapioFull
   feriados?: FeriadoInfo[]
+  categoriasRefeicao?: Array<{
+    id: string
+    categoria_escola: string
+    tipo_refeicao_id: string
+    tipo_refeicao: TipoRefeicao
+  }>
 }) {
-  // v8.7: tipos de refeição que aparecem nesta semana, ordenados por HORÁRIO
-  // cronológico (não mais por tipo_refeicao.ordem).
-  // Usa horário customizado do cardápio se existir; senão usa default.
+  // v8.14: carrega TODOS os tipos da categoria (mesmo vazios) para que slots
+  // como LANCHE_PRE_ESCOLA apareçam no PDF mesmo sem itens.
+  // Antes: só apareciam slots que tinham pelo menos 1 item na semana.
+  // Agora: mostra todos os slots da categoria, com "—" se vazio.
   const horariosOverride = (cardapio.horarios_refeicoes || []) as Array<{
     tipo_refeicao_id: string
     horario: string
   }>
-  const tiposRefeicao = semana.dias
+
+  // 1. Pega tipos de refeição que aparecem nos itens da semana (slots preenchidos)
+  const tiposComItens = semana.dias
     .flatMap((d) => d.itens.map((i) => i.tipo_refeicao))
-    .filter((tr, idx, arr) => arr.findIndex((t) => t.id === tr.id) === idx)
+
+  // 2. Pega TODOS os tipos da categoria do cardápio (vazio ou não)
+  const tiposDaCategoria = categoriasRefeicao
+    .filter(cr => cr.categoria_escola === cardapio.categoria_escola)
+    .map(cr => cr.tipo_refeicao)
+
+  // 3. Mescla: tipos da categoria + tipos extras que aparecem em itens mas não na categoria
+  // (caso raro: itens com tipo_refeicao que não está na categoria)
+  const tiposUnicos: TipoRefeicao[] = []
+  for (const tr of [...tiposDaCategoria, ...tiposComItens]) {
+    if (!tiposUnicos.find(t => t.id === tr.id)) {
+      tiposUnicos.push(tr)
+    }
+  }
+
+  const tiposRefeicao = tiposUnicos
     .map((tr) => {
       const override = horariosOverride.find(h => h.tipo_refeicao_id === tr.id)
       return {
@@ -277,18 +302,20 @@ function SemanaPrintPage({
     .sort((a, b) => parseHorarioToMinutes(a.horario_efetivo) - parseHorarioToMinutes(b.horario_efetivo))
 
   // v8.13: filtra slots sub (serão renderizados DENTRO do slot pai)
-  // e busca o slot sub de cada tipo pai (se existir)
+  // v8.13.2: suporta múltiplos subs por pai (ex: FRUTA_MANHA + LANCHE_PRE_ESCOLA são subs de CAFE_MANHA)
   const tiposRefeicaoPrincipais = tiposRefeicao.filter(
     tr => !tr.sub_de_codigo
   )
 
-  // Para cada tipo pai, encontra seu sub (se houver)
-  function getSubDoTipo(tipoPaiCodigo: string) {
-    return tiposRefeicao.find(tr => tr.sub_de_codigo === tipoPaiCodigo) || null
+  // Para cada tipo pai, encontra TODOS os seus subs (pode ter múltiplos)
+  function getSubsDoTipo(tipoPaiCodigo: string) {
+    return tiposRefeicao.filter(tr => tr.sub_de_codigo === tipoPaiCodigo)
   }
 
   // v8.13: helper para verificar se é slot "Lanche Pré-Escola" vazio
   // (deve mostrar "Igual creche" em vez de "—")
+  // v8.13.2: LANCHE_PRE_ESCOLA agora é sub — nunca tem linha própria
+  // então esta função nunca retorna true, mas mantida para compatibilidade futura
   function ehLanchePreEscolaVazio(tr: { codigo: string; sub_de_codigo?: string | null }): boolean {
     return tr.codigo === 'LANCHE_PRE_ESCOLA' && !tr.sub_de_codigo
   }
@@ -382,8 +409,8 @@ function SemanaPrintPage({
         </thead>
         <tbody>
           {tiposRefeicaoPrincipais.map((tr) => {
-            // v8.13: busca o slot sub deste tipo pai (ex: FRUTA_MANHA é sub de CAFE_MANHA)
-            const trSub = getSubDoTipo(tr.codigo)
+            // v8.13.2: busca TODOS os subs deste tipo pai (pode ter múltiplos)
+            const trSubs = getSubsDoTipo(tr.codigo)
 
             return (
             <tr key={tr.id} className="sp-row">
@@ -391,27 +418,21 @@ function SemanaPrintPage({
                 <span className="sp-ref-nome">{tr.nome}</span>
                 {/* v8.7: usa horário efetivo (override se existir) */}
                 <span className="sp-ref-hora">{(tr as { horario_efetivo?: string }).horario_efetivo ?? tr.horario}</span>
-                {/* v8.13: se tem sub, mostra nome do sub abaixo */}
-                {trSub && (
-                  <span className="sp-ref-sub">
+                {/* v8.13: se tem sub(s), mostra nome de cada sub abaixo */}
+                {trSubs.map((trSub) => (
+                  <span key={trSub.id} className="sp-ref-sub">
                     ↳ {trSub.nome} ({(trSub as { horario_efetivo?: string }).horario_efetivo ?? trSub.horario})
                   </span>
-                )}
+                ))}
               </td>
               {DIAS_SEMANA_NUTRI.map((dia) => {
                 const diaData = semana.dias.find((d) => d.dia_semana === dia.value)
                 const itensRaw = diaData?.itens.filter((i) => i.tipo_refeicao_id === tr.id) || []
                 // v8: aplica mesma ordenação do editor (auto-sort + ordem manual)
                 const itens = sortItensByRefeicao(itensRaw, tiposRefeicao)
-                // v8.13: itens do sub (se houver)
-                const itensSubRaw = trSub
-                  ? (diaData?.itens.filter((i) => i.tipo_refeicao_id === trSub.id) || [])
-                  : []
-                const itensSub = trSub ? sortItensByRefeicao(itensSubRaw, tiposRefeicao) : []
-
                 const feriado = getFeriadoDoDiaCalc(semana.data_inicio, dia.value, feriados, cardapio.categoria_escola)
 
-                // v8.13: placeholder "Igual creche" para LANCHE_PRE_ESCOLA vazio
+                // v8.13: placeholder "Igual creche" para LANCHE_PRE_ESCOLA vazio (slot próprio — raro em v8.13.2)
                 const mostrarIgualCreche = !feriado && ehLanchePreEscolaVazio(tr) && itens.length === 0
 
                 return (
@@ -468,57 +489,62 @@ function SemanaPrintPage({
                         })}
                       </ul>
                     ) : mostrarIgualCreche ? (
-                      <span className="sp-prep-igual-creche">igual creche</span>
+                      <span className="sp-prep-igual-creche" title="Nesta refeição, segue o mesmo cardápio da creche">≡ igual à creche</span>
                     ) : (
                       <span className="sp-prep-vazio">—</span>
                     )}
 
-                    {/* v8.13: renderiza itens do SUB dentro da mesma célula */}
-                    {trSub && !feriado && itensSub.length > 0 && (
-                      <ul className="sp-prep-list sp-prep-list-sub">
-                        {itensSub.map((item) => {
-                          const alergenos = detectarAlergenosPreparacao(
-                            item.preparacao.ingredientes.map((ing) => ({
-                              nome: ing.alimento.nome,
-                              grupo: ing.alimento.grupo,
-                            }))
-                          )
-                          return (
-                            <li key={item.id} className="sp-prep-item sp-prep-item-sub">
-                              <div className="sp-prep-nome">
-                                <span className="sp-prep-nome-text">↳ {item.preparacao.nome}</span>
-                                {alergenos.length > 0 && (
-                                  <span className="sp-prep-alergenos">
-                                    {alergenos.map((sigla: AlergenoSigla) => (
-                                      <span
-                                        key={sigla}
-                                        className="sp-alergeno-badge sp-alergeno-badge-xs"
-                                        title={`${ALERGENOS[sigla].nome}: ${ALERGENOS[sigla].descricao}`}
-                                      >
-                                        {sigla}
-                                      </span>
-                                    ))}
-                                  </span>
-                                )}
-                              </div>
-                              {(() => {
-                                const ingsVisiveis = item.preparacao.ingredientes.filter((ing) => {
-                                  if (ing.mesma_percapita) return ing.quantidade_gramas > 0
-                                  const gramas = getGramasForFase(ing, cardapio.fase_escolar)
-                                  return gramas > 0
-                                })
-                                if (ingsVisiveis.length === 0) return null
-                                return (
-                                  <div className="sp-prep-ing">
-                                    {ingsVisiveis.map((ing) => limparNomeIngrediente(ing.alimento.nome)).join(', ')}
-                                  </div>
-                                )
-                              })()}
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    )}
+                    {/* v8.13.2: renderiza itens de cada SUB dentro da mesma célula (pode ter múltiplos) */}
+                    {trSubs.map((trSub) => {
+                      const itensSubRaw = diaData?.itens.filter((i) => i.tipo_refeicao_id === trSub.id) || []
+                      const itensSub = sortItensByRefeicao(itensSubRaw, tiposRefeicao)
+                      if (itensSub.length === 0 || feriado) return null
+                      return (
+                        <ul key={trSub.id} className="sp-prep-list sp-prep-list-sub">
+                          {itensSub.map((item) => {
+                            const alergenos = detectarAlergenosPreparacao(
+                              item.preparacao.ingredientes.map((ing) => ({
+                                nome: ing.alimento.nome,
+                                grupo: ing.alimento.grupo,
+                              }))
+                            )
+                            return (
+                              <li key={item.id} className="sp-prep-item sp-prep-item-sub">
+                                <div className="sp-prep-nome">
+                                  <span className="sp-prep-nome-text">↳ {item.preparacao.nome}</span>
+                                  {alergenos.length > 0 && (
+                                    <span className="sp-prep-alergenos">
+                                      {alergenos.map((sigla: AlergenoSigla) => (
+                                        <span
+                                          key={sigla}
+                                          className="sp-alergeno-badge sp-alergeno-badge-xs"
+                                          title={`${ALERGENOS[sigla].nome}: ${ALERGENOS[sigla].descricao}`}
+                                        >
+                                          {sigla}
+                                        </span>
+                                      ))}
+                                    </span>
+                                  )}
+                                </div>
+                                {(() => {
+                                  const ingsVisiveis = item.preparacao.ingredientes.filter((ing) => {
+                                    if (ing.mesma_percapita) return ing.quantidade_gramas > 0
+                                    const gramas = getGramasForFase(ing, cardapio.fase_escolar)
+                                    return gramas > 0
+                                  })
+                                  if (ingsVisiveis.length === 0) return null
+                                  return (
+                                    <div className="sp-prep-ing">
+                                      {ingsVisiveis.map((ing) => limparNomeIngrediente(ing.alimento.nome)).join(', ')}
+                                    </div>
+                                  )
+                                })()}
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )
+                    })}
                   </td>
                 )
               })}
@@ -582,20 +608,30 @@ export default function CardapioPdfPage() {
   const [printMode, setPrintMode] = useState<'semana' | 'semestral'>('semana')
   // v8: feriados para mostrar no PDF
   const [feriados, setFeriados] = useState<FeriadoInfo[]>([])
+  // v8.14: categorias-refeicao para saber TODOS os slots da categoria (mesmo vazios)
+  const [categoriasRefeicao, setCategoriasRefeicao] = useState<Array<{
+    id: string
+    categoria_escola: string
+    tipo_refeicao_id: string
+    tipo_refeicao: TipoRefeicao
+  }>>([])
 
   const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [cardRes, ferRes] = await Promise.all([
+      const [cardRes, ferRes, catRes] = await Promise.all([
         fetch(`/api/nutricao/cardapios/${cardapioId}`),
         fetch('/api/feriados'),
+        fetch('/api/nutricao/categorias-refeicao'),
       ])
       if (!cardRes.ok) throw new Error('Erro ao carregar cardápio')
       const data = await cardRes.json()
       const ferData = ferRes.ok ? await ferRes.json() : []
+      const catData = catRes.ok ? await catRes.json() : []
       setCardapio(data)
       setFeriados(Array.isArray(ferData) ? ferData : [])
+      setCategoriasRefeicao(Array.isArray(catData) ? catData : [])
     } catch (err) {
       console.error(err)
       setError('Não foi possível carregar o cardápio.')
@@ -713,7 +749,7 @@ export default function CardapioPdfPage() {
       {/* Print Pages */}
       <div className="print-container">
         {semanasToPrint.map((semana) => (
-          <SemanaPrintPage key={semana.id} semana={semana} cardapio={cardapio} feriados={feriados} />
+          <SemanaPrintPage key={semana.id} semana={semana} cardapio={cardapio} feriados={feriados} categoriasRefeicao={categoriasRefeicao} />
         ))}
       </div>
     </div>
