@@ -538,12 +538,15 @@
     letter-spacing: 0.1px;
   }
   .sp-ref-hora { display: block; font-size: 7px; color: #94a3b8; margin-top: 2px; font-weight: 500; }
+  .sp-ref-sub { display: block; font-size: 6.5px; color: #b45309; margin-top: 1px; font-style: italic; font-weight: 500; }
   .sp-td-dia {
     padding: 6px 8px;
     border: 1px solid #e2e8f0;
     vertical-align: top;
   }
   .sp-prep-list { list-style: none; margin: 0; padding: 0; }
+  .sp-prep-list-sub { margin-top: 3px; padding-top: 3px; border-top: 1px dashed #fbbf24; }
+  .sp-prep-item-sub { margin-bottom: 2px; opacity: 0.9; }
   .sp-prep-item { margin-bottom: 5px; }
   .sp-prep-nome {
     /* Clean, rounded, formal font for preparation names */
@@ -564,6 +567,7 @@
     font-weight: 400;
   }
   .sp-prep-vazio { color: #cbd5e1; font-size: 10px; }
+  .sp-prep-igual-creche { color: #94a3b8; font-size: 9px; font-style: italic; }
   .sp-row:nth-child(even) .sp-td-dia { background: #fafbfc; }
   .sp-row:nth-child(even) .sp-td-ref { background: #f1f5f9; }
 
@@ -883,6 +887,10 @@
     font-weight: 400 !important;
   }
   .sp-prep-vazio { color: #999 !important; font-size: 7.5pt !important; }
+  .sp-prep-igual-creche { color: #777 !important; font-size: 7pt !important; font-style: italic !important; }
+  .sp-prep-list-sub { margin-top: 1mm !important; padding-top: 1mm !important; border-top: 1px dashed #999 !important; }
+  .sp-prep-item-sub { margin-bottom: 0.5mm !important; opacity: 0.85 !important; }
+  .sp-ref-sub { display: block !important; font-size: 5.5pt !important; color: #555 !important; margin-top: 0.2mm !important; font-style: italic !important; font-weight: 500 !important; }
   .sp-row:nth-child(even) .sp-td-dia { background: #fafafa !important; }
   .sp-row:nth-child(even) .sp-td-ref { background: #eee !important; }
 

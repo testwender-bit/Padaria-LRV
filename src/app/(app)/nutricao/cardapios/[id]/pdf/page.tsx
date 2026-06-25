@@ -39,6 +39,7 @@ interface TipoRefeicao {
   nome: string
   horario: string
   ordem: number
+  sub_de_codigo?: string | null  // v8.13: se preenchido, este slot é sub de outro
 }
 
 interface Alimento {
@@ -275,6 +276,23 @@ function SemanaPrintPage({
     })
     .sort((a, b) => parseHorarioToMinutes(a.horario_efetivo) - parseHorarioToMinutes(b.horario_efetivo))
 
+  // v8.13: filtra slots sub (serão renderizados DENTRO do slot pai)
+  // e busca o slot sub de cada tipo pai (se existir)
+  const tiposRefeicaoPrincipais = tiposRefeicao.filter(
+    tr => !tr.sub_de_codigo
+  )
+
+  // Para cada tipo pai, encontra seu sub (se houver)
+  function getSubDoTipo(tipoPaiCodigo: string) {
+    return tiposRefeicao.find(tr => tr.sub_de_codigo === tipoPaiCodigo) || null
+  }
+
+  // v8.13: helper para verificar se é slot "Lanche Pré-Escola" vazio
+  // (deve mostrar "Igual creche" em vez de "—")
+  function ehLanchePreEscolaVazio(tr: { codigo: string; sub_de_codigo?: string | null }): boolean {
+    return tr.codigo === 'LANCHE_PRE_ESCOLA' && !tr.sub_de_codigo
+  }
+
   const resumo = calcularResumoSemanaPDF(semana, cardapio.fase_escolar)
 
   // Compute actual date for each weekday based on data_inicio
@@ -363,19 +381,39 @@ function SemanaPrintPage({
           </tr>
         </thead>
         <tbody>
-          {tiposRefeicao.map((tr) => (
+          {tiposRefeicaoPrincipais.map((tr) => {
+            // v8.13: busca o slot sub deste tipo pai (ex: FRUTA_MANHA é sub de CAFE_MANHA)
+            const trSub = getSubDoTipo(tr.codigo)
+
+            return (
             <tr key={tr.id} className="sp-row">
               <td className="sp-td-ref">
                 <span className="sp-ref-nome">{tr.nome}</span>
                 {/* v8.7: usa horário efetivo (override se existir) */}
                 <span className="sp-ref-hora">{(tr as { horario_efetivo?: string }).horario_efetivo ?? tr.horario}</span>
+                {/* v8.13: se tem sub, mostra nome do sub abaixo */}
+                {trSub && (
+                  <span className="sp-ref-sub">
+                    ↳ {trSub.nome} ({(trSub as { horario_efetivo?: string }).horario_efetivo ?? trSub.horario})
+                  </span>
+                )}
               </td>
               {DIAS_SEMANA_NUTRI.map((dia) => {
                 const diaData = semana.dias.find((d) => d.dia_semana === dia.value)
                 const itensRaw = diaData?.itens.filter((i) => i.tipo_refeicao_id === tr.id) || []
                 // v8: aplica mesma ordenação do editor (auto-sort + ordem manual)
                 const itens = sortItensByRefeicao(itensRaw, tiposRefeicao)
+                // v8.13: itens do sub (se houver)
+                const itensSubRaw = trSub
+                  ? (diaData?.itens.filter((i) => i.tipo_refeicao_id === trSub.id) || [])
+                  : []
+                const itensSub = trSub ? sortItensByRefeicao(itensSubRaw, tiposRefeicao) : []
+
                 const feriado = getFeriadoDoDiaCalc(semana.data_inicio, dia.value, feriados, cardapio.categoria_escola)
+
+                // v8.13: placeholder "Igual creche" para LANCHE_PRE_ESCOLA vazio
+                const mostrarIgualCreche = !feriado && ehLanchePreEscolaVazio(tr) && itens.length === 0
+
                 return (
                   <td
                     key={dia.value}
@@ -429,14 +467,64 @@ function SemanaPrintPage({
                           )
                         })}
                       </ul>
+                    ) : mostrarIgualCreche ? (
+                      <span className="sp-prep-igual-creche">igual creche</span>
                     ) : (
                       <span className="sp-prep-vazio">—</span>
+                    )}
+
+                    {/* v8.13: renderiza itens do SUB dentro da mesma célula */}
+                    {trSub && !feriado && itensSub.length > 0 && (
+                      <ul className="sp-prep-list sp-prep-list-sub">
+                        {itensSub.map((item) => {
+                          const alergenos = detectarAlergenosPreparacao(
+                            item.preparacao.ingredientes.map((ing) => ({
+                              nome: ing.alimento.nome,
+                              grupo: ing.alimento.grupo,
+                            }))
+                          )
+                          return (
+                            <li key={item.id} className="sp-prep-item sp-prep-item-sub">
+                              <div className="sp-prep-nome">
+                                <span className="sp-prep-nome-text">↳ {item.preparacao.nome}</span>
+                                {alergenos.length > 0 && (
+                                  <span className="sp-prep-alergenos">
+                                    {alergenos.map((sigla: AlergenoSigla) => (
+                                      <span
+                                        key={sigla}
+                                        className="sp-alergeno-badge sp-alergeno-badge-xs"
+                                        title={`${ALERGENOS[sigla].nome}: ${ALERGENOS[sigla].descricao}`}
+                                      >
+                                        {sigla}
+                                      </span>
+                                    ))}
+                                  </span>
+                                )}
+                              </div>
+                              {(() => {
+                                const ingsVisiveis = item.preparacao.ingredientes.filter((ing) => {
+                                  if (ing.mesma_percapita) return ing.quantidade_gramas > 0
+                                  const gramas = getGramasForFase(ing, cardapio.fase_escolar)
+                                  return gramas > 0
+                                })
+                                if (ingsVisiveis.length === 0) return null
+                                return (
+                                  <div className="sp-prep-ing">
+                                    {ingsVisiveis.map((ing) => limparNomeIngrediente(ing.alimento.nome)).join(', ')}
+                                  </div>
+                                )
+                              })()}
+                            </li>
+                          )
+                        })}
+                      </ul>
                     )}
                   </td>
                 )
               })}
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
 

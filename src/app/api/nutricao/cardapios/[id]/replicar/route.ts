@@ -205,12 +205,16 @@ export async function POST(
 
           // Cria novo cardápio para a escola
           const nomeInstancia = `${original.nome} — ${escola.nome_curto || escola.nome}`
+          // v8.13: se a escola destino tem categoria diferente da origem (ex: CRECHE → BIFASICA),
+          // usa a categoria DA ESCOLA DESTINO. Necessário porque a bifásica agora é
+          // uma extensão da creche (mesmos tipos de refeição + LANCHE_PRE_ESCOLA extra).
+          const categoriaDestino = escola.categoria || original.categoria_escola
           const card = await tx.cardapioNutricional.create({
             data: {
               nome: nomeInstancia,
               escola_id: escola.id,
               nutricionista_id: original.nutricionista_id,
-              categoria_escola: original.categoria_escola,
+              categoria_escola: categoriaDestino,
               fase_escolar: original.fase_escolar,
               ano: original.ano,
               semestre: original.semestre,

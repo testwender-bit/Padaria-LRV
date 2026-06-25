@@ -357,10 +357,15 @@ model Nutricionista {
 // ── Tipo de Refeição ────────────────────────────────────────
 model TipoRefeicao {
   id       String  @id @default(cuid())
-  codigo   String  @unique // CAFE_MANHA, FRUTA_MANHA, ALMOCO, LANCHE, HIDRATACAO, JANTAR, LANCHE_1, LANCHE_2
+  codigo   String  @unique // CAFE_MANHA, FRUTA_MANHA, ALMOCO, LANCHE, HIDRATACAO, JANTAR, LANCHE_1, LANCHE_2, LANCHE_PRE_ESCOLA
   nome     String  // "Café da Manhã"
   horario  String  // "07h30min"
   ordem    Int     @default(0)
+
+  // v8.13: Se preenchido, este slot é renderizado como SUB de outro slot
+  // (ex: FRUTA_MANHA é sub de CAFE_MANHA — mesma caixa visual, sem linha separada no PDF)
+  // O campo armazena o CÓDIGO do tipo pai (não o ID) para facilitar migrações.
+  sub_de_codigo String?
 
   categoria_refeicoes CategoriaRefeicao[]
   cardapio_itens      CardapioItem[]

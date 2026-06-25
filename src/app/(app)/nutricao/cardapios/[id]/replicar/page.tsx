@@ -172,12 +172,20 @@ export default function ReplicarCardapioPage() {
     }
   }, [cardapio])
 
-  // Escolas filtradas pela mesma categoria do cardápio base
-  // v8.10: Se o cardápio origem estiver vinculado a uma escola, exclui essa escola
-  //       da lista (não faz sentido replicar para a mesma escola — já é ela).
+  // Escolas filtradas — v8.13: permite CRECHE → BIFASICA (e vice-versa) pois
+  // a bifásica agora tem os mesmos 5 tipos da creche + LANCHE_PRE_ESCOLA extra.
+  // v8.10: Se o cardápio origem estiver vinculado a uma escola, exclui essa escola.
   const escolasFiltradas = useMemo(() => {
     if (!cardapio) return []
-    return escolas.filter((e) => e.ativo && e.categoria === cardapio.categoria_escola && e.id !== cardapio.escola_id)
+    return escolas.filter((e) => {
+      if (!e.ativo) return false
+      if (e.id === cardapio.escola_id) return false
+      // Mesma categoria OU combinação CRECHE ↔ BIFASICA
+      if (e.categoria === cardapio.categoria_escola) return true
+      if (cardapio.categoria_escola === 'CRECHE' && e.categoria === 'BIFASICA') return true
+      if (cardapio.categoria_escola === 'BIFASICA' && e.categoria === 'CRECHE') return true
+      return false
+    })
   }, [escolas, cardapio])
 
   function toggleEscola(escolaId: string) {

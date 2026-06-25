@@ -50,7 +50,7 @@ export async function GET(
         horarios_refeicoes: {
           include: {
             tipo_refeicao: {
-              select: { id: true, codigo: true, nome: true, horario: true, ordem: true },
+              select: { id: true, codigo: true, nome: true, horario: true, ordem: true, sub_de_codigo: true },
             },
           },
         },

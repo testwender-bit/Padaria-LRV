@@ -48,6 +48,7 @@ interface TipoRefeicao {
   nome: string
   horario: string
   ordem: number
+  sub_de_codigo?: string | null  // v8.13: se preenchido, este slot é sub de outro
 }
 
 interface Alimento {
@@ -2078,9 +2079,23 @@ export default function CardapioEditorPage() {
                   {/* Refeição slots */}
                   <div className="p-1.5 space-y-1.5">
                     {refeicoesForCategoria.map((cr) => {
+                      // v8.13: pula slots sub — eles são renderizados DENTRO do slot pai
+                      if (cr.tipo_refeicao.sub_de_codigo) return null
+
                       const itens = getItensForSlot(dia.value, cr.tipo_refeicao_id)
                       const slotKey = `${dia.value}-${cr.tipo_refeicao_id}`
                       const isDragOver = dragOverSlot === slotKey
+
+                      // v8.13: busca slot sub (se existir) — ex: FRUTA_MANHA é sub de CAFE_MANHA
+                      const slotSub = refeicoesForCategoria.find(
+                        sub => sub.tipo_refeicao.sub_de_codigo === cr.tipo_refeicao.codigo
+                      )
+                      const itensSub = slotSub
+                        ? getItensForSlot(dia.value, slotSub.tipo_refeicao_id)
+                        : []
+                      const slotSubKey = slotSub ? `${dia.value}-${slotSub.tipo_refeicao_id}` : ''
+                      const isDragOverSub = slotSub && dragOverSlot === slotSubKey
+
                       return (
                         <div
                           key={cr.tipo_refeicao_id}
@@ -2218,6 +2233,121 @@ export default function CardapioEditorPage() {
                           >
                             <Plus className="w-2.5 h-2.5 mr-0.5" /> Adicionar
                           </Button>
+
+                          {/* v8.13: SUB slot (ex: Fruta da Manhã dentro de Café da Manhã) */}
+                          {slotSub && (
+                            <div
+                              className={`mt-1.5 ml-2 pl-2 border-l-2 border-[#D4A017]/40 rounded-sm transition-colors ${
+                                isDragOverSub ? 'bg-[#D4A017]/5' : ''
+                              }`}
+                              onDragOver={(e) => {
+                                e.preventDefault()
+                                e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move'
+                                if (!isDragOverSub) setDragOverSlot(slotSubKey)
+                              }}
+                              onDragLeave={() => {
+                                if (dragOverSlot === slotSubKey) setDragOverSlot(null)
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault()
+                                setDragOverSlot(null)
+                                if (draggedItem) {
+                                  if (e.altKey) {
+                                    handleDuplicateItem(draggedItem, currentSemana, dia.value, slotSub!.tipo_refeicao_id)
+                                  } else {
+                                    handleMoveItem(draggedItem, currentSemana, dia.value, slotSub!.tipo_refeicao_id)
+                                  }
+                                  setDraggedItem(null)
+                                  setDragAltHint(false)
+                                }
+                              }}
+                            >
+                              <div className="flex items-center justify-between mb-0.5 mt-1">
+                                <span className="text-[9px] font-medium text-[#D4A017] truncate flex items-center gap-0.5">
+                                  <span className="opacity-60">↳</span>
+                                  {slotSub.tipo_refeicao.nome}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => openHorarioDialog(
+                                      slotSub.tipo_refeicao_id,
+                                      slotSub.tipo_refeicao.nome,
+                                      slotSub.tipo_refeicao.horario,
+                                      (slotSub as { horario_efetivo?: string }).horario_efetivo ?? slotSub.tipo_refeicao.horario,
+                                    )}
+                                    className={`text-[7px] h-3.5 px-1 inline-flex items-center gap-0.5 rounded border transition-colors ${
+                                      (slotSub as { horario_override?: unknown }).horario_override
+                                        ? 'bg-[#D4A017]/15 border-[#D4A017]/50 text-[#D4A017]'
+                                        : 'bg-transparent border-gray-200 text-gray-500 hover:border-[#D4A017]/50 hover:text-[#D4A017]'
+                                    }`}
+                                    title={`Horário padrão: ${slotSub.tipo_refeicao.horario}. Clique para editar.`}
+                                  >
+                                    <ClockIcon className="w-2 h-2" />
+                                    {(slotSub as { horario_efetivo?: string }).horario_efetivo ?? slotSub.tipo_refeicao.horario}
+                                  </button>
+                                  {itensSub.length > 0 && (
+                                    <button
+                                      onClick={() => handleClearSlot(dia.value, slotSub.tipo_refeicao_id)}
+                                      className="text-red-300 hover:text-red-500 transition-colors"
+                                      title="Limpar refeição"
+                                    >
+                                      <Trash2 className="w-2 h-2" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              {itensSub.map((item) => (
+                                <div
+                                  key={item.id}
+                                  draggable
+                                  onDragStart={(e) => {
+                                    setDraggedItem(item)
+                                    e.dataTransfer.effectAllowed = 'copyMove'
+                                    setDragAltHint(true)
+                                  }}
+                                  onDragEnd={() => {
+                                    setDraggedItem(null)
+                                    setDragOverSlot(null)
+                                    setDragAltHint(false)
+                                  }}
+                                  className={`flex items-center gap-1 mb-0.5 p-0.5 rounded bg-white border border-gray-100 text-[9px] group cursor-grab active:cursor-grabbing ${
+                                    draggedItem?.id === item.id ? 'opacity-50' : ''
+                                  }`}
+                                  title="Arraste para mover • Alt+Arraste para duplicar"
+                                >
+                                  <GripVertical className="w-2 h-2 text-gray-300 flex-shrink-0 group-hover:text-gray-400" />
+                                  <span className="flex-1 truncate">{item.preparacao.nome}</span>
+                                  {item.porcoes > 1 && (
+                                    <span
+                                      className="px-1 rounded border border-gray-200 text-[8px] font-bold text-[#1A3A5C] flex-shrink-0"
+                                      title={`${item.porcoes} porções`}
+                                    >
+                                      {item.porcoes}×
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={() => handleRemoveItem(item.id)}
+                                    className="text-red-300 hover:text-red-500 ml-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    title="Remover preparação"
+                                  >
+                                    <Trash2 className="w-2 h-2" />
+                                  </button>
+                                </div>
+                              ))}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full h-4 text-[8px] text-muted-foreground hover:text-[#D4A017] hover:bg-[#D4A017]/5"
+                                onClick={() => {
+                                  if (diaData) {
+                                    openAddDialog(diaData.id, slotSub.tipo_refeicao_id, dia.value)
+                                  }
+                                }}
+                              >
+                                <Plus className="w-2 h-2 mr-0.5" /> Add
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       )
                     })}
