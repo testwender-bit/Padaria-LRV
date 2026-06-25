@@ -353,15 +353,31 @@ async function main() {
           })
           if (!ing.eh_fruta_ou_polpa) {
             for (const fase of FASES_ESCOLARES) {
-              const gramas = calcularPercapitaPorFase(fallback, fase.value as FaseEscolar)
-              await prisma.preparacaoPercapita.create({
-                data: {
-                  ingrediente_id: ingrediente.id,
-                  fase_escolar: fase.value,
-                  quantidade_gramas: gramas,
-                  auto_calculado: true,
-                },
-              })
+              // v8.12: honra o null do JSON — se a fase está null, criar percapita=0
+              // (em vez de calcular via percentual automático)
+              const valorFase = ing.valores_por_fase[
+                fase.value.toLowerCase() as keyof typeof ing.valores_por_fase
+              ]
+              if (valorFase === null) {
+                await prisma.preparacaoPercapita.create({
+                  data: {
+                    ingrediente_id: ingrediente.id,
+                    fase_escolar: fase.value,
+                    quantidade_gramas: 0,
+                    auto_calculado: false, // false = override manual (não recalcular)
+                  },
+                })
+              } else {
+                const gramas = valorFase ?? calcularPercapitaPorFase(fallback, fase.value as FaseEscolar)
+                await prisma.preparacaoPercapita.create({
+                  data: {
+                    ingrediente_id: ingrediente.id,
+                    fase_escolar: fase.value,
+                    quantidade_gramas: gramas,
+                    auto_calculado: true,
+                  },
+                })
+              }
             }
           }
           continue
@@ -378,15 +394,31 @@ async function main() {
 
         if (!ing.eh_fruta_ou_polpa) {
           for (const fase of FASES_ESCOLARES) {
-            const gramas = calcularPercapitaPorFase(valorFundFinal, fase.value as FaseEscolar)
-            await prisma.preparacaoPercapita.create({
-              data: {
-                ingrediente_id: ingrediente.id,
-                fase_escolar: fase.value,
-                quantidade_gramas: gramas,
-                auto_calculado: true,
-              },
-            })
+            // v8.12: honra o null do JSON — se a fase está null, criar percapita=0
+            // (em vez de calcular via percentual automático)
+            const valorFase = ing.valores_por_fase[
+              fase.value.toLowerCase() as keyof typeof ing.valores_por_fase
+            ]
+            if (valorFase === null) {
+              await prisma.preparacaoPercapita.create({
+                data: {
+                  ingrediente_id: ingrediente.id,
+                  fase_escolar: fase.value,
+                  quantidade_gramas: 0,
+                  auto_calculado: false, // false = override manual (não recalcular)
+                },
+              })
+            } else {
+              const gramas = valorFase ?? calcularPercapitaPorFase(valorFundFinal, fase.value as FaseEscolar)
+              await prisma.preparacaoPercapita.create({
+                data: {
+                  ingrediente_id: ingrediente.id,
+                  fase_escolar: fase.value,
+                  quantidade_gramas: gramas,
+                  auto_calculado: true,
+                },
+              })
+            }
           }
         }
       }

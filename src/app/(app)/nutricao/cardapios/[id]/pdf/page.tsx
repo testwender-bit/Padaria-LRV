@@ -410,11 +410,21 @@ function SemanaPrintPage({
                                   </span>
                                 )}
                               </div>
-                              {item.preparacao.ingredientes.length > 0 && (
-                                <div className="sp-prep-ing">
-                                  {item.preparacao.ingredientes.map((ing) => limparNomeIngrediente(ing.alimento.nome)).join(', ')}
-                                </div>
-                              )}
+                              {(() => {
+                                // v8.12: Filtra ingredientes com percapita=0 para a fase do cardápio
+                                // (ex: açúcar em creche/berçário — não mostra no PDF impresso)
+                                const ingsVisiveis = item.preparacao.ingredientes.filter((ing) => {
+                                  if (ing.mesma_percapita) return ing.quantidade_gramas > 0
+                                  const gramas = getGramasForFase(ing, cardapio.fase_escolar)
+                                  return gramas > 0
+                                })
+                                if (ingsVisiveis.length === 0) return null
+                                return (
+                                  <div className="sp-prep-ing">
+                                    {ingsVisiveis.map((ing) => limparNomeIngrediente(ing.alimento.nome)).join(', ')}
+                                  </div>
+                                )
+                              })()}
                             </li>
                           )
                         })}
