@@ -268,6 +268,42 @@ export function getPrioridadePrep(
 }
 
 /**
+ * v8.9 — Detecta o perfil FORÇADO pelo tipo de refeição.
+ * LANCHE / LANCHE_1 / LANCHE_2 são SEMPRE perfil PAO_LANCHE
+ * (bebida primeiro), independente de ter pão ou não.
+ * Só ALMOCO / JANTAR usam detecção por itens (COMIDA / CUSCUZ).
+ */
+function detectarPerfilForcado(tipoRefeicaoCodigo: string): PerfilRefeicao | null {
+  switch (tipoRefeicaoCodigo) {
+    case 'LANCHE':
+    case 'LANCHE_1':
+    case 'LANCHE_2':
+    case 'CAFE_MANHA':
+    case 'FRUTA_MANHA':
+    case 'HIDRATACAO':
+      return 'PAO_LANCHE'  // Bebida primeiro, sempre
+    case 'ALMOCO':
+    case 'JANTAR':
+      return null  // Deixa detectar por itens (COMIDA ou CUSCUZ)
+    default:
+      return null
+  }
+}
+
+/**
+ * v8.9 — Wrapper que decide o perfil: forçado pelo tipo de refeição
+ * OU detectado pelos itens (apenas para ALMOCO/JANTAR).
+ */
+function detectarPerfilFinal<T extends { preparacao: { nome: string; categoria?: string } }>(
+  itens: T[],
+  tipoRefeicaoCodigo: string
+): PerfilRefeicao {
+  const forçado = detectarPerfilForcado(tipoRefeicaoCodigo)
+  if (forçado) return forçado
+  return detectarPerfilSlotAvancado(itens)
+}
+
+/**
  * Retorna a prioridade de uma preparação dado o perfil do slot.
  * Menor número = aparece primeiro.
  */
@@ -392,7 +428,7 @@ function atribuirOrdemParaItensSemOrdem<
     const tipoRefeicaoId = primeiroItem.tipo_refeicao_id || primeiroItem.tipo_refeicao?.id
     const tipoRefeicao = tiposRefeicao.find(t => t.id === tipoRefeicaoId)
     const codigo = tipoRefeicao?.codigo || ''
-    const perfil = detectarPerfilSlotAvancado(itens)
+    const perfil = detectarPerfilFinal(itens, codigo)
 
     return [...itens].sort((a, b) => {
       const prioA = getPrioridadePorPerfil(a.preparacao.nome, codigo, perfil, a.preparacao.categoria)
@@ -425,7 +461,7 @@ function atribuirOrdemParaItensSemOrdem<
   const tipoRefeicaoId = primeiroItem.tipo_refeicao_id || primeiroItem.tipo_refeicao?.id
   const tipoRefeicao = tiposRefeicao.find(t => t.id === tipoRefeicaoId)
   const codigo = tipoRefeicao?.codigo || ''
-  const perfil = detectarPerfilSlotAvancado(itens)
+  const perfil = detectarPerfilFinal(itens, codigo)
 
   const comOrdemComPrio = comOrdemSorted.map(i => ({
     item: i,
@@ -523,7 +559,7 @@ export function calcularOrdemCanonicaSlot<
   const tipoRefeicao = tiposRefeicao.find(t => t.id === tipoRefeicaoId)
   const codigo = tipoRefeicao?.codigo || ''
 
-  const perfil = detectarPerfilSlotAvancado(itens)
+  const perfil = detectarPerfilFinal(itens, codigo)
 
   return [...itens].sort((a, b) => {
     const prioA = getPrioridadePorPerfil(a.preparacao.nome, codigo, perfil, a.preparacao.categoria)

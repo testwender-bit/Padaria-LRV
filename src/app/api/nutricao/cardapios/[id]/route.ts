@@ -135,6 +135,13 @@ export async function PATCH(
         fase_escolar: body.fase_escolar !== undefined ? body.fase_escolar : undefined,
         ciclo_semanas: body.ciclo_semanas !== undefined ? body.ciclo_semanas : undefined,
         repetir_ciclo: body.repetir_ciclo !== undefined ? body.repetir_ciclo : undefined,
+        // v8.9: permitir editar semestre e ano
+        semestre: body.semestre !== undefined ? body.semestre : undefined,
+        ano: body.ano !== undefined ? body.ano : undefined,
+        // v8.9: permitir transformar em base (escola_id = null)
+        escola_id: body.escola_id !== undefined ? body.escola_id : undefined,
+        // v8.9: permitir definir/remover cardapio_base_id
+        cardapio_base_id: body.cardapio_base_id !== undefined ? body.cardapio_base_id : undefined,
         atualizado_em: atualizadoEm,
       },
     })

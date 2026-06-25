@@ -1438,6 +1438,46 @@ export default function CardapioEditorPage() {
     }
   }
 
+  // v8.9: Editar semestre do cardápio
+  async function handleSaveSemestre(semestre: number) {
+    if (!cardapio) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ semestre }),
+      })
+      if (!res.ok) throw new Error('Erro ao salvar semestre')
+      toast.success(`Semestre alterado para ${semestre}`)
+      loadData()
+    } catch {
+      toast.error('Erro ao salvar semestre')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // v8.9: Transformar cardápio em base (escola_id = null)
+  async function handleTransformarEmBase() {
+    if (!cardapio) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ escola_id: null, cardapio_base_id: null }),
+      })
+      if (!res.ok) throw new Error('Erro ao transformar em base')
+      toast.success('Cardápio transformado em base!')
+      loadData()
+    } catch {
+      toast.error('Erro ao transformar em base')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleApprove() {
     if (!cardapio) return
     setSaving(true)
@@ -1689,7 +1729,19 @@ export default function CardapioEditorPage() {
               {getStatusBadge(cardapio.status)}
             </div>
             <p className="text-xs text-muted-foreground">
-              {cardapio.escola?.nome || 'Modelo base'} · {cardapio.ano}/{cardapio.semestre}
+              {cardapio.escola?.nome || 'Modelo base'} · {cardapio.ano}/
+              {/* v8.9: Semestre editável */}
+              <select
+                value={cardapio.semestre}
+                onChange={(e) => handleSaveSemestre(Number(e.target.value))}
+                disabled={saving}
+                className="inline-block bg-transparent border-0 text-xs text-muted-foreground cursor-pointer hover:text-[#1A3A5C] focus:outline-none focus:ring-0"
+                style={{ appearance: 'none', '-webkit-appearance': 'none' } as React.CSSProperties}
+                title="Clique para alterar o semestre"
+              >
+                <option value={1}>1</option>
+                <option value={2}>2</option>
+              </select>
             </p>
           </div>
         </div>
@@ -1724,6 +1776,33 @@ export default function CardapioEditorPage() {
 
           {/* Botão Replicar p/ Escolas (somente se for base) */}
           {!cardapio.escola_id && (
+            <Link href={`/nutricao/cardapios/${cardapioId}/replicar`}>
+              <Button variant="outline" size="sm" className="text-xs h-8 border-purple-200 text-purple-700 hover:bg-purple-50">
+                <Copy className="w-3 h-3 mr-1" /> Replicar p/ Escolas
+              </Button>
+            </Link>
+          )}
+
+          {/* v8.9: Botão Transformar em Base (somente se NÃO for base) */}
+          {cardapio.escola_id && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs h-8 border-amber-200 text-amber-700 hover:bg-amber-50"
+              onClick={() => {
+                if (confirm('Transformar este cardápio em BASE? Ele deixará de pertencer a uma escola e virará modelo base para replicação.')) {
+                  handleTransformarEmBase()
+                }
+              }}
+              disabled={saving}
+              title="Transforma este cardápio em modelo base (escola_id = null)"
+            >
+              <Layers className="w-3 h-3 mr-1" /> Transformar em Base
+            </Button>
+          )}
+
+          {/* v8.9: Botão Replicar (disponível para QUALQUER cardápio, não só base) */}
+          {cardapio.escola_id && (
             <Link href={`/nutricao/cardapios/${cardapioId}/replicar`}>
               <Button variant="outline" size="sm" className="text-xs h-8 border-purple-200 text-purple-700 hover:bg-purple-50">
                 <Copy className="w-3 h-3 mr-1" /> Replicar p/ Escolas
