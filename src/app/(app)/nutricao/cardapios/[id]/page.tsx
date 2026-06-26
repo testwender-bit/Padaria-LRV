@@ -17,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check, Repeat, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, ArrowDownUp, ArrowLeftRight
+  Copy, Check, Repeat, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, ArrowDownUp, ArrowLeftRight, ExternalLink
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -3287,10 +3287,11 @@ export default function CardapioEditorPage() {
             {localizarResultados.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
-                  {localizarResultados.reduce((s, p) => s + p.ocorrencias.length, 0)} ocorrência(s) em {localizarResultados.length} preparação(ões):
+                  {localizarResultados.reduce((s, p) => s + p.ocorrencias.length, 0)} ocorrência(s) em {localizarResultados.length} preparação(ões).
+                  Clique numa ocorrência para ir até ela no editor.
                 </p>
                 {localizarResultados.map((prep) => (
-                  <div key={prep.preparacao_id} className="border rounded-md p-2">
+                  <div key={prep.preparacao_id} className="border rounded-md p-2 bg-white">
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <div className="flex-1 min-w-0">
                         <span className="text-sm font-medium truncate">{prep.preparacao_nome}</span>
@@ -3303,56 +3304,111 @@ export default function CardapioEditorPage() {
                         size="sm"
                         variant="outline"
                         className="h-7 text-xs"
-                        onClick={() => setLocalizarPrepSelecionada(localizarPrepSelecionada === prep.preparacao_id ? null : prep.preparacao_id)}
+                        onClick={() => {
+                          setLocalizarPrepSelecionada(localizarPrepSelecionada === prep.preparacao_id ? null : prep.preparacao_id)
+                          setLocalizarSubstituta('')
+                        }}
                       >
                         {localizarPrepSelecionada === prep.preparacao_id ? 'Cancelar' : 'Substituir'}
                       </Button>
                     </div>
 
-                    {/* Lista de ocorrências */}
-                    <div className="text-[11px] text-muted-foreground space-y-0.5 mb-1">
-                      {prep.ocorrencias.slice(0, 8).map((oc, i) => (
-                        <div key={oc.item_id} className="flex items-center gap-2">
-                          <span className="text-[9px] bg-gray-100 px-1 rounded">S{oc.semana_num}</span>
-                          <span className="capitalize">{oc.dia_semana}</span>
-                          <span className="text-[9px] text-[#1A3A5C]">{oc.tipo_refeicao_codigo}</span>
-                        </div>
+                    {/* Lista de ocorrências — clicáveis para navegar até a semana/dia */}
+                    <div className="text-[11px] space-y-0.5 mb-1">
+                      {prep.ocorrencias.slice(0, 12).map((oc) => (
+                        <button
+                          key={oc.item_id}
+                          onClick={() => {
+                            // v8.16.1: navega até a semana/dia da ocorrência
+                            setCurrentSemana(oc.semana_num)
+                            setLocalizarSubstituirOpen(false)
+                            toast.info(`Indo para Semana ${oc.semana_num} · ${oc.dia_semana} · ${oc.tipo_refeicao_nome}`)
+                          }}
+                          className="flex items-center gap-2 w-full text-left hover:bg-blue-50 hover:text-blue-700 transition-colors rounded px-1 py-0.5 cursor-pointer group"
+                          title={`Ir para Semana ${oc.semana_num} · ${oc.dia_semana} · ${oc.tipo_refeicao_nome}`}
+                        >
+                          <span className="text-[9px] bg-[#1A3A5C]/10 text-[#1A3A5C] px-1.5 py-0.5 rounded font-medium group-hover:bg-[#1A3A5C] group-hover:text-white transition-colors">
+                            S{oc.semana_num}
+                          </span>
+                          <span className="capitalize text-muted-foreground group-hover:text-blue-700">{oc.dia_semana}</span>
+                          <span className="text-[9px] text-[#1A3A5C]/70 group-hover:text-blue-600">·</span>
+                          <span className="text-[10px] text-[#1A3A5C]/70 group-hover:text-blue-600">{oc.tipo_refeicao_nome}</span>
+                          <ExternalLink className="w-2.5 h-2.5 ml-auto text-gray-300 group-hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-all" />
+                        </button>
                       ))}
-                      {prep.ocorrencias.length > 8 && (
-                        <p className="text-[10px] italic">+ {prep.ocorrencias.length - 8} outras...</p>
+                      {prep.ocorrencias.length > 12 && (
+                        <p className="text-[10px] italic text-muted-foreground pl-1">
+                          + {prep.ocorrencias.length - 12} outras ocorrências...
+                        </p>
                       )}
                     </div>
 
                     {/* Painel de substituição */}
                     {localizarPrepSelecionada === prep.preparacao_id && (
-                      <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded space-y-2">
-                        <Label className="text-xs">Substituir por qual preparação?</Label>
-                        <Select value={localizarSubstituta} onValueChange={setLocalizarSubstituta}>
-                          <SelectTrigger className="h-8 text-xs">
-                            <SelectValue placeholder="Selecionar preparação substituta" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {preparacoes.filter(p => p.id !== prep.preparacao_id).map((p) => (
-                              <SelectItem key={p.id} value={p.id} className="text-xs">{p.nome}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs flex-1"
-                            disabled={!localizarSubstituta || localizarSubstituindo}
-                            onClick={() => handleSubstituirTodos(prep.preparacao_id)}
-                          >
-                            <ArrowLeftRight className="w-3 h-3 mr-1" />
-                            Substituir TODAS ({prep.ocorrencias.length})
-                          </Button>
+                      <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded space-y-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-semibold text-amber-800">
+                            Substituir "{prep.preparacao_nome}" por:
+                          </Label>
+                          <Select value={localizarSubstituta} onValueChange={setLocalizarSubstituta}>
+                            <SelectTrigger className="h-8 text-xs bg-white">
+                              <SelectValue placeholder="Selecionar preparação substituta" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {preparacoes.filter(p => p.id !== prep.preparacao_id).map((p) => (
+                                <SelectItem key={p.id} value={p.id} className="text-xs">{p.nome}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
-                        <p className="text-[10px] text-muted-foreground">
-                          Clique em "Substituir TODAS" para trocar todas as ocorrências de uma vez.
-                          Se a nova preparação já existir em algum slot, a ocorrência será removida (evita duplicata).
-                        </p>
+
+                        {localizarSubstituta && (
+                          <div className="flex flex-col gap-2 pt-1 border-t border-amber-200">
+                            <p className="text-[10px] text-amber-700">
+                              Escolha o tipo de substituição:
+                            </p>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-xs flex-1 bg-white hover:bg-amber-100 border-amber-300"
+                                disabled={localizarSubstituindo}
+                                onClick={() => handleSubstituirTodos(prep.preparacao_id)}
+                              >
+                                <ArrowLeftRight className="w-3 h-3 mr-1" />
+                                Substituir TODAS ({prep.ocorrencias.length})
+                              </Button>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground">
+                              <strong>TODAS:</strong> troca todas as ocorrências de uma vez. Se a substituta já existir em algum slot, a ocorrência é removida (evita duplicata).
+                            </p>
+
+                            <div className="pt-2 border-t border-amber-200">
+                              <p className="text-[10px] font-semibold text-amber-800 mb-1">
+                                Ou substitua uma por uma:
+                              </p>
+                              <div className="space-y-1 max-h-40 overflow-y-auto">
+                                {prep.ocorrencias.slice(0, 12).map((oc) => (
+                                  <div key={oc.item_id} className="flex items-center gap-2 text-[10px] bg-white rounded px-2 py-1 border border-amber-100">
+                                    <span className="text-[9px] bg-[#1A3A5C]/10 text-[#1A3A5C] px-1 rounded font-medium">S{oc.semana_num}</span>
+                                    <span className="capitalize text-muted-foreground">{oc.dia_semana}</span>
+                                    <span className="text-[#1A3A5C]/70">·</span>
+                                    <span className="text-[#1A3A5C]/70">{oc.tipo_refeicao_nome}</span>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-5 text-[9px] ml-auto px-1.5 text-amber-700 hover:bg-amber-100"
+                                      disabled={localizarSubstituindo}
+                                      onClick={() => handleSubstituirUm(oc.item_id)}
+                                    >
+                                      Substituir
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -3364,6 +3420,14 @@ export default function CardapioEditorPage() {
               <p className="text-center text-sm text-muted-foreground py-4">
                 Clique em "Buscar" para localizar preparações.
               </p>
+            )}
+
+            {!localizarBusca && (
+              <div className="text-center text-sm text-muted-foreground py-8 space-y-2">
+                <ArrowLeftRight className="w-8 h-8 mx-auto opacity-30" />
+                <p>Digite o nome de uma preparação para localizá-la no cardápio.</p>
+                <p className="text-[11px]">Você poderá substituir uma por uma ou todas de uma vez.</p>
+              </div>
             )}
           </div>
         </DialogContent>
