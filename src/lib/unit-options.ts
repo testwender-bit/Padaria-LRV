@@ -27,6 +27,7 @@ export const CATEGORIAS_ESCOLA = [
   { value: 'BIFASICA', label: 'Bifásica' },
   { value: 'CRECHE', label: 'Creche' },
   { value: 'INTERIOR', label: 'Interior' },
+  { value: 'APAE', label: 'APAE' },
   { value: 'OUTROS', label: 'Outros' },
 ]
 
@@ -64,6 +65,7 @@ export const ESCOLAS_AFETADAS = [
   { value: 'CRECHES', label: 'Creches' },
   { value: 'BIFASICA', label: 'Bifásica' },
   { value: 'INTERIOR', label: 'Interior' },
+  { value: 'APAE', label: 'APAE' },
   { value: 'OUTROS', label: 'Outros' },
 ]
 

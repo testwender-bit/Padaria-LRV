@@ -501,6 +501,7 @@ export const CATEGORIAS_ESCOLA_NUTRI = [
   { value: 'BIFASICA', label: 'Bifásica (2 lanches)' },
   { value: 'CRECHE', label: 'Creche (5 refeições)' },
   { value: 'INTERIOR', label: 'Interior (lanche + almoço)' },
+  { value: 'APAE', label: 'APAE (café + lanche + fruta)' },
 ] as const
 
 // ── Fases Escolares (percapita por idade) ────────────────────
