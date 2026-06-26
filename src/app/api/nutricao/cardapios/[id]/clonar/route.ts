@@ -52,9 +52,10 @@ export async function POST(
     }
 
     // Buscar escola de destino para gerar o nome
+    // v8.16: inclui categoria para usar no cardápio criado (clone cross-categoria)
     const escolaDestino = await db.escola.findUnique({
       where: { id: escolaIdDestino },
-      select: { id: true, nome: true, nome_curto: true },
+      select: { id: true, nome: true, nome_curto: true, categoria: true },
     })
 
     if (!escolaDestino) {
@@ -86,12 +87,15 @@ export async function POST(
     }
 
     // Criar novo cardápio
+    // v8.16: usa categoria da escola destino (não da origem) — permite clonar
+    // creche → bifásica corretamente (categoria BIFASICA cria os 6 slots certos)
+    const categoriaDestino = escolaDestino.categoria || original.categoria_escola
     const card = await db.cardapioNutricional.create({
       data: {
         nome: nomeClone,
         escola_id: escolaIdDestino,
         nutricionista_id: body.nutricionista_id || original.nutricionista_id,
-        categoria_escola: original.categoria_escola,
+        categoria_escola: categoriaDestino,
         fase_escolar: original.fase_escolar,
         ano: original.ano,
         semestre: original.semestre,

@@ -49,6 +49,7 @@ interface BodyRequest {
   escolas: EscolaDestino[]
   expandir_para_semestre?: boolean
   sobrescrever_existente?: boolean
+  manter_pao_lanche?: boolean  // v8.16: se true, não realoca pão/lanche
 }
 
 // Ordem canônica dos dias úteis para cálculo de "dia mais próximo"
@@ -165,6 +166,7 @@ export async function POST(
     const criadoEm = new Date().toISOString().replace('T', ' ').substring(0, 19)
     const expandir = body.expandir_para_semestre !== false  // default: true
     const sobrescrever = body.sobrescrever_existente === true
+    const manterPaoLanche = body.manter_pao_lanche === true  // v8.16: se true, não realoca
 
     // v8.10: se a origem for uma escola, avisa no resultado quantas foram puladas
     let pulasPorOrigem = 0
@@ -304,7 +306,8 @@ export async function POST(
             }
 
             // ── Aplica realocação de pão com DESLOCAMENTO (v5) ──
-            if (diaOrigemPao && configEscola.dia_pao) {
+            // v8.16: pula se manterPaoLanche=true (copia direto, sem trocar dias)
+            if (!manterPaoLanche && diaOrigemPao && configEscola.dia_pao) {
               const diaDestinoPt = isoToPt(configEscola.dia_pao)
               if (diaOrigemPao !== diaDestinoPt) {
                 await realocarComDeslocamento(tx, diasClonados, diaOrigemPao, diaDestinoPt, diasBloqueados)
@@ -312,7 +315,8 @@ export async function POST(
             }
 
             // ── Aplica realocação de lanche com DESLOCAMENTO (v5) ──
-            if (diaOrigemLanche && configEscola.dia_lanche) {
+            // v8.16: pula se manterPaoLanche=true
+            if (!manterPaoLanche && diaOrigemLanche && configEscola.dia_lanche) {
               const diaDestinoPt = isoToPt(configEscola.dia_lanche)
               if (diaOrigemLanche !== diaDestinoPt && diaOrigemLanche !== diaOrigemPao) {
                 await realocarComDeslocamento(tx, diasClonados, diaOrigemLanche, diaDestinoPt, diasBloqueados)

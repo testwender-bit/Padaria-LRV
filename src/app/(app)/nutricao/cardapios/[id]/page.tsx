@@ -312,6 +312,19 @@ export default function CardapioEditorPage() {
   const [horarioDialogOpen, setHorarioDialogOpen] = useState(false)
   const [horarioEditando, setHorarioEditando] = useState<{ tipoRefeicaoId: string; nome: string; horarioDefault: string; horarioAtual: string } | null>(null)
   const [horarioInput, setHorarioInput] = useState('')
+  // v8.16: dialog "Localizar e Substituir" preparação
+  const [localizarSubstituirOpen, setLocalizarSubstituirOpen] = useState(false)
+  const [localizarBusca, setLocalizarBusca] = useState('')
+  const [localizarResultados, setLocalizarResultados] = useState<Array<{
+    preparacao_id: string
+    preparacao_nome: string
+    categoria: string | null
+    ocorrencias: Array<{ item_id: string; semana_num: number; dia_semana: string; tipo_refeicao_codigo: string; tipo_refeicao_nome: string }>
+  }>>([])
+  const [localizarBuscando, setLocalizarBuscando] = useState(false)
+  const [localizarPrepSelecionada, setLocalizarPrepSelecionada] = useState<string | null>(null)
+  const [localizarSubstituta, setLocalizarSubstituta] = useState('')
+  const [localizarSubstituindo, setLocalizarSubstituindo] = useState(false)
   const [salvandoHorario, setSalvandoHorario] = useState(false)
 
   const loadData = useCallback(async () => {
@@ -1459,6 +1472,85 @@ export default function CardapioEditorPage() {
     }
   }
 
+  // v8.16: Localizar e Substituir preparação
+  async function handleLocalizar() {
+    if (!cardapio || !localizarBusca.trim()) return
+    setLocalizarBuscando(true)
+    setLocalizarPrepSelecionada(null)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/localizar-substituir?q=${encodeURIComponent(localizarBusca.trim())}`)
+      if (!res.ok) throw new Error('Erro ao buscar')
+      const data = await res.json()
+      setLocalizarResultados(data.preparacoes || [])
+      if ((data.preparacoes || []).length === 0) {
+        toast.info('Nenhuma ocorrência encontrada')
+      }
+    } catch {
+      toast.error('Erro ao localizar preparação')
+    } finally {
+      setLocalizarBuscando(false)
+    }
+  }
+
+  async function handleSubstituirUm(itemId: string) {
+    if (!cardapio || !localizarSubstituta) {
+      toast.error('Selecione a preparação substituta')
+      return
+    }
+    setLocalizarSubstituindo(true)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/localizar-substituir`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          acao: 'substituir_um',
+          item_id: itemId,
+          preparacao_id_nova: localizarSubstituta,
+        }),
+      })
+      if (!res.ok) throw new Error('Erro ao substituir')
+      toast.success('Preparação substituída')
+      // Recarrega cardápio + re-busca
+      await loadData()
+      await handleLocalizar()
+    } catch {
+      toast.error('Erro ao substituir')
+    } finally {
+      setLocalizarSubstituindo(false)
+    }
+  }
+
+  async function handleSubstituirTodos(prepIdAntiga: string) {
+    if (!cardapio || !localizarSubstituta) {
+      toast.error('Selecione a preparação substituta')
+      return
+    }
+    if (!confirm('Substituir TODAS as ocorrências? Esta ação não pode ser desfeita.')) return
+    setLocalizarSubstituindo(true)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/localizar-substituir`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          acao: 'substituir_todos',
+          preparacao_id_antiga: prepIdAntiga,
+          preparacao_id_nova: localizarSubstituta,
+        }),
+      })
+      if (!res.ok) throw new Error('Erro ao substituir todos')
+      const data = await res.json()
+      toast.success(`${data.atualizados} substituídas, ${data.duplicatas_removidas} duplicatas removidas`)
+      setLocalizarPrepSelecionada(null)
+      setLocalizarSubstituta('')
+      await loadData()
+      await handleLocalizar()
+    } catch {
+      toast.error('Erro ao substituir todos')
+    } finally {
+      setLocalizarSubstituindo(false)
+    }
+  }
+
   async function handleApprove() {
     if (!cardapio) return
     setSaving(true)
@@ -1850,6 +1942,19 @@ export default function CardapioEditorPage() {
             >
               <ArrowDownUp className="w-3 h-3 mr-0.5" />
               Reordenar
+            </Button>
+          )}
+          {/* v8.16: Botão "Localizar e Substituir" preparação no cardápio inteiro */}
+          {semanaAtual && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[10px] text-[#1A3A5C] hover:bg-[#1A3A5C]/10 ml-2"
+              onClick={() => setLocalizarSubstituirOpen(true)}
+              title="Localizar uma preparação no cardápio e substituir por outra (uma por uma ou todas)"
+            >
+              <ArrowLeftRight className="w-3 h-3 mr-0.5" />
+              Substituir
             </Button>
           )}
           {/* Legenda semáforo */}
@@ -3138,6 +3243,129 @@ export default function CardapioEditorPage() {
               </Button>
             </div>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* v8.16: Dialog "Localizar e Substituir" preparação */}
+      <Dialog open={localizarSubstituirOpen} onOpenChange={(v) => {
+        setLocalizarSubstituirOpen(v)
+        if (!v) {
+          setLocalizarBusca('')
+          setLocalizarResultados([])
+          setLocalizarPrepSelecionada(null)
+          setLocalizarSubstituta('')
+        }
+      }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-[#1A3A5C] flex items-center gap-2">
+              <ArrowLeftRight className="w-4 h-4" />
+              Localizar e Substituir Preparação
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 overflow-y-auto flex-1 pr-1">
+            {/* Busca */}
+            <div className="flex gap-2">
+              <Input
+                placeholder="Buscar preparação (ex: Suco, Arroz, Feijão)..."
+                value={localizarBusca}
+                onChange={(e) => setLocalizarBusca(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && localizarBusca.trim().length >= 2) handleLocalizar() }}
+                className="flex-1"
+              />
+              <Button
+                onClick={handleLocalizar}
+                disabled={localizarBuscando || localizarBusca.trim().length < 2}
+                className="bg-[#1A3A5C] hover:bg-[#1A3A5C]/90"
+              >
+                {localizarBuscando ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                <span className="ml-1">Buscar</span>
+              </Button>
+            </div>
+
+            {/* Resultados */}
+            {localizarResultados.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  {localizarResultados.reduce((s, p) => s + p.ocorrencias.length, 0)} ocorrência(s) em {localizarResultados.length} preparação(ões):
+                </p>
+                {localizarResultados.map((prep) => (
+                  <div key={prep.preparacao_id} className="border rounded-md p-2">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium truncate">{prep.preparacao_nome}</span>
+                        {prep.categoria && (
+                          <Badge variant="outline" className="ml-2 text-[9px]">{prep.categoria}</Badge>
+                        )}
+                        <span className="ml-2 text-xs text-muted-foreground">{prep.ocorrencias.length}×</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => setLocalizarPrepSelecionada(localizarPrepSelecionada === prep.preparacao_id ? null : prep.preparacao_id)}
+                      >
+                        {localizarPrepSelecionada === prep.preparacao_id ? 'Cancelar' : 'Substituir'}
+                      </Button>
+                    </div>
+
+                    {/* Lista de ocorrências */}
+                    <div className="text-[11px] text-muted-foreground space-y-0.5 mb-1">
+                      {prep.ocorrencias.slice(0, 8).map((oc, i) => (
+                        <div key={oc.item_id} className="flex items-center gap-2">
+                          <span className="text-[9px] bg-gray-100 px-1 rounded">S{oc.semana_num}</span>
+                          <span className="capitalize">{oc.dia_semana}</span>
+                          <span className="text-[9px] text-[#1A3A5C]">{oc.tipo_refeicao_codigo}</span>
+                        </div>
+                      ))}
+                      {prep.ocorrencias.length > 8 && (
+                        <p className="text-[10px] italic">+ {prep.ocorrencias.length - 8} outras...</p>
+                      )}
+                    </div>
+
+                    {/* Painel de substituição */}
+                    {localizarPrepSelecionada === prep.preparacao_id && (
+                      <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded space-y-2">
+                        <Label className="text-xs">Substituir por qual preparação?</Label>
+                        <Select value={localizarSubstituta} onValueChange={setLocalizarSubstituta}>
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue placeholder="Selecionar preparação substituta" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {preparacoes.filter(p => p.id !== prep.preparacao_id).map((p) => (
+                              <SelectItem key={p.id} value={p.id} className="text-xs">{p.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs flex-1"
+                            disabled={!localizarSubstituta || localizarSubstituindo}
+                            onClick={() => handleSubstituirTodos(prep.preparacao_id)}
+                          >
+                            <ArrowLeftRight className="w-3 h-3 mr-1" />
+                            Substituir TODAS ({prep.ocorrencias.length})
+                          </Button>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          Clique em "Substituir TODAS" para trocar todas as ocorrências de uma vez.
+                          Se a nova preparação já existir em algum slot, a ocorrência será removida (evita duplicata).
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {localizarResultados.length === 0 && localizarBusca && !localizarBuscando && (
+              <p className="text-center text-sm text-muted-foreground py-4">
+                Clique em "Buscar" para localizar preparações.
+              </p>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

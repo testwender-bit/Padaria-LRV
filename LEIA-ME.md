@@ -1,101 +1,126 @@
-# Patch v8.14 — Bifásica Refinada + Fix de Transação + PDF Slots Vazios
+# Patch v8.16 — 4 mudanças
 
-## 3 correções neste patch
+## 1. Bug fix: Clonar creche → bifásica criava cardápio com categoria errada
 
-### 1. Bug: "Transaction not found" ao criar/clonar cardápio
+**Problema:** Ao clonar um cardápio CRECHE para uma escola BIFASICA, o novo
+cardápio era criado com `categoria_escola = 'CRECHE'` (herdada da origem).
+Resultado: o editor não mostrava o slot LANCHE_PRE_ESCOLA (que só existe
+em BIFASICA).
 
-**Causa:** O Supabase free tier com `pgbouncer=true` em modo transação mata
-transações longas. Criar um cardápio novo envolvia 133 INSERTs em UMA transação
-(1 cardápio + 22 semanas + 110 dias). O pgbouncer fechava a conexão antes de
-terminar, gerando "Transaction API error: Transaction not found".
+**Fix:** A API de clonar agora usa `escola.categoria` (categoria da escola
+destino) em vez de `original.categoria_escola`.
 
-**Fix:** Removida a `$transaction` das APIs:
-- `src/app/api/nutricao/cardapios/route.ts` (POST — criar cardápio)
-- `src/app/api/nutricao/cardapios/[id]/clonar/route.ts` (POST — clonar cardápio)
+Arquivo: `src/app/api/nutricao/cardapios/[id]/clonar/route.ts`
 
-Agora fazem creates sequenciais com `createMany` para os dias (1 query por
-semana em vez de 5). Em caso de erro no meio, deleta o cardápio criado
-(cascade cuida da limpeza).
+---
 
-### 2. Bug: PDF não mostrava slots vazios (ex: LANCHE_PRE_ESCOLA)
+## 2. Replicar: opção para NÃO mexer no pão/lanche
 
-**Causa:** O PDF só listava tipos de refeição que tinham pelo menos 1 item na
-semana. Como a bifásica recém-clonada da creche tem o slot LANCHE_PRE_ESCOLA
-vazio em todos os dias, ele não aparecia no PDF.
+**Novo:** Checkbox "Não mexer no pão/lanche (copiar direto)" na tela de
+replicação. Quando marcado:
+- O cardápio é copiado exatamente como está (sem realocar pão/lanche)
+- Pula a validação que exigia dia de pão/lanche configurado
+- Útil quando a origem já está no formato desejado
 
-**Fix:** Agora o PDF carrega TODOS os tipos da categoria via
-`/api/nutricao/categorias-refeicao` e mescla com os tipos que aparecem nos
-itens. Slots vazios aparecem como "—" (ou "≡ igual à creche" para
-LANCHE_PRE_ESCOLA).
+Arquivos:
+- `src/app/(app)/nutricao/cardapios/[id]/replicar/page.tsx` (UI + flag)
+- `src/app/api/nutricao/cardapios/[id]/replicar/route.ts` (API usa flag)
 
-### 3. Bifásica v8.14 (refinamento da estrutura)
+---
 
+## 3. PDF: trocar header "Escola / Categoria / Fase" por texto da Secretaria
+
+**Antes:**
 ```
-1. CAFE_MANHA (Café da Manhã) — 07h30 — 20%
-   ↳ FRUTA (Fruta) — 08h45 / 13h30 — 15% [SUB — mesma fruta 2x, cálculo 1x]
-2. LANCHE_PRE_ESCOLA (Lanche Pré-Escola) — 09h00 / 15h00 — 10%  [slot próprio]
-3. ALMOCO (Almoço) — 10h00 — 30%
-4. JANTAR (Jantar) — 15h30 — 25%
-Total: 100% · 4 linhas no PDF · cabe em 1 folha A4 paisagem ✓
+Escola: EMEF X • Categoria: CRECHE • Fase: Creche (1 a 3 anos)
 ```
 
-Mudanças:
-- FRUTA_MANHA renomeado para "Fruta" (genérico, 2 horários)
-- HIDRATACAO removido da BIFASICA (5% absorvido pela FRUTA)
-- LANCHE_PRE_ESCOLA vira slot próprio (deixou de ser sub), 2 horários
-- LANCHE_PRE_ESCOLA fica cronologicamente acima do ALMOCO (09h00 < 10h00)
+**Depois:**
+```
+SECRETARIA MUNICIPAL DE EDUCAÇÃO DE LUCAS DO RIO VERDE - MT
+```
 
-## Arquivos
+Texto em bold, uppercase, centralizado, preto forte (visível em P&B).
 
-| Arquivo | O que mudou |
-|---------|-------------|
-| `prisma/schema.prisma` | Campo `sub_de_codigo` em `TipoRefeicao` (v8.13) |
-| `scripts/setup-bifasica-v813.ts` | Setup v8.14: renomeia FRUTA, remove HIDRATACAO, LANCHE_PRE_ESCOLA slot próprio |
-| `src/app/(app)/nutricao/cardapios/[id]/page.tsx` | Editor: múltiplos subs + fix WebkitAppearance |
-| `src/app/(app)/nutricao/cardapios/[id]/pdf/page.tsx` | PDF: carrega categorias-refeicao + mostra slots vazios |
-| `src/app/(app)/nutricao/cardapios/[id]/replicar/page.tsx` | Replicação CRECHE ↔ BIFASICA |
-| `src/app/api/nutricao/cardapios/route.ts` | POST: sem $transaction, usa createMany |
-| `src/app/api/nutricao/cardapios/[id]/route.ts` | Inclui `sub_de_codigo` no select |
-| `src/app/api/nutricao/cardapios/[id]/replicar/route.ts` | Usa categoria da escola destino |
-| `src/app/api/nutricao/cardapios/[id]/clonar/route.ts` | Sem $transaction, usa createMany |
-| `src/app/print.css` | Classes para sub-slot e badge "igual à creche" |
+Arquivos:
+- `src/app/(app)/nutricao/cardapios/[id]/pdf/page.tsx` (HTML)
+- `src/app/print.css` (classes `.sp-meta-secretaria`)
+
+---
+
+## 4. Editor: ferramenta "Localizar e Substituir" preparação
+
+**Novo botão "Substituir"** no header da semana (ao lado de "Reordenar").
+
+**Como usar:**
+1. Clique em "Substituir" → abre diálogo
+2. Digite o nome da preparação a localizar (ex: "Suco")
+3. Clique em "Buscar" → mostra todas as ocorrências no cardápio:
+   - Agrupado por preparação
+   - Lista semana/dia/refeição de cada ocorrência
+   - Mostra total de ocorrências
+4. Clique em "Substituir" na preparação desejada
+5. Selecione a preparação substituta no dropdown
+6. Clique em "Substituir TODAS (N)" → troca todas de uma vez
+
+**Lógica inteligente:**
+- Se a nova preparação já existe no slot (dia + tipo_refeicao): deleta a
+  ocorrência atual (evita duplicata — respeita unique constraint)
+- Se não existe: atualiza o `preparacao_id` do item
+- Após substituir, recarrega o cardápio e re-busca automaticamente
+
+Arquivos:
+- `src/app/api/nutricao/cardapios/[id]/localizar-substituir/route.ts` (NOVO — API GET + POST)
+- `src/app/(app)/nutricao/cardapios/[id]/page.tsx` (UI: botão + diálogo + handlers)
+
+---
 
 ## Como aplicar
 
-1. **Descompacte** o zip na RAIZ do projeto (preserva pastas):
+1. **Descompacte** o zip na raiz do projeto (preserva pastas):
    ```bash
-   unzip patch-bifasica-v814.zip -d .
+   unzip patch-v816.zip -d .
    ```
 
-2. **Rode `prisma db push`** (necessário por causa do campo `sub_de_codigo`):
-   ```bash
-   npx prisma generate
-   npx prisma db push --accept-data-loss
-   ```
-   ⚠️ **NÃO causa perda de dados** — apenas adiciona coluna nullable.
-
-3. **Rode o script de setup v8.14** (idempotente):
-   ```bash
-   npx tsx scripts/setup-bifasica-v813.ts --apply
-   ```
-
-4. Faça commit e push:
+2. Faça commit e push:
    ```bash
    git add -A
-   git commit -m "fix(v8.14): transação + PDF slots vazios + bifásica refinada"
+   git commit -m "feat(v8.16): clone categoria destino + replicar sem pão/lanche + PDF secretaria + localizar-substituir"
    git push
    ```
 
-## Após aplicar — teste os 2 bugs corrigidos
+## Após aplicar — teste as 4 mudanças
 
-1. **Criar cardápio:** `/nutricao/cardapios` → "Novo Cardápio" → preencha → Criar
-   - Antes: erro 500 "Transaction not found"
-   - Agora: deve criar com sucesso e redirecionar para o editor
+### Teste 1: Clonar creche → bifásica
+1. Abra um cardápio CRECHE
+2. Clique em "Clonar" → selecione escola bifásica (Chico Mendes)
+3. Abra o cardápio criado
+4. ✅ Deve mostrar 5 slots incluindo LANCHE_PRE_ESCOLA
 
-2. **Clonar creche → bifásica:** abra um cardápio CRECHE → "Clonar" → selecione escola bifásica
-   - Antes: erro 500 (mesmo motivo)
-   - Agora: deve clonar com sucesso
+### Teste 2: Replicar sem mexer no pão/lanche
+1. Abra um cardápio base
+2. Clique em "Replicar p/ Escolas"
+3. ✅ Marque "Não mexer no pão/lanche (copiar direto)"
+4. ✅ Não vai pedir dia de pão/lanche — copia direto
 
-3. **PDF da bifásica:** abra um cardápio BIFASICA → "PDF"
-   - Antes: faltava a linha LANCHE_PRE_ESCOLA (slot vazio)
-   - Agora: mostra 4 linhas incluindo LANCHE_PRE_ESCOLA com "—" nos dias vazios
+### Teste 3: PDF com texto da Secretaria
+1. Abra o PDF de qualquer cardápio
+2. ✅ Header mostra "SECRETARIA MUNICIPAL DE EDUCAÇÃO DE LUCAS DO RIO VERDE - MT"
+3. ✅ Não mostra mais Escola/Categoria/Fase
+
+### Teste 4: Localizar e Substituir
+1. Abra um cardápio no editor
+2. Clique em "Substituir" (botão ao lado de "Reordenar")
+3. Digite "Suco" → clique em "Buscar"
+4. ✅ Mostra todas as ocorrências (ex: 22 semanas × 5 dias)
+5. Clique em "Substituir" em uma preparação
+6. Selecione a substituta → clique em "Substituir TODAS"
+7. ✅ Todas as ocorrências são trocadas de uma vez
+
+## Observações
+
+- A ferramenta "Localizar e Substituir" é **irreversível** — use com cuidado
+- Se a nova preparação já existir em algum slot, a ocorrência é removida
+  (não cria duplicata — respeita a unique constraint do banco)
+- A busca é case-insensitive e parcial (ex: "suco" encontra "Suco de maracujá")
+- Mínimo 2 caracteres para buscar

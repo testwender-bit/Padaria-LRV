@@ -267,35 +267,23 @@ function SemanaPrintPage({
   // como LANCHE_PRE_ESCOLA apareçam no PDF mesmo sem itens.
   // Antes: só apareciam slots que tinham pelo menos 1 item na semana.
   // Agora: mostra todos os slots da categoria, com "—" se vazio.
+  // v8.15: usa APENAS tipos da categoria — ignora itens órfãos de slots
+  // removidos (ex: HIDRATACAO em cardápios antigos de creche).
+  // Os itens órfãos continuam no banco mas não aparecem no PDF.
+  // Para recuperá-los, use o script scripts/mover-hidratacao-para-complemento.ts
   const horariosOverride = (cardapio.horarios_refeicoes || []) as Array<{
     tipo_refeicao_id: string
     horario: string
   }>
 
-  // 1. Pega tipos de refeição que aparecem nos itens da semana (slots preenchidos)
-  const tiposComItens = semana.dias
-    .flatMap((d) => d.itens.map((i) => i.tipo_refeicao))
-
-  // 2. Pega TODOS os tipos da categoria do cardápio (vazio ou não)
-  const tiposDaCategoria = categoriasRefeicao
+  // v8.15: usa APENAS tipos da categoria (não mescla com tipos órfãos de itens)
+  const tiposRefeicao = categoriasRefeicao
     .filter(cr => cr.categoria_escola === cardapio.categoria_escola)
     .map(cr => cr.tipo_refeicao)
-
-  // 3. Mescla: tipos da categoria + tipos extras que aparecem em itens mas não na categoria
-  // (caso raro: itens com tipo_refeicao que não está na categoria)
-  const tiposUnicos: TipoRefeicao[] = []
-  for (const tr of [...tiposDaCategoria, ...tiposComItens]) {
-    if (!tiposUnicos.find(t => t.id === tr.id)) {
-      tiposUnicos.push(tr)
-    }
-  }
-
-  const tiposRefeicao = tiposUnicos
     .map((tr) => {
       const override = horariosOverride.find(h => h.tipo_refeicao_id === tr.id)
       return {
         ...tr,
-        // horário efetivo = override se existir, senão default
         horario_efetivo: override?.horario ?? tr.horario,
       }
     })
@@ -342,12 +330,11 @@ function SemanaPrintPage({
         <div className="sp-header-brand">
           <span className="sp-title">{cardapio.nome}</span>
         </div>
+        {/* v8.16: substituído Escola/Categoria/Fase por texto da Secretaria */}
         <div className="sp-header-meta">
-          <span className="sp-meta-item"><strong>Escola:</strong> {cardapio.escola?.nome || 'Modelo base'}</span>
-          <span className="sp-meta-divider">&#x2022;</span>
-          <span className="sp-meta-item"><strong>Categoria:</strong> {cardapio.categoria_escola}</span>
-          <span className="sp-meta-divider">&#x2022;</span>
-          <span className="sp-meta-item"><strong>Fase:</strong> {getFaseLabel(cardapio.fase_escolar)}</span>
+          <span className="sp-meta-item sp-meta-secretaria">
+            SECRETARIA MUNICIPAL DE EDUCAÇÃO DE LUCAS DO RIO VERDE - MT
+          </span>
         </div>
         <div className="sp-header-week">
           <span className="sp-week-label">Semana {semana.numero}</span>

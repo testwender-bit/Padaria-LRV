@@ -479,6 +479,7 @@
   }
   .sp-meta-item { font-size: 8.5px; color: #cbd5e1; white-space: nowrap; }
   .sp-meta-item strong { color: #e2e8f0; font-weight: 600; }
+  .sp-meta-secretaria { font-size: 9px; color: #1e293b; font-weight: 700; letter-spacing: 0.2px; text-transform: uppercase; white-space: nowrap; }
   .sp-meta-divider { color: #475569; font-size: 6px; margin: 0 2px; }
   .sp-header-week {
     display: flex;
@@ -827,6 +828,7 @@
   }
   .sp-meta-item { font-size: 6pt !important; color: #666 !important; }
   .sp-meta-item strong { color: #999 !important; font-weight: 600 !important; }
+  .sp-meta-secretaria { font-size: 8pt !important; color: #222 !important; font-weight: 700 !important; letter-spacing: 0.2pt !important; text-transform: uppercase !important; }
   .sp-meta-divider { color: #333 !important; font-size: 5pt !important; margin: 0 0.5mm !important; }
   .sp-header-week {
     display: flex !important;

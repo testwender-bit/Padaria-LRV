@@ -13,7 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   ArrowLeft, RefreshCw, Copy, Users, Sandwich, Cookie, CheckCircle2, XCircle,
-  AlertTriangle, Calendar, Info, Sparkles, Layers, CalendarOff
+  AlertTriangle, Calendar, Info, Sparkles, Layers, CalendarOff, ArrowLeftRight
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DIAS_SEMANA_ISO } from '@/lib/preparacao-categorias'
@@ -126,6 +126,8 @@ export default function ReplicarCardapioPage() {
   // v8: feriados do semestre
   const [feriados, setFeriados] = useState<FeriadoSemestre[]>([])
   const [marcarFeriados, setMarcarFeriados] = useState(true)
+  // v8.16: opção para NÃO realocar pão/lanche (copia direto, sem trocar dias)
+  const [manterPaoLanche, setManterPaoLanche] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -244,15 +246,17 @@ export default function ReplicarCardapioPage() {
       return
     }
 
-    // Validações por escola
-    for (const c of escolasArr) {
-      if (baseInfo.temPao && !c.dia_pao) {
-        toast.error(`Escola precisa de dia de pão definido (base tem pão)`)
-        return
-      }
-      if (baseInfo.temLanche && !c.dia_lanche) {
-        toast.error(`Escola precisa de dia de lanche definido (base tem lanche)`)
-        return
+    // Validações por escola — v8.16: pula se manterPaoLanche=true
+    if (!manterPaoLanche) {
+      for (const c of escolasArr) {
+        if (baseInfo.temPao && !c.dia_pao) {
+          toast.error(`Escola precisa de dia de pão definido (base tem pão)`)
+          return
+        }
+        if (baseInfo.temLanche && !c.dia_lanche) {
+          toast.error(`Escola precisa de dia de lanche definido (base tem lanche)`)
+          return
+        }
       }
     }
 
@@ -267,6 +271,7 @@ export default function ReplicarCardapioPage() {
           expandir_para_semestre: expandirParaSemestre,
           sobrescrever_existente: sobrescreverExistente,
           marcar_feriados: marcarFeriados,
+          manter_pao_lanche: manterPaoLanche,  // v8.16
           feriados: feriados.map(f => ({
             data: f.data,
             nome: f.nome,
@@ -488,6 +493,23 @@ export default function ReplicarCardapioPage() {
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Nos dias de feriado, os itens normais serão removidos (dia vazio) e a semana será marcada como diferenciada. Feriados em fins de semana são ignorados.
+                </p>
+              </div>
+            </label>
+
+            {/* v8.16: Manter pão/lanche da origem (não realocar) */}
+            <label className="flex items-center gap-3 cursor-pointer">
+              <Checkbox
+                checked={manterPaoLanche}
+                onCheckedChange={(v) => setManterPaoLanche(Boolean(v))}
+              />
+              <div>
+                <p className="text-sm font-medium flex items-center gap-1.5">
+                  <ArrowLeftRight className="w-3.5 h-3.5 text-blue-500" />
+                  Não mexer no pão/lanche (copiar direto)
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Quando marcado, o cardápio é copiado exatamente como está — sem realocar pão/lanche para o dia configurado da escola destino. Útil quando a origem já está no formato desejado ou quando você quer manter os dias originais.
                 </p>
               </div>
             </label>
