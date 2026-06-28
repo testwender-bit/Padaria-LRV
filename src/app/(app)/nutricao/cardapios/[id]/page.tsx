@@ -442,7 +442,13 @@ export default function CardapioEditorPage() {
     return sortItensByRefeicao(itensDoSlot, tiposRefeicao)
   }
 
-  // v8: Reordenar item dentro do slot (up/down) — OTIMISTICO (sem refresh)
+  // v9.0: Reordenar item dentro do slot (up/down) — OTIMISTICO (sem refresh)
+  // REGRA NOVA:
+  //   - Pega a ordem VISUAL atual do slot (aplica sortItensByRefeicao só para descobrir a ordem visual)
+  //   - Atribui ordens sequenciais (1,2,3...) a TODOS os itens baseado na ordem visual
+  //   - Troca as ordens dos 2 itens (atual e vizinho)
+  //   - Resultado: TODOS os itens ficam com ordem>0 (LOCK MANUAL ativa)
+  //   - Próximas renderizações: sortItensByRefeicao respeita ordem manual (não reordena)
   async function handleReordenarItem(itemId: string, direcao: 'up' | 'down') {
     if (!cardapio || !semanaAtual) return
 
@@ -453,6 +459,7 @@ export default function CardapioEditorPage() {
 
       // Encontra todos os itens do mesmo slot (mesma refeição)
       const itensDoSlot = dia.itens.filter(i => i.tipo_refeicao_id === itemAtual.tipo_refeicao_id)
+      // Aplica sort para descobrir ordem VISUAL atual (respeitando LOCK MANUAL se houver)
       const sortedSlot = sortItensByRefeicao(itensDoSlot, tiposRefeicao)
       const idxAtual = sortedSlot.findIndex(i => i.id === itemId)
       if (idxAtual === -1) continue
@@ -462,20 +469,14 @@ export default function CardapioEditorPage() {
 
       const itemTroca = sortedSlot[idxTroca]
 
-      // Se todos têm ordem 0, atribui ordens sequenciais a TODOS antes de trocar
-      const todosZero = sortedSlot.every(i => (i.ordem ?? 0) === 0)
+      // v9.0: SEMPRE atribui ordens sequenciais (1,2,3...) baseado na ordem visual
+      // Isso ativa o LOCK MANUAL — próximos renders vão respeitar essas ordens
       const ordensMap: Record<string, number> = {}
-      if (todosZero) {
-        sortedSlot.forEach((item, idx) => {
-          ordensMap[item.id] = idx + 1
-        })
-      } else {
-        sortedSlot.forEach((item) => {
-          ordensMap[item.id] = item.ordem ?? 0
-        })
-      }
+      sortedSlot.forEach((item, idx) => {
+        ordensMap[item.id] = idx + 1
+      })
 
-      // Troca as ordens dos dois itens
+      // Troca as ordens dos dois itens (atual e vizinho)
       const temp = ordensMap[itemId]
       ordensMap[itemId] = ordensMap[itemTroca.id]
       ordensMap[itemTroca.id] = temp
@@ -500,12 +501,16 @@ export default function CardapioEditorPage() {
         }
       })
 
-      // Envia para a API (sem esperar para não travar a UI)
+      // Envia as NOVAS ordens para a API (envia todas para garantir consistência)
       try {
         await fetch(`/api/nutricao/cardapios/${cardapioId}/reordenar-item`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ item_id: itemId, direcao }),
+          body: JSON.stringify({
+            item_id: itemId,
+            direcao,
+            ordens_completas: Object.entries(ordensMap).map(([id, ordem]) => ({ item_id: id, ordem })),
+          }),
         })
       } catch {
         toast.error('Erro ao salvar ordem')
