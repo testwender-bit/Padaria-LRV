@@ -14,7 +14,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   ShoppingCart, RefreshCw, FileDown, Filter, Save, Search,
-  Users, Package, AlertCircle, CheckCircle2, Plus, FileSpreadsheet
+  Users, Package, AlertCircle, CheckCircle2, Plus, FileSpreadsheet, Printer, History
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { toast } from 'sonner'
@@ -42,6 +42,7 @@ interface CardapioResumo {
   semestre: number
   semanas_count: number
   is_base?: boolean
+  status?: string  // v9.2: para filtrar APROVADO
 }
 
 interface ItemLista {
@@ -86,17 +87,29 @@ export default function ListaComprasPage() {
   const [saveDialogOpen, setSaveDialogOpen] = useState(false)
   const [saveNome, setSaveNome] = useState('')
 
+  // v9.2: snapshots salvos + filtro de status
+  const [snapshots, setSnapshots] = useState<Array<{ id: string; nome: string; gerada_em: string; status: string }>>([])
+  const [mostrarRascunhos, setMostrarRascunhos] = useState(false)
+
+  // v9.2: cardápios filtrados por status (APROVADO por padrão)
+  const cardapiosFiltrados = mostrarRascunhos
+    ? cardapios
+    : cardapios.filter((c) => c.status === 'APROVADO' || c.is_base)
+
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [cardRes, escRes] = await Promise.all([
+      const [cardRes, escRes, snapRes] = await Promise.all([
         fetch('/api/nutricao/cardapios'),
         fetch('/api/escolas'),
+        fetch('/api/nutricao/lista-compras-snapshots'),
       ])
       const cardData = await cardRes.json()
       const escData = await escRes.json()
+      const snapData = snapRes.ok ? await snapRes.json() : []
       setCardapios(Array.isArray(cardData) ? cardData : [])
       setEscolas(Array.isArray(escData) ? escData : [])
+      setSnapshots(Array.isArray(snapData) ? snapData : [])
     } catch (err) {
       console.error(err)
       toast.error('Erro ao carregar dados')
@@ -107,13 +120,31 @@ export default function ListaComprasPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  // v9.2: carregar snapshot salvo
+  async function handleAbrirSnapshot(snapId: string) {
+    try {
+      const res = await fetch(`/api/nutricao/lista-compras/${snapId}`)
+      if (!res.ok) throw new Error('Erro ao carregar snapshot')
+      const data = await res.json()
+      setResultado({
+        total_gramas: 0,
+        total_kg: 0,
+        por_grupo: {},
+        itens: data.itens_json || [],
+      })
+      toast.success(`Snapshot "${data.nome}" carregado`)
+    } catch {
+      toast.error('Erro ao abrir snapshot')
+    }
+  }
+
   // Auto-select primeiro cardápio base
   useEffect(() => {
-    if (!cardapioId && cardapios.length > 0) {
-      const base = cardapios.find((c) => c.is_base) || cardapios[0]
+    if (!cardapioId && cardapiosFiltrados.length > 0) {
+      const base = cardapiosFiltrados.find((c) => c.is_base) || cardapiosFiltrados[0]
       setCardapioId(base.id)
     }
-  }, [cardapios, cardapioId])
+  }, [cardapiosFiltrados, cardapioId])
 
   const cardapioSel = cardapios.find((c) => c.id === cardapioId)
 
@@ -415,6 +446,10 @@ export default function ListaComprasPage() {
             <Button variant="outline" size="sm" onClick={exportarXLSX} className="border-emerald-200 text-emerald-700 hover:bg-emerald-50">
               <FileSpreadsheet className="w-4 h-4 mr-1" /> Excel (5 abas)
             </Button>
+            {/* v9.2: Botão Imprimir/PDF */}
+            <Button variant="outline" size="sm" onClick={() => window.print()} className="border-blue-200 text-blue-700 hover:bg-blue-50">
+              <Printer className="w-4 h-4 mr-1" /> Imprimir / PDF
+            </Button>
           </div>
         )}
       </motion.div>
@@ -434,13 +469,23 @@ export default function ListaComprasPage() {
               <Select value={cardapioId} onValueChange={setCardapioId}>
                 <SelectTrigger><SelectValue placeholder="Selecionar cardápio" /></SelectTrigger>
                 <SelectContent>
-                  {cardapios.map((c) => (
+                  {cardapiosFiltrados.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.is_base ? '⭐ ' : ''}{c.nome} ({c.ano}/{c.semestre})
+                      {c.status === 'RASCUNHO' && !c.is_base ? ' ⚠️ Rascunho' : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={mostrarRascunhos}
+                  onChange={(e) => setMostrarRascunhos(e.target.checked)}
+                  className="h-3 w-3"
+                />
+                Mostrar rascunhos
+              </label>
               {cardapioSel && (
                 <p className="text-[10px] text-muted-foreground">
                   {cardapioSel.semanas_count} semanas · fase {cardapioSel.fase_escolar}
@@ -762,6 +807,41 @@ export default function ListaComprasPage() {
             </CardContent>
           </Card>
         </motion.div>
+      )}
+
+      {/* v9.2: Lista de snapshots salvos */}
+      {snapshots.length > 0 && (
+        <Card className="border-[#1A3A5C]/10">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold text-[#1A3A5C] flex items-center gap-2">
+              <History className="w-4 h-4" />
+              Snapshots Salvos ({snapshots.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-[120px]">
+              <div className="space-y-1">
+                {snapshots.map((snap) => (
+                  <button
+                    key={snap.id}
+                    onClick={() => handleAbrirSnapshot(snap.id)}
+                    className="w-full text-left p-2 rounded border border-gray-100 hover:bg-blue-50 hover:border-blue-200 transition-colors flex items-center justify-between gap-2"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{snap.nome}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {new Date(snap.gerada_em).toLocaleString('pt-BR')}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-[9px] flex-shrink-0">
+                      {snap.status}
+                    </Badge>
+                  </button>
+                ))}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
       )}
 
       {/* Save Dialog */}

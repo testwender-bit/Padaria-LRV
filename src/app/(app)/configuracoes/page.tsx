@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Settings, Plus, Edit2, Save, Trash2, School, Wheat, Package, X } from 'lucide-react'
+import { Settings, Plus, Edit2, Save, Trash2, School, Wheat, Package, X, Users } from 'lucide-react'
 import { CATEGORIAS_ESCOLA, ROTAS, TIPOS_PAO } from '@/lib/unit-options'
 import { DIAS_SEMANA, DIAS_LABEL_CURTO } from '@/lib/date-utils'
 import { toast } from 'sonner'
@@ -40,6 +40,12 @@ interface Escola {
   ativo: boolean
   ordem_rota: number
   obs: string | null
+  alunos_parcial?: number
+  alunos_integral?: number
+  mescla_parcial_integral?: boolean
+  segmento?: string
+  dia_pao_frances?: string | null
+  dia_lanche?: string | null
   pf_quantidades: {
     id: string
     tipo_pao: string
@@ -354,6 +360,71 @@ export default function ConfiguracoesPage() {
                   Escola ativa
                 </label>
               </div>
+
+              {/* v9.2: Configuração de alunos para lista de compras */}
+              <div className="border-t pt-3 mt-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-[#1A3A5C]" />
+                  <span className="text-sm font-semibold text-[#1A3A5C]">Alunos (para Lista de Compras)</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Alunos Parcial (turno único)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={editEscola.alunos_parcial ?? 0}
+                      onChange={(e) => setEditEscola((prev) => ({ ...prev, alunos_parcial: parseInt(e.target.value) || 0 }))}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <Label>Alunos Integral (permanece o dia)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={editEscola.alunos_integral ?? 0}
+                      onChange={(e) => setEditEscola((prev) => ({ ...prev, alunos_integral: parseInt(e.target.value) || 0 }))}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label>Segmento (define fase escolar para percapita)</Label>
+                  <Select
+                    value={editEscola.segmento || 'REGULAR'}
+                    onValueChange={(v) => setEditEscola((prev) => ({ ...prev, segmento: v }))}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CRECHE">Creche / Berçário</SelectItem>
+                      <SelectItem value="PRE_ESCOLA">Pré-Escola (4-5 anos)</SelectItem>
+                      <SelectItem value="FUND_INICIAL">Fundamental Inicial (6-10)</SelectItem>
+                      <SelectItem value="FUND_FINAL">Fundamental Final (11-15)</SelectItem>
+                      <SelectItem value="REGULAR">Regular (misto)</SelectItem>
+                      <SelectItem value="INTEGRAL">Integral</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={editEscola.mescla_parcial_integral ?? false}
+                    onChange={(e) => setEditEscola((prev) => ({ ...prev, mescla_parcial_integral: e.target.checked }))}
+                  />
+                  <span>Mescla parcial + integral na refeição principal (comem juntos no almoço)</span>
+                </label>
+                {(editEscola.alunos_parcial ?? 0) + (editEscola.alunos_integral ?? 0) > 0 && (
+                  <div className="text-xs text-muted-foreground bg-blue-50 p-2 rounded border border-blue-100">
+                    Total de alunos: <strong>{(editEscola.alunos_parcial ?? 0) + (editEscola.alunos_integral ?? 0)}</strong>
+                    {editEscola.mescla_parcial_integral && (editEscola.alunos_parcial ?? 0) > 0 && (editEscola.alunos_integral ?? 0) > 0
+                      ? ` · Refeição principal: ${(editEscola.alunos_parcial ?? 0) + (editEscola.alunos_integral ?? 0)} alunos juntos`
+                      : ' · Sem mescla'
+                    }
+                  </div>
+                )}
+              </div>
+
               <Button onClick={handleUpdateEscola} className="w-full bg-[#1A3A5C]">Salvar Alterações</Button>
             </div>
           </DialogContent>
