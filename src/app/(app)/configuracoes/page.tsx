@@ -483,6 +483,13 @@ export default function ConfiguracoesPage() {
                           ativo: escola.ativo,
                           ordem_rota: escola.ordem_rota,
                           obs: escola.obs,
+                          // v9.3: carregar campos de alunos (estavam faltando!)
+                          alunos_parcial: escola.alunos_parcial ?? 0,
+                          alunos_integral: escola.alunos_integral ?? 0,
+                          mescla_parcial_integral: escola.mescla_parcial_integral ?? false,
+                          segmento: escola.segmento ?? 'REGULAR',
+                          dia_pao_frances: escola.dia_pao_frances ?? null,
+                          dia_lanche: escola.dia_lanche ?? null,
                         })
                         setEditEscolaDialogOpen(true)
                       }}

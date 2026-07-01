@@ -1,65 +1,37 @@
-# Patch v9.3 — Lista de Compras: Fluxo Simplificado
+# Fix — Alunos não salvavam ao editar escola
 
-## Mudança principal
+## Bug
 
-Removida a seleção de escolas (era redundante). Agora o fluxo é:
+Ao editar uma escola e preencher o número de alunos, ao salvar e reabrir
+o diálogo de edição, os campos apareciam zerados novamente.
 
+## Causa
+
+O botão "Editar escola" carregava os dados da escola no estado `editEscola`,
+mas **não incluía** os campos `alunos_parcial`, `alunos_integral`,
+`mescla_parcial_integral`, `segmento`, `dia_pao_frances`, `dia_lanche`.
+
+Resultado: o diálogo abria com esses campos como `undefined` (mostrava 0),
+o usuário digitava o valor, salvava (a API gravava corretamente), mas ao
+reabrir o diálogo os campos voltavam a aparecer como 0 porque não eram
+carregados do banco.
+
+## Fix
+
+Adicionados os campos faltantes no `setEditEscola()` do botão de editar:
+```typescript
+alunos_parcial: escola.alunos_parcial ?? 0,
+alunos_integral: escola.alunos_integral ?? 0,
+mescla_parcial_integral: escola.mescla_parcial_integral ?? false,
+segmento: escola.segmento ?? 'REGULAR',
+dia_pao_frances: escola.dia_pao_frances ?? null,
+dia_lanche: escola.dia_lanche ?? null,
 ```
-1. Selecionar cardápios das escolas (cada cardápio JÁ tem escola vinculada)
-2. Selecionar semanas (1-22)
-3. Gerar Lista — o sistema usa automaticamente os alunos da escola de cada cardápio
-```
-
-## O que mudou
-
-### UI (page.tsx)
-- **REMOVIDA** a seção "Escolas" (checkboxes de escolas)
-- Cada cardápio agora mostra:
-  - Nome da escola vinculada (🏫 Escola X)
-  - Badge com alunos: `200P + 50I`
-  - Aviso vermelho se escola não tem alunos cadastrados
-  - Fase escolar do cardápio
-- Só aparecem cardápios com escola vinculada (não aparecem bases sem escola)
-- Scroll maior (200px) para acomodar as informações extras
-
-### API (route.ts)
-- **REMOVIDO** parâmetro `escolas_ids` (não é mais necessário)
-- Para cada cardápio selecionado, busca a escola vinculada via `cardapio.escola_id`
-- Usa os alunos daquela escola específica
-- Usa a fase escolar daquele cardápio específico (cada cardápio pode ter fase diferente)
-
-### Bug corrigido: Caso 5 (× 2 para integral sem mescla)
-- **Antes:** `percapita × alunos_integral × 2` (superestimava refeições não-principais)
-- **Agora:** `percapita × alunos_parcial + percapita × alunos_integral` (soma simples)
 
 ## Como aplicar
-
 ```bash
-unzip patch-lista-compras-v9.3.zip -d .
+unzip patch-fix-alunos-save.zip -d .
 git add -A
-git commit -m "feat(v9.3): lista de compras simplificada — sem seleção de escolas"
+git commit -m "fix: carregar campos de alunos ao editar escola"
 git push
 ```
-
-## Fluxo de uso
-
-1. Vá em `/nutricao/lista-compras`
-2. Selecione os cardápios das escolas que quer incluir
-   - Cada cardápio mostra: nome, escola, alunos, fase
-   - Se a escola não tem alunos → aparece aviso vermelho
-3. Selecione as semanas (1-22, ou vazio = todas)
-4. Clique "Gerar Lista"
-5. O sistema calcula automaticamente:
-   - Para cada cardápio: usa os alunos da escola vinculada
-   - Para cada ingrediente: percapita × porções × alunos
-   - Soma tudo numa lista consolidada
-6. Exporte (CSV / Excel / Imprimir / Salvar Snapshot)
-
-## IMPORTANTE: configure os alunos das escolas primeiro
-
-Se os cardápios aparecem com "⚠️ Sem alunos cadastrados":
-1. Vá em `/configuracoes` → Escolas → Editar
-2. Preencha Alunos Parcial e/ou Integral
-3. Volte para a lista de compras
-
-Sem alunos cadastrados, o cálculo retorna zero.
