@@ -126,11 +126,24 @@ export default function ListaComprasPage() {
       const res = await fetch(`/api/nutricao/lista-compras/${snapId}`)
       if (!res.ok) throw new Error('Erro ao carregar snapshot')
       const data = await res.json()
+      // v9.2: preenche todos os campos do ListaResponse (snapshot só tem itens_json)
+      const itens = data.itens_json || []
+      const totalGramas = itens.reduce((s: number, i: ItemLista) => s + (i.total_gramas || 0), 0)
+      const porGrupo: Record<string, number> = {}
+      for (const i of itens) {
+        porGrupo[i.alimento_grupo] = (porGrupo[i.alimento_grupo] || 0) + (i.total_gramas || 0)
+      }
       setResultado({
-        total_gramas: 0,
-        total_kg: 0,
-        por_grupo: {},
-        itens: data.itens_json || [],
+        cardapio: { id: '', nome: data.nome || 'Snapshot', fase_escolar: '', ano: 0, semestre: 0 },
+        semanas_consideradas: [],
+        escolas: data.escolas_snapshot ? (typeof data.escolas_snapshot === 'string' ? JSON.parse(data.escolas_snapshot) : data.escolas_snapshot) : [],
+        total_alunos_parcial: 0,
+        total_alunos_integral: 0,
+        total_itens: itens.length,
+        total_gramas: totalGramas,
+        total_kg: totalGramas / 1000,
+        por_grupo: porGrupo,
+        itens: itens,
       })
       toast.success(`Snapshot "${data.nome}" carregado`)
     } catch {
