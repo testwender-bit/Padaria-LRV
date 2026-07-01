@@ -128,10 +128,10 @@ export default function ListaComprasPage() {
       const data = await res.json()
       // v9.2: preenche todos os campos do ListaResponse (snapshot só tem itens_json)
       const itens = data.itens_json || []
-      const totalGramas = itens.reduce((s: number, i: ItemLista) => s + (i.total_gramas || 0), 0)
+      const totalGramas = itens.reduce((s: number, i: ItemLista) => s + (i.qtd_total_gramas || 0), 0)
       const porGrupo: Record<string, number> = {}
       for (const i of itens) {
-        porGrupo[i.alimento_grupo] = (porGrupo[i.alimento_grupo] || 0) + (i.total_gramas || 0)
+        porGrupo[i.alimento_grupo] = (porGrupo[i.alimento_grupo] || 0) + (i.qtd_total_gramas || 0)
       }
       setResultado({
         cardapio: { id: '', nome: data.nome || 'Snapshot', fase_escolar: '', ano: 0, semestre: 0 },
