@@ -36,7 +36,8 @@ interface Escola {
 interface CardapioResumo {
   id: string
   nome: string
-  escola?: { nome: string } | null
+  escola?: { id: string; nome: string } | null
+  escola_id?: string | null
   fase_escolar: string
   ano: number
   semestre: number
@@ -93,10 +94,12 @@ export default function ListaComprasPage() {
   const [snapshots, setSnapshots] = useState<Array<{ id: string; nome: string; gerada_em: string; status: string }>>([])
   const [mostrarRascunhos, setMostrarRascunhos] = useState(false)
 
-  // v9.2: cardápios filtrados por status (APROVADO por padrão)
-  const cardapiosFiltrados = mostrarRascunhos
+  // v9.3: só mostra cardápios com escola vinculada (não bases sem escola)
+  // + filtra por status APROVADO por padrão
+  const cardapiosFiltrados = (mostrarRascunhos
     ? cardapios
-    : cardapios.filter((c) => c.status === 'APROVADO' || c.is_base)
+    : cardapios.filter((c) => c.status === 'APROVADO')
+  ).filter((c) => c.escola_id || c.escola)  // só com escola vinculada
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -197,15 +200,10 @@ export default function ListaComprasPage() {
       toast.error('Selecione ao menos um cardápio')
       return
     }
-    if (escolasSel.size === 0) {
-      toast.error('Selecione ao menos uma escola')
-      return
-    }
     setGerando(true)
     try {
       const params = new URLSearchParams({
         cardapio_ids: Array.from(cardapiosSel).join(','),
-        escolas_ids: Array.from(escolasSel).join(','),
       })
       if (semanasSel.size > 0 && semanasSel.size < semanasOptions.length) {
         params.set('semanas', Array.from(semanasSel).sort((a, b) => a - b).join(','))
@@ -497,14 +495,25 @@ export default function ListaComprasPage() {
                   </button>
                 </div>
               </div>
-              <ScrollArea className="h-[160px] border rounded-md p-2">
+              <ScrollArea className="h-[200px] border rounded-md p-2">
                 <div className="space-y-1">
-                  {cardapiosFiltrados.map((c) => {
+                  {cardapiosFiltrados.length === 0 ? (
+                    <p className="text-center text-xs text-muted-foreground py-4">
+                      Nenhum cardápio de escola encontrado.
+                      <br />Crie cardápios vinculados a escolas em /nutricao/cardapios
+                    </p>
+                  ) : cardapiosFiltrados.map((c) => {
                     const sel = cardapiosSel.has(c.id)
+                    // v9.3: busca alunos da escola vinculada
+                    const escolaId = c.escola_id || c.escola?.id
+                    const escolaData = escolas.find(e => e.id === escolaId)
+                    const alunosP = escolaData?.alunos_parcial || 0
+                    const alunosI = escolaData?.alunos_integral || 0
+                    const totalAlunos = alunosP + alunosI
                     return (
                       <label
                         key={c.id}
-                        className={`flex items-center gap-2 p-1.5 rounded cursor-pointer text-xs ${
+                        className={`flex items-start gap-2 p-2 rounded cursor-pointer text-xs ${
                           sel ? 'bg-[#1A3A5C]/5 border border-[#1A3A5C]/20' : 'hover:bg-gray-50 border border-transparent'
                         }`}
                       >
@@ -519,72 +528,44 @@ export default function ListaComprasPage() {
                               return next
                             })
                           }}
-                          className="h-3 w-3"
+                          className="h-3 w-3 mt-0.5"
                         />
-                        <span className="flex-1 truncate">
-                          {c.is_base ? '⭐ ' : ''}{c.nome}
-                        </span>
-                        <span className="text-[9px] text-muted-foreground">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1">
+                            <span className="truncate font-medium">{c.nome}</span>
+                            {c.status === 'RASCUNHO' && <span className="text-amber-500 text-[9px]">⚠️ Rascunho</span>}
+                          </div>
+                          <div className="flex items-center gap-2 text-[9px] text-muted-foreground mt-0.5">
+                            <span className="truncate">🏫 {c.escola?.nome || 'Sem escola'}</span>
+                            {totalAlunos > 0 ? (
+                              <Badge variant="outline" className="text-[8px] h-3.5 px-1">
+                                {alunosP}P + {alunosI}I
+                              </Badge>
+                            ) : (
+                              <span className="text-red-500 text-[8px]">⚠️ Sem alunos cadastrados</span>
+                            )}
+                            <span className="text-[8px]">· {c.fase_escolar}</span>
+                          </div>
+                        </div>
+                        <span className="text-[9px] text-muted-foreground flex-shrink-0">
                           {c.ano}/{c.semestre}
-                          {c.status === 'RASCUNHO' && !c.is_base ? ' ⚠️' : ''}
                         </span>
                       </label>
                     )
                   })}
                 </div>
               </ScrollArea>
-              <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={mostrarRascunhos}
-                  onChange={(e) => setMostrarRascunhos(e.target.checked)}
-                  className="h-3 w-3"
-                />
-                Mostrar rascunhos
-              </label>
-            </div>
-
-            {/* Escolas */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">Escolas ({escolasSel.size} selecionadas)</Label>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => toggleAllEscolas(true)}
-                    className="text-[10px] text-[#1A3A5C] hover:underline"
-                  >
-                    Todas
-                  </button>
-                  <span className="text-gray-300">|</span>
-                  <button
-                    onClick={() => toggleAllEscolas(false)}
-                    className="text-[10px] text-muted-foreground hover:underline"
-                  >
-                    Nenhuma
-                  </button>
-                </div>
-              </div>
-              <ScrollArea className="h-32 border rounded-md p-2">
-                <div className="space-y-1">
-                  {escolas.filter(e => e.ativo).map((e) => (
-                    <label
-                      key={e.id}
-                      className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-xs ${
-                        escolasSel.has(e.id) ? 'bg-[#1A3A5C]/10' : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <Checkbox
-                        checked={escolasSel.has(e.id)}
-                        onCheckedChange={() => toggleEscola(e.id)}
-                      />
-                      <span className="flex-1 truncate font-medium">{e.nome}</span>
-                      <Badge variant="outline" className="text-[9px] h-4">
-                        {e.alunos_parcial}P + {e.alunos_integral}I
-                      </Badge>
-                    </label>
-                  ))}
-                </div>
-              </ScrollArea>
+              {cardapiosFiltrados.length > 0 && (
+                <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={mostrarRascunhos}
+                    onChange={(e) => setMostrarRascunhos(e.target.checked)}
+                    className="h-3 w-3"
+                  />
+                  Mostrar rascunhos
+                </label>
+              )}
             </div>
           </div>
 
@@ -643,7 +624,7 @@ export default function ListaComprasPage() {
 
           <Button
             onClick={gerarLista}
-            disabled={gerando || cardapiosSel.size === 0 || escolasSel.size === 0}
+            disabled={gerando || cardapiosSel.size === 0}
             className="w-full bg-[#1A3A5C] hover:bg-[#1A3A5C]/90"
           >
             {gerando ? (

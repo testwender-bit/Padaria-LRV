@@ -1,27 +1,30 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import {
-  calcularPercapitaTotal,
-  isRefeicaoPrincipal,
-  semanaSemestreParaCiclo,
-} from '@/lib/cardapio-base-utils'
 import { calcularPercapitaPorFase, type FaseEscolar } from '@/lib/nutricao-utils'
+import { isRefeicaoPrincipal } from '@/lib/cardapio-base-utils'
 
 // ============================================================
 // GET /api/nutricao/lista-compras
-// Query: cardapio_id (obrigatório), semanas (ex.: "1,2,3" ou "all"),
-//        escolas_ids (ex.: "id1,id2" — se omitido, usa todas as escolas ativas)
-// Retorna a lista de compras consolidada por ingrediente.
 // ============================================================
+// v9.3 — FLUXO SIMPLIFICADO:
+//   Recebe: cardapio_ids (múltiplos) + semanas
+//   Cada cardápio JÁ tem escola_id vinculado.
+//   A API busca a escola de cada cardápio automaticamente.
+//   Usa os alunos daquela escola + fase daquele cardápio.
+//
+// Query: cardapio_ids=id1,id2,id3 (obrigatório)
+//        semanas="1,2,3" ou "all" (default: all)
+//
+// NÃO recebe mais escolas_ids — é redundante.
+// ============================================================
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
 
-    // v9.2: suporta múltiplos cardápios (cardapio_ids=id1,id2,id3)
-    // Mantém compatibilidade com cardapio_id (singular, legado)
     const cardapioIdsParam = searchParams.get('cardapio_ids') || searchParams.get('cardapio_id')
     if (!cardapioIdsParam) {
-      return NextResponse.json({ error: 'Query param obrigatório: cardapio_ids (ou cardapio_id)' }, { status: 400 })
+      return NextResponse.json({ error: 'Query param obrigatório: cardapio_ids' }, { status: 400 })
     }
     const cardapioIds = cardapioIdsParam.split(',').map((s) => s.trim()).filter(Boolean)
 
@@ -29,11 +32,6 @@ export async function GET(request: Request) {
     const semanasLista = semanasParam === 'all'
       ? null
       : semanasParam.split(',').map((s) => Number(s.trim())).filter((n) => !isNaN(n) && n > 0)
-
-    const escolasIdsParam = searchParams.get('escolas_ids')
-    const escolasIds = escolasIdsParam
-      ? escolasIdsParam.split(',').map((s) => s.trim()).filter(Boolean)
-      : null
 
     // Define o include completo (reutilizável)
     const semanasInclude = {
@@ -58,10 +56,11 @@ export async function GET(request: Request) {
       },
     }
 
-    // v9.2: busca TODOS os cardápios selecionados
+    // Busca TODOS os cardápios selecionados COM a escola vinculada
     const cardapios = await db.cardapioNutricional.findMany({
       where: { id: { in: cardapioIds } },
       include: {
+        escola: { select: { id: true, nome: true, nome_curto: true, alunos_parcial: true, alunos_integral: true, mescla_parcial_integral: true } },
         semanas: semanasLista
           ? { where: { numero: { in: semanasLista } }, include: semanasInclude }
           : { include: semanasInclude },
@@ -72,19 +71,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Nenhum cardápio encontrado' }, { status: 404 })
     }
 
-    // Buscar escolas-alvo (todas as ativas se não filtradas)
-    const escolas = await db.escola.findMany({
-      where: {
-        ativo: true,
-        ...(escolasIds ? { id: { in: escolasIds } } : {}),
-      },
-    })
-
-    if (escolas.length === 0) {
-      return NextResponse.json({ error: 'Nenhuma escola encontrada' }, { status: 404 })
+    // v9.3: Filtra só cardápios que têm escola vinculada (ignora bases sem escola)
+    const cardapiosComEscola = cardapios.filter(c => c.escola_id && c.escola)
+    if (cardapiosComEscola.length === 0) {
+      return NextResponse.json({
+        error: 'Os cardápios selecionados não têm escola vinculada. Selecione cardápios de escolas (não bases).'
+      }, { status: 400 })
     }
 
-    // v9.2: acumulador único para TODOS os cardápios
+    // v9.3: acumulador único para TODOS os cardápios
     const acumulador = new Map<string, {
       alimento_id: string
       alimento_nome: string
@@ -97,10 +92,26 @@ export async function GET(request: Request) {
       por_escola: Map<string, { escola_id: string; escola_nome: string; gramas: number }>
     }>()
 
-    // v9.2: processa CADA cardápio selecionado
+    // v9.3: processa CADA cardápio usando a SUA escola vinculada
     const todasSemanasConsideradas = new Set<number>()
-    for (const cardapio of cardapios) {
+    const escolasSnapshot: Array<{ id: string; nome: string; alunos_parcial: number; alunos_integral: number; mescla: boolean }> = []
+    const escolasProcessadas = new Set<string>()
+
+    for (const cardapio of cardapiosComEscola) {
+      const escola = cardapio.escola!
       const faseEscolar = cardapio.fase_escolar as FaseEscolar
+
+      // Snapshot da escola (só adiciona uma vez)
+      if (!escolasProcessadas.has(escola.id)) {
+        escolasProcessadas.add(escola.id)
+        escolasSnapshot.push({
+          id: escola.id,
+          nome: escola.nome,
+          alunos_parcial: escola.alunos_parcial || 0,
+          alunos_integral: escola.alunos_integral || 0,
+          mescla: escola.mescla_parcial_integral || false,
+        })
+      }
 
       // Para cada semana do cardápio
       for (const semana of cardapio.semanas) {
@@ -113,7 +124,7 @@ export async function GET(request: Request) {
 
             // Para cada ingrediente da preparação
             for (const ing of item.preparacao.ingredientes) {
-              // Calcular percapita em gramas para a fase escolar
+              // Calcular percapita em gramas para a fase escolar DO CARDÁPIO
               let percapitaGramas = ing.quantidade_gramas
               if (!ing.mesma_percapita) {
                 const pc = ing.percapitas?.find((p) => p.fase_escolar === faseEscolar)
@@ -126,44 +137,43 @@ export async function GET(request: Request) {
               // Multiplica por porções
               const percapitaFinal = percapitaGramas * item.porcoes
 
-              // Para cada escola-alvo, calcular o total
-              for (const escola of escolas) {
-                const total = calcularPercapitaTotal(percapitaFinal, isPrincipal, {
-                  alunos_parcial: escola.alunos_parcial || 0,
-                  alunos_integral: escola.alunos_integral || 0,
-                  mescla_parcial_integral: escola.mescla_parcial_integral,
+              // v9.3: Usa OS ALUNOS DA ESCOLA VINCULADA a este cardápio
+              const total = calcularPercapitaTotalSimples(
+                percapitaFinal,
+                escola.alunos_parcial || 0,
+                escola.alunos_integral || 0,
+                escola.mescla_parcial_integral || false,
+                isPrincipal
+              )
+
+              if (total <= 0) continue
+
+              // Atualizar acumulador
+              const key = ing.alimento.id
+              if (!acumulador.has(key)) {
+                acumulador.set(key, {
+                  alimento_id: ing.alimento.id,
+                  alimento_nome: ing.alimento.nome,
+                  alimento_grupo: ing.alimento.grupo,
+                  alimento_unidade: 'g',
+                  alimento_medida_caseira: ing.alimento.medida_caseira,
+                  gramas_por_medida: ing.alimento.gramas_por_medida || 0,
+                  qtd_total_gramas: 0,
+                  qtd_total_medidas: 0,
+                  por_escola: new Map(),
                 })
-
-                if (total.total_gramas <= 0) continue
-
-                // Atualizar acumulador
-                const key = ing.alimento.id
-                if (!acumulador.has(key)) {
-                  acumulador.set(key, {
-                    alimento_id: ing.alimento.id,
-                    alimento_nome: ing.alimento.nome,
-                    alimento_grupo: ing.alimento.grupo,
-                    alimento_unidade: 'g',
-                    alimento_medida_caseira: ing.alimento.medida_caseira,
-                    gramas_por_medida: ing.alimento.gramas_por_medida || 0,
-                    qtd_total_gramas: 0,
-                    qtd_total_medidas: 0,
-                    por_escola: new Map(),
-                  })
-                }
-                const entry = acumulador.get(key)!
-                entry.qtd_total_gramas += total.total_gramas
-
-                const escolaKey = escola.id
-                if (!entry.por_escola.has(escolaKey)) {
-                  entry.por_escola.set(escolaKey, {
-                    escola_id: escola.id,
-                    escola_nome: escola.nome,
-                    gramas: 0,
-                  })
-                }
-                entry.por_escola.get(escolaKey)!.gramas += total.total_gramas
               }
+              const entry = acumulador.get(key)!
+              entry.qtd_total_gramas += total
+
+              if (!entry.por_escola.has(escola.id)) {
+                entry.por_escola.set(escola.id, {
+                  escola_id: escola.id,
+                  escola_nome: escola.nome,
+                  gramas: 0,
+                })
+              }
+              entry.por_escola.get(escola.id)!.gramas += total
             }
           }
         }
@@ -197,16 +207,6 @@ export async function GET(request: Request) {
       })
       .sort((a, b) => b.qtd_total_gramas - a.qtd_total_gramas)
 
-    // Snapshot de escolas consideradas
-    const escolasSnapshot = escolas.map((e) => ({
-      id: e.id,
-      nome: e.nome,
-      categoria: e.categoria,
-      alunos_parcial: e.alunos_parcial || 0,
-      alunos_integral: e.alunos_integral || 0,
-      mescla: e.mescla_parcial_integral,
-    }))
-
     // Resumo por grupo alimentar
     const porGrupo: Record<string, number> = {}
     for (const item of itens) {
@@ -216,13 +216,15 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       cardapio: {
-        id: cardapios[0]?.id || '',
-        nome: cardapios.length === 1 ? cardapios[0].nome : `${cardapios.length} cardápios`,
-        fase_escolar: cardapios.length === 1 ? cardapios[0].fase_escolar : 'múltiplas',
-        ano: cardapios[0]?.ano || 0,
-        semestre: cardapios[0]?.semestre || 0,
+        id: cardapiosComEscola.length === 1 ? cardapiosComEscola[0].id : '',
+        nome: cardapiosComEscola.length === 1
+          ? cardapiosComEscola[0].nome
+          : `${cardapiosComEscola.length} cardápios`,
+        fase_escolar: cardapiosComEscola.length === 1 ? cardapiosComEscola[0].fase_escolar : 'múltiplas',
+        ano: cardapiosComEscola[0]?.ano || 0,
+        semestre: cardapiosComEscola[0]?.semestre || 0,
       },
-      cardapios_nomes: cardapios.map((c) => c.nome),
+      cardapios_nomes: cardapiosComEscola.map((c) => `${c.nome} — ${c.escola?.nome || '?'}`),
       semanas_consideradas: Array.from(todasSemanasConsideradas).sort((a, b) => a - b),
       escolas: escolasSnapshot,
       total_alunos_parcial: escolasSnapshot.reduce((acc, e) => acc + e.alunos_parcial, 0),
@@ -240,9 +242,50 @@ export async function GET(request: Request) {
 }
 
 // ============================================================
+// v9.3: Cálculo simplificado de percapita × alunos
+// Corrige o bug do Caso 5 (× 2 para refeições não-principais)
+// ============================================================
+// Regras:
+//   1. Só parcial: percapita × alunos_parcial
+//   2. Só integral: percapita × alunos_integral (1× — não 2×)
+//   3. Mescla + refeição principal: percapita × (parcial + integral)
+//   4. Mescla + refeição não-principal: percapita × alunos_integral
+//   5. Sem mescla (ambos > 0): percapita × parcial + percapita × integral (não × 2)
+// ============================================================
+function calcularPercapitaTotalSimples(
+  percapitaGramas: number,
+  alunosParcial: number,
+  alunosIntegral: number,
+  mescla: boolean,
+  refeicaoPrincipal: boolean
+): number {
+  // Caso 1: só parcial
+  if (alunosIntegral === 0) {
+    return percapitaGramas * alunosParcial
+  }
+
+  // Caso 2: só integral (v9.3: 1× não 2×)
+  if (alunosParcial === 0) {
+    return percapitaGramas * alunosIntegral
+  }
+
+  // Caso 3: mescla + refeição principal
+  if (mescla && refeicaoPrincipal) {
+    return percapitaGramas * (alunosParcial + alunosIntegral)
+  }
+
+  // Caso 4: mescla + refeição não-principal (só integral)
+  if (mescla && !refeicaoPrincipal) {
+    return percapitaGramas * alunosIntegral
+  }
+
+  // Caso 5: sem mescla (ambos > 0) — v9.3: soma simples (não × 2)
+  return percapitaGramas * alunosParcial + percapitaGramas * alunosIntegral
+}
+
+// ============================================================
 // POST /api/nutricao/lista-compras
 // Salva um snapshot da lista de compras gerada.
-// Body: { nome, cardapio_id, escolas_snapshot, itens_json }
 // ============================================================
 export async function POST(request: Request) {
   try {
