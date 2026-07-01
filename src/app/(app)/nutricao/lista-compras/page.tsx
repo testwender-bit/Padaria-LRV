@@ -77,6 +77,8 @@ export default function ListaComprasPage() {
   const [loading, setLoading] = useState(true)
 
   const [cardapioId, setCardapioId] = useState('')
+  // v9.2: seleção múltipla de cardápios
+  const [cardapiosSel, setCardapiosSel] = useState<Set<string>>(new Set())
   const [semanasSel, setSemanasSel] = useState<Set<number>>(new Set())
   const [escolasSel, setEscolasSel] = useState<Set<string>>(new Set())
   const [resultado, setResultado] = useState<ListaResponse | null>(null)
@@ -151,21 +153,20 @@ export default function ListaComprasPage() {
     }
   }
 
-  // Auto-select primeiro cardápio base
+  // v9.2: auto-seleciona o primeiro cardápio APROVADO ao carregar
   useEffect(() => {
-    if (!cardapioId && cardapiosFiltrados.length > 0) {
-      const base = cardapiosFiltrados.find((c) => c.is_base) || cardapiosFiltrados[0]
-      setCardapioId(base.id)
+    if (cardapiosSel.size === 0 && cardapiosFiltrados.length > 0) {
+      const primeiro = cardapiosFiltrados[0]
+      setCardapiosSel(new Set([primeiro.id]))
     }
-  }, [cardapiosFiltrados, cardapioId])
+  }, [cardapiosFiltrados, cardapiosSel.size])
 
-  const cardapioSel = cardapios.find((c) => c.id === cardapioId)
-
-  // Gera lista de semanas (1..semanas_count)
+  // v9.2: Gera lista de semanas — SEMPRE 22 (semestre completo)
+  // Antes: usava cardapioSel?.semanas_count que podia ser 5 (ciclo base)
+  // Agora: sempre mostra 22 semanas para o usuário selecionar
   const semanasOptions = useMemo(() => {
-    const total = cardapioSel?.semanas_count || 22
-    return Array.from({ length: total }, (_, i) => i + 1)
-  }, [cardapioSel])
+    return Array.from({ length: 22 }, (_, i) => i + 1)
+  }, [])
 
   function toggleSemana(n: number) {
     setSemanasSel((prev) => {
@@ -192,8 +193,8 @@ export default function ListaComprasPage() {
   }
 
   async function gerarLista() {
-    if (!cardapioId) {
-      toast.error('Selecione um cardápio')
+    if (cardapiosSel.size === 0) {
+      toast.error('Selecione ao menos um cardápio')
       return
     }
     if (escolasSel.size === 0) {
@@ -203,7 +204,7 @@ export default function ListaComprasPage() {
     setGerando(true)
     try {
       const params = new URLSearchParams({
-        cardapio_id: cardapioId,
+        cardapio_ids: Array.from(cardapiosSel).join(','),
         escolas_ids: Array.from(escolasSel).join(','),
       })
       if (semanasSel.size > 0 && semanasSel.size < semanasOptions.length) {
@@ -237,7 +238,7 @@ export default function ListaComprasPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nome: saveNome,
-          cardapio_id: cardapioId,
+          cardapio_id: Array.from(cardapiosSel)[0] || '',  // v9.2: primeiro cardápio selecionado
           escolas_snapshot: resultado.escolas,
           itens_json: resultado.itens,
         }),
@@ -280,7 +281,7 @@ export default function ListaComprasPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `lista-compras-${cardapioSel?.nome || 'cardapio'}-${new Date().toISOString().split('T')[0]}.csv`
+    a.download = `lista-compras-${resultado?.cardapio?.nome || 'cardapio'}-${new Date().toISOString().split('T')[0]}.csv`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -293,7 +294,7 @@ export default function ListaComprasPage() {
     if (!resultado) return
     const wb = XLSX.utils.book_new()
     const dataHora = new Date().toLocaleString('pt-BR')
-    const cardapioNome = cardapioSel?.nome || 'Cardápio'
+    const cardapioNome = resultado?.cardapio?.nome || 'Cardápio'
     const fileName = `lista-compras-${cardapioNome}-${new Date().toISOString().split('T')[0]}.xlsx`
 
     // ── Aba 1: Resumo geral ──
@@ -476,20 +477,62 @@ export default function ListaComprasPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Cardápio */}
+            {/* Cardápios — v9.2: seleção múltipla */}
             <div className="space-y-2">
-              <Label className="text-xs">Cardápio Base</Label>
-              <Select value={cardapioId} onValueChange={setCardapioId}>
-                <SelectTrigger><SelectValue placeholder="Selecionar cardápio" /></SelectTrigger>
-                <SelectContent>
-                  {cardapiosFiltrados.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.is_base ? '⭐ ' : ''}{c.nome} ({c.ano}/{c.semestre})
-                      {c.status === 'RASCUNHO' && !c.is_base ? ' ⚠️ Rascunho' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Cardápios ({cardapiosSel.size} selecionados)</Label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setCardapiosSel(new Set(cardapiosFiltrados.map(c => c.id)))}
+                    className="text-[10px] text-[#1A3A5C] hover:underline"
+                  >
+                    Todos
+                  </button>
+                  <span className="text-gray-300">|</span>
+                  <button
+                    onClick={() => setCardapiosSel(new Set())}
+                    className="text-[10px] text-gray-500 hover:underline"
+                  >
+                    Limpar
+                  </button>
+                </div>
+              </div>
+              <ScrollArea className="h-[160px] border rounded-md p-2">
+                <div className="space-y-1">
+                  {cardapiosFiltrados.map((c) => {
+                    const sel = cardapiosSel.has(c.id)
+                    return (
+                      <label
+                        key={c.id}
+                        className={`flex items-center gap-2 p-1.5 rounded cursor-pointer text-xs ${
+                          sel ? 'bg-[#1A3A5C]/5 border border-[#1A3A5C]/20' : 'hover:bg-gray-50 border border-transparent'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={sel}
+                          onChange={() => {
+                            setCardapiosSel(prev => {
+                              const next = new Set(prev)
+                              if (next.has(c.id)) next.delete(c.id)
+                              else next.add(c.id)
+                              return next
+                            })
+                          }}
+                          className="h-3 w-3"
+                        />
+                        <span className="flex-1 truncate">
+                          {c.is_base ? '⭐ ' : ''}{c.nome}
+                        </span>
+                        <span className="text-[9px] text-muted-foreground">
+                          {c.ano}/{c.semestre}
+                          {c.status === 'RASCUNHO' && !c.is_base ? ' ⚠️' : ''}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </ScrollArea>
               <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                 <input
                   type="checkbox"
@@ -499,11 +542,6 @@ export default function ListaComprasPage() {
                 />
                 Mostrar rascunhos
               </label>
-              {cardapioSel && (
-                <p className="text-[10px] text-muted-foreground">
-                  {cardapioSel.semanas_count} semanas · fase {cardapioSel.fase_escolar}
-                </p>
-              )}
             </div>
 
             {/* Escolas */}
@@ -551,11 +589,10 @@ export default function ListaComprasPage() {
           </div>
 
           {/* Semanas */}
-          {cardapioSel && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">
-                  Semanas ({semanasSel.size} de {semanasOptions.length} selecionadas — vazio = todas)
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">
+                Semanas ({semanasSel.size} de {semanasOptions.length} selecionadas — vazio = todas)
                 </Label>
                 <div className="flex gap-2">
                   <button
@@ -583,7 +620,7 @@ export default function ListaComprasPage() {
               <div className="flex flex-wrap gap-1">
                 {semanasOptions.map((n) => {
                   // Indicar se é "réplica" do ciclo
-                  const isReplica = cardapioSel && n > 5
+                  const isReplica = n > 5
                   const baseNum = ((n - 1) % 5) + 1
                   return (
                     <button
@@ -603,11 +640,10 @@ export default function ListaComprasPage() {
                 })}
               </div>
             </div>
-          )}
 
           <Button
             onClick={gerarLista}
-            disabled={gerando || !cardapioId || escolasSel.size === 0}
+            disabled={gerando || cardapiosSel.size === 0 || escolasSel.size === 0}
             className="w-full bg-[#1A3A5C] hover:bg-[#1A3A5C]/90"
           >
             {gerando ? (
@@ -873,7 +909,7 @@ export default function ListaComprasPage() {
               <Input
                 value={saveNome}
                 onChange={(e) => setSaveNome(e.target.value)}
-                placeholder={`Lista Compras ${cardapioSel?.ano}/${cardapioSel?.semestre} — ${new Date().toLocaleDateString('pt-BR')}`}
+                placeholder={`Lista Compras — ${new Date().toLocaleDateString('pt-BR')}`}
                 autoFocus
               />
             </div>

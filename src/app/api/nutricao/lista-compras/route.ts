@@ -16,10 +16,14 @@ import { calcularPercapitaPorFase, type FaseEscolar } from '@/lib/nutricao-utils
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const cardapioId = searchParams.get('cardapio_id')
-    if (!cardapioId) {
-      return NextResponse.json({ error: 'Query param obrigatório: cardapio_id' }, { status: 400 })
+
+    // v9.2: suporta múltiplos cardápios (cardapio_ids=id1,id2,id3)
+    // Mantém compatibilidade com cardapio_id (singular, legado)
+    const cardapioIdsParam = searchParams.get('cardapio_ids') || searchParams.get('cardapio_id')
+    if (!cardapioIdsParam) {
+      return NextResponse.json({ error: 'Query param obrigatório: cardapio_ids (ou cardapio_id)' }, { status: 400 })
     }
+    const cardapioIds = cardapioIdsParam.split(',').map((s) => s.trim()).filter(Boolean)
 
     const semanasParam = searchParams.get('semanas') || 'all'
     const semanasLista = semanasParam === 'all'
@@ -31,8 +35,7 @@ export async function GET(request: Request) {
       ? escolasIdsParam.split(',').map((s) => s.trim()).filter(Boolean)
       : null
 
-    // Buscar cardápio completo
-        // Define o include completo (reutilizável)
+    // Define o include completo (reutilizável)
     const semanasInclude = {
       dias: {
         include: {
@@ -55,8 +58,9 @@ export async function GET(request: Request) {
       },
     }
 
-    const cardapio = await db.cardapioNutricional.findUnique({
-      where: { id: cardapioId },
+    // v9.2: busca TODOS os cardápios selecionados
+    const cardapios = await db.cardapioNutricional.findMany({
+      where: { id: { in: cardapioIds } },
       include: {
         semanas: semanasLista
           ? { where: { numero: { in: semanasLista } }, include: semanasInclude }
@@ -64,8 +68,8 @@ export async function GET(request: Request) {
       },
     })
 
-    if (!cardapio) {
-      return NextResponse.json({ error: 'Cardápio não encontrado' }, { status: 404 })
+    if (cardapios.length === 0) {
+      return NextResponse.json({ error: 'Nenhum cardápio encontrado' }, { status: 404 })
     }
 
     // Buscar escolas-alvo (todas as ativas se não filtradas)
@@ -80,9 +84,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Nenhuma escola encontrada' }, { status: 404 })
     }
 
-    const faseEscolar = cardapio.fase_escolar as FaseEscolar
-
-    // ── Acumulador: alimento_id → { alimento, qtd_total_gramas, qtd_por_escola: Map } ──
+    // v9.2: acumulador único para TODOS os cardápios
     const acumulador = new Map<string, {
       alimento_id: string
       alimento_nome: string
@@ -95,66 +97,73 @@ export async function GET(request: Request) {
       por_escola: Map<string, { escola_id: string; escola_nome: string; gramas: number }>
     }>()
 
-    // Para cada semana do cardápio
-    for (const semana of cardapio.semanas) {
-      // Para cada dia
-      for (const dia of semana.dias) {
-        // Para cada item (refeição × preparação)
-        for (const item of dia.itens) {
-          const isPrincipal = isRefeicaoPrincipal(item.tipo_refeicao.codigo)
+    // v9.2: processa CADA cardápio selecionado
+    const todasSemanasConsideradas = new Set<number>()
+    for (const cardapio of cardapios) {
+      const faseEscolar = cardapio.fase_escolar as FaseEscolar
 
-          // Para cada ingrediente da preparação
-          for (const ing of item.preparacao.ingredientes) {
-            // Calcular percapita em gramas para a fase escolar
-            let percapitaGramas = ing.quantidade_gramas
-            if (!ing.mesma_percapita) {
-              const pc = ing.percapitas?.find((p) => p.fase_escolar === faseEscolar)
-              if (pc) {
-                percapitaGramas = pc.quantidade_gramas
-              } else {
-                percapitaGramas = calcularPercapitaPorFase(ing.quantidade_gramas, faseEscolar)
+      // Para cada semana do cardápio
+      for (const semana of cardapio.semanas) {
+        todasSemanasConsideradas.add(semana.numero)
+        // Para cada dia
+        for (const dia of semana.dias) {
+          // Para cada item (refeição × preparação)
+          for (const item of dia.itens) {
+            const isPrincipal = isRefeicaoPrincipal(item.tipo_refeicao.codigo)
+
+            // Para cada ingrediente da preparação
+            for (const ing of item.preparacao.ingredientes) {
+              // Calcular percapita em gramas para a fase escolar
+              let percapitaGramas = ing.quantidade_gramas
+              if (!ing.mesma_percapita) {
+                const pc = ing.percapitas?.find((p) => p.fase_escolar === faseEscolar)
+                if (pc) {
+                  percapitaGramas = pc.quantidade_gramas
+                } else {
+                  percapitaGramas = calcularPercapitaPorFase(ing.quantidade_gramas, faseEscolar)
+                }
               }
-            }
-            // Multiplica por porções
-            const percapitaFinal = percapitaGramas * item.porcoes
+              // Multiplica por porções
+              const percapitaFinal = percapitaGramas * item.porcoes
 
-            // Para cada escola-alvo, calcular o total
-            for (const escola of escolas) {
-              const total = calcularPercapitaTotal(percapitaFinal, isPrincipal, {
-                alunos_parcial: escola.alunos_parcial || 0,
-                alunos_integral: escola.alunos_integral || 0,
-                mescla_parcial_integral: escola.mescla_parcial_integral,
-              })
-
-              if (total.total_gramas <= 0) continue
-
-              // Atualizar acumulador
-              const key = ing.alimento.id
-              if (!acumulador.has(key)) {
-                acumulador.set(key, {
-                  alimento_id: ing.alimento.id,
-                  alimento_nome: ing.alimento.nome,
-                  alimento_grupo: ing.alimento.grupo,
-                  alimento_unidade: 'g',
-                  alimento_medida_caseira: ing.alimento.medida_caseira,
-                  gramas_por_medida: ing.alimento.gramas_por_medida || 0,
-                  qtd_total_gramas: 0,
-                  qtd_total_medidas: 0,
-                  por_escola: new Map(),
+              // Para cada escola-alvo, calcular o total
+              for (const escola of escolas) {
+                const total = calcularPercapitaTotal(percapitaFinal, isPrincipal, {
+                  alunos_parcial: escola.alunos_parcial || 0,
+                  alunos_integral: escola.alunos_integral || 0,
+                  mescla_parcial_integral: escola.mescla_parcial_integral,
                 })
-              }
-              const entry = acumulador.get(key)!
-              entry.qtd_total_gramas += total.total_gramas
 
-              const escolaKey = escola.id
-              if (!entry.por_escola.has(escolaKey)) {
-                entry.por_escola.set(escolaKey, {
-                  escola_id: escola.id,
-                  escola_nome: escola.nome,
-                  gramas: 0,
-                })
+                if (total.total_gramas <= 0) continue
+
+                // Atualizar acumulador
+                const key = ing.alimento.id
+                if (!acumulador.has(key)) {
+                  acumulador.set(key, {
+                    alimento_id: ing.alimento.id,
+                    alimento_nome: ing.alimento.nome,
+                    alimento_grupo: ing.alimento.grupo,
+                    alimento_unidade: 'g',
+                    alimento_medida_caseira: ing.alimento.medida_caseira,
+                    gramas_por_medida: ing.alimento.gramas_por_medida || 0,
+                    qtd_total_gramas: 0,
+                    qtd_total_medidas: 0,
+                    por_escola: new Map(),
+                  })
+                }
+                const entry = acumulador.get(key)!
+                entry.qtd_total_gramas += total.total_gramas
+
+                const escolaKey = escola.id
+                if (!entry.por_escola.has(escolaKey)) {
+                  entry.por_escola.set(escolaKey, {
+                    escola_id: escola.id,
+                    escola_nome: escola.nome,
+                    gramas: 0,
+                  })
+                }
+                entry.por_escola.get(escolaKey)!.gramas += total.total_gramas
               }
-              entry.por_escola.get(escolaKey)!.gramas += total.total_gramas
             }
           }
         }
@@ -207,13 +216,14 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       cardapio: {
-        id: cardapio.id,
-        nome: cardapio.nome,
-        fase_escolar: cardapio.fase_escolar,
-        ano: cardapio.ano,
-        semestre: cardapio.semestre,
+        id: cardapios[0]?.id || '',
+        nome: cardapios.length === 1 ? cardapios[0].nome : `${cardapios.length} cardápios`,
+        fase_escolar: cardapios.length === 1 ? cardapios[0].fase_escolar : 'múltiplas',
+        ano: cardapios[0]?.ano || 0,
+        semestre: cardapios[0]?.semestre || 0,
       },
-      semanas_consideradas: cardapio.semanas.map((s) => s.numero),
+      cardapios_nomes: cardapios.map((c) => c.nome),
+      semanas_consideradas: Array.from(todasSemanasConsideradas).sort((a, b) => a - b),
       escolas: escolasSnapshot,
       total_alunos_parcial: escolasSnapshot.reduce((acc, e) => acc + e.alunos_parcial, 0),
       total_alunos_integral: escolasSnapshot.reduce((acc, e) => acc + e.alunos_integral, 0),
