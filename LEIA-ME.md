@@ -1,47 +1,40 @@
-# Patch — Seletor de Ano + Semestre no Cardápio da Padaria
+# Patch v9.4 — Data de início do semestre customizável
 
-## Problema
+## O que mudou
 
-A página `/cardapio` mostrava TODAS as semanas de TODOS os anos sem filtro.
-Não dava para selecionar 2º semestre nem criar semanas novas para o 2º semestre.
+Adicionado campo **"Início do semestre"** na página `/cardapio` que aparece
+quando o semestre selecionado não tem semanas cadastradas.
 
-## Solução
+### Como funciona
 
-Adicionado seletor de **Ano** + **Semestre** (1º ou 2º) no topo da página:
+1. Selecione o ano e semestre (ex: 2026 / 2º Semestre)
+2. Se o semestre está vazio, aparece o campo de data:
+   ```
+   Início do semestre: [____/____/____]  (ajustado para a próxima segunda-feira)
+   ```
+3. A data vem pré-preenchida com o padrão:
+   - 1º semestre: 1ª segunda-feira de fevereiro
+   - 2º semestre: 1ª segunda-feira de agosto
+4. **Você pode alterar a data** para qualquer dia — o sistema ajusta para a
+   próxima segunda-feira automaticamente
+5. Clique em "Criar Semana 1" — a primeira semana começa nessa data
+6. As semanas seguintes são calculadas automaticamente (+7 dias)
 
-- **Ano:** dropdown com anos disponíveis no banco + ano atual
-- **Semestre:** botões toggle "1º Semestre" / "2º Semestre"
-- **Filtro:** mostra só as semanas do ano + semestre selecionados
-  - 1º semestre = semanas com data_inicio entre janeiro e junho
-  - 2º semestre = semanas com data_inicio entre julho e dezembro
+### Exemplo de uso
 
-### Botão "Nova Semana"
-
-- Calcula `proximaSemana` baseado APENAS nas semanas do semestre selecionado
-- Se 1º semestre não tem semanas: começa na 1ª segunda de fevereiro
-- Se 2º semestre não tem semanas: começa na 1ª segunda de agosto
-- Se já tem semanas: continua da última + 1
-
-### Auto-detecção
-
-Ao abrir a página, detecta o semestre atual automaticamente:
-- Janeiro a Junho → 1º semestre
-- Julho a Dezembro → 2º semestre
+- Ano letivo começa em 4 de agosto de 2026 (em vez de 1º de agosto)
+- Selecione: 2026 / 2º Semestre
+- Campo aparece: "Início do semestre: 2026-08-03" (1ª segunda de agosto)
+- Altere para: 2026-08-04
+- Clique "Criar Semana 1" → semana 1 começa em 04/08 (terça)
+  - O sistema ajusta para a próxima segunda: 10/08
+- Ou se quiser começar numa segunda específica, digite a data dessa segunda
 
 ## Como aplicar
 
 ```bash
-unzip patch-cardapio-semestre.zip -d .
+unzip patch-cardapio-data-inicio.zip -d .
 git add -A
-git commit -m "feat: seletor de ano + semestre no cardápio da padaria"
+git commit -m "feat: data de início do semestre customizável"
 git push
 ```
-
-## Após aplicar
-
-1. Abra `/cardapio`
-2. Selecione o ano (ex: 2026)
-3. Selecione o semestre (ex: 2º Semestre)
-4. Vai mostrar "Nenhuma semana cadastrada"
-5. Clique em "Criar Semana 1" — cria a primeira semana do 2º semestre
-6. Continue clicando "Nova Semana" até completar as 22 semanas

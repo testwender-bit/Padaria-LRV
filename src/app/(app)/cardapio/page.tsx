@@ -62,11 +62,20 @@ export default function CardapioPage() {
   const [anoSel, setAnoSel] = useState<number>(anoAtual)
   const [semestreSel, setSemestreSel] = useState<number>(mesAtual >= 7 ? 2 : 1)
 
-  // Dialog para criar novo semestre
-  const [novoSemestreOpen, setNovoSemestreOpen] = useState(false)
-  const [novoSemestreAno, setNovoSemestreAno] = useState<number>(anoAtual)
-  const [novoSemestreNum, setNovoSemestreNum] = useState<number>(mesAtual >= 7 ? 2 : 1)
-  const [novoSemestreDataInicio, setNovoSemestreDataInicio] = useState('')
+  // v9.4: data de início do semestre (quando criar a primeira semana)
+  // Default: 1º sem = 1ª segunda de fevereiro, 2º sem = 1ª segunda de agosto
+  function calcularSegundaPadrao(ano: number, semestre: number): string {
+    const mes = semestre === 1 ? 1 : 7 // fevereiro (index 1) ou agosto (index 7)
+    let data = new Date(ano, mes, 1)
+    const dia = data.getDay()
+    if (dia !== 1) {
+      data.setDate(data.getDate() + (8 - dia) % 7)
+    }
+    return data.toISOString().split('T')[0]
+  }
+  const [dataInicioSemestre, setDataInicioSemestre] = useState<string>(
+    calcularSegundaPadrao(anoAtual, mesAtual >= 7 ? 2 : 1)
+  )
 
   useEffect(() => {
     Promise.all([
@@ -78,6 +87,14 @@ export default function CardapioPage() {
       setLoading(false)
     })
   }, [])
+
+  // v9.4: quando muda ano ou semestre, recalcula a data padrão
+  // (só se o semestre estiver vazio — se já tem semanas, mantém)
+  useEffect(() => {
+    if (cardapioFiltrado.length === 0) {
+      setDataInicioSemestre(calcularSegundaPadrao(anoSel, semestreSel))
+    }
+  }, [anoSel, semestreSel])
 
   // Anos disponíveis no banco + ano atual
   const anosDisponiveis = useMemo(() => {
@@ -153,21 +170,12 @@ export default function CardapioPage() {
           segundaProxima.setDate(segundaProxima.getDate() + (8 - dia) % 7)
         }
       } else {
-        // Primeira semana do semestre
-        if (semestreSel === 1) {
-          // 1º semestre: começa em fevereiro
-          segundaProxima = new Date(anoSel, 1, 1) // 1 de fevereiro
-          const dia = segundaProxima.getDay()
-          if (dia !== 1) {
-            segundaProxima.setDate(segundaProxima.getDate() + (8 - dia) % 7)
-          }
-        } else {
-          // 2º semestre: começa em agosto
-          segundaProxima = new Date(anoSel, 7, 1) // 1 de agosto
-          const dia = segundaProxima.getDay()
-          if (dia !== 1) {
-            segundaProxima.setDate(segundaProxima.getDate() + (8 - dia) % 7)
-          }
+        // v9.4: Primeira semana do semestre — usa a data definida pelo usuário
+        segundaProxima = new Date(dataInicioSemestre + 'T12:00:00')
+        // Ajusta para a próxima segunda-feira se não for
+        const dia = segundaProxima.getDay()
+        if (dia !== 1) {
+          segundaProxima.setDate(segundaProxima.getDate() + (8 - dia) % 7)
         }
       }
 
@@ -258,6 +266,21 @@ export default function CardapioPage() {
               </Button>
             </div>
           </div>
+          {/* v9.4: Campo de data de início do semestre (só aparece quando semestre está vazio) */}
+          {cardapioFiltrado.length === 0 && (
+            <div className="flex items-center gap-2 border-l pl-4 ml-2 border-gray-200">
+              <Label className="text-xs font-semibold text-[#D4A017]">Início do semestre:</Label>
+              <Input
+                type="date"
+                value={dataInicioSemestre}
+                onChange={(e) => setDataInicioSemestre(e.target.value)}
+                className="w-40 h-8 text-sm"
+              />
+              <span className="text-[10px] text-muted-foreground">
+                (ajustado para a próxima segunda-feira)
+              </span>
+            </div>
+          )}
           <div className="text-xs text-muted-foreground ml-auto">
             {cardapioFiltrado.length} semana(s) cadastrada(s)
           </div>
