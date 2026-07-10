@@ -723,11 +723,12 @@ export default function ConfiguracoesPage() {
                                 <Input
                                   type="number"
                                   min={0}
+                                  step="0.01"
                                   value={editPcqData[field] || 0}
                                   onChange={(e) =>
                                     setEditPcqData((prev) => ({
                                       ...prev,
-                                      [field]: parseInt(e.target.value) || 0,
+                                      [field]: parseFloat(e.target.value) || 0,
                                     }))
                                   }
                                   className="h-7 w-16 text-center text-sm mx-auto"

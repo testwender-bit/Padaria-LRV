@@ -132,12 +132,12 @@ model PfQuantidade {
 model PcqQuantidade {
   id              String  @id @default(cuid())
   escola_id       String
-  prod_segunda    Int     @default(0)
-  prod_quarta     Int     @default(0)
-  prod_sexta      Int     @default(0)
-  pf_comp_segunda Int     @default(0)
-  pf_comp_quarta  Int     @default(0)
-  pf_comp_sexta   Int     @default(0)
+  prod_segunda    Float   @default(0)
+  prod_quarta     Float   @default(0)
+  prod_sexta      Float   @default(0)
+  pf_comp_segunda Float   @default(0)
+  pf_comp_quarta  Float   @default(0)
+  pf_comp_sexta   Float   @default(0)
 
   escola Escola @relation(fields: [escola_id], references: [id], onDelete: Cascade)
 

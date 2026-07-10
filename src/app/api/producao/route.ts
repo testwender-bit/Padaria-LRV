@@ -27,9 +27,9 @@ export async function GET(request: Request) {
       }),
       db.feriado.findMany(),
       db.ajuste.findMany({ where: { ano, semana } }),
-      // BUG FIX 3: Cardápio lookup - first try ISO week, then fall back to date range
+      // v9.3: busca cardápio por ano + semana ISO (antes não filtrava por ano)
       db.cardapioSemestral.findFirst({
-        where: { numero_semana_iso: semana },
+        where: { ano, numero_semana_iso: semana },
         include: { lanche_regular: true, lanche_bifasica: true },
       }),
     ])
@@ -44,6 +44,24 @@ export async function GET(request: Request) {
           data_inicio: { lte: sextaStr },
           data_fim: { gte: segundaStr },
         },
+        include: { lanche_regular: true, lanche_bifasica: true },
+      })
+    }
+
+    // v9.3: Segundo fallback — se não encontrou por ano+semana nem por data,
+    // busca por semana ISO sem filtrar ano (pode ser cardápio do semestre anterior reutilizado)
+    if (!cardapioFinal) {
+      cardapioFinal = await db.cardapioSemestral.findFirst({
+        where: { numero_semana_iso: semana },
+        include: { lanche_regular: true, lanche_bifasica: true },
+      })
+    }
+
+    // v9.3: Se mesmo assim não encontrou, busca o primeiro cardápio disponível do ano
+    if (!cardapioFinal) {
+      cardapioFinal = await db.cardapioSemestral.findFirst({
+        where: { ano },
+        orderBy: { semana: 'asc' },
         include: { lanche_regular: true, lanche_bifasica: true },
       })
     }

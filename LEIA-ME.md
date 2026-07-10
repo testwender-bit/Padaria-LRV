@@ -1,37 +1,32 @@
-# Fix — Alunos não salvavam ao editar escola
+# Patch — 2 ajustes na padaria
 
-## Bug
+## 1. PCQ aceita valores decimais (1,5 / 0,75 etc.)
 
-Ao editar uma escola e preencher o número de alunos, ao salvar e reabrir
-o diálogo de edição, os campos apareciam zerados novamente.
+**Problema:** Campos de PCQ usavam `parseInt` que corta decimais. Ao digitar 1,5 salvava 1.
 
-## Causa
+**Fix:**
+- UI: trocado `parseInt` por `parseFloat` + adicionado `step="0.01"`
+- Schema: trocado `Int` por `Float` nos 6 campos de PcqQuantidade
 
-O botão "Editar escola" carregava os dados da escola no estado `editEscola`,
-mas **não incluía** os campos `alunos_parcial`, `alunos_integral`,
-`mescla_parcial_integral`, `segmento`, `dia_pao_frances`, `dia_lanche`.
+⚠️ **IMPORTANTE:** Após aplicar, rode `npx prisma db push --accept-data-loss` para atualizar o banco. Os valores Int existentes viram Float automaticamente (sem perda).
 
-Resultado: o diálogo abria com esses campos como `undefined` (mostrava 0),
-o usuário digitava o valor, salvava (a API gravava corretamente), mas ao
-reabrir o diálogo os campos voltavam a aparecer como 0 porque não eram
-carregados do banco.
+## 2. Produção mostra 1º semestre no 2º
 
-## Fix
+**Problema:** A API buscava `CardapioSemestral` por `numero_semana_iso` SEM filtrar por `ano`. No 2º semestre as semanas ISO são 27-48, mas só existem registros 1-22 (1º semestre). Resultado: não encontrava nada e o fallback por data também falhava.
 
-Adicionados os campos faltantes no `setEditEscola()` do botão de editar:
-```typescript
-alunos_parcial: escola.alunos_parcial ?? 0,
-alunos_integral: escola.alunos_integral ?? 0,
-mescla_parcial_integral: escola.mescla_parcial_integral ?? false,
-segmento: escola.segmento ?? 'REGULAR',
-dia_pao_frances: escola.dia_pao_frances ?? null,
-dia_lanche: escola.dia_lanche ?? null,
-```
+**Fix:** Adicionados múltiplos fallbacks em cascata:
+1. Busca por `ano + numero_semana_iso` (mais específico)
+2. Fallback por data (data_inicio/data_fim)
+3. Fallback por `numero_semana_iso` sem ano (reutiliza cardápio de outro ano)
+4. Fallback: primeiro cardápio do ano (para não ficar vazio)
 
 ## Como aplicar
+
 ```bash
-unzip patch-fix-alunos-save.zip -d .
+unzip patch-padaria-ajustes.zip -d .
+npx prisma generate
+npx prisma db push --accept-data-loss
 git add -A
-git commit -m "fix: carregar campos de alunos ao editar escola"
+git commit -m "fix: PCQ aceita decimais + produção encontra cardápio 2º semestre"
 git push
 ```
