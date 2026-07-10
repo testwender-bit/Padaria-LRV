@@ -149,7 +149,7 @@ export default function DashboardPage() {
       </div>
 
       {/* v9.4: Aviso da semana (vem do cardápio semestral) */}
-      {data.obs && (
+      {data?.obs && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}

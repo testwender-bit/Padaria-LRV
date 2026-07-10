@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Cookie, Plus, Edit2, Save } from 'lucide-react'
+import { Cookie, Plus, Edit2, Save, Copy } from 'lucide-react'
 // BUG FIX 5: Import UNIDADES_LANCHE from unit-options, DIAS_SEMANA from date-utils
 import { UNIDADES_LANCHE } from '@/lib/unit-options'
 import { DIAS_SEMANA, DIAS_LABEL_CURTO } from '@/lib/date-utils'
@@ -166,6 +166,46 @@ export default function LanchesPage() {
       }
     } catch {
       toast.error('Erro ao salvar distribuição')
+    }
+  }
+
+  // v9.4: Clonar lanche — cria novo lanche com mesmo nome + (cópia) e copia distribuição
+  async function handleClone(lanche: Lanche) {
+    try {
+      // 1. Cria o novo lanche
+      const res = await fetch('/api/lanches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome: `${lanche.nome} (cópia)`,
+          unidade: lanche.unidade,
+          ativo: lanche.ativo,
+          obs: lanche.obs,
+        }),
+      })
+      if (!res.ok) throw new Error('Erro ao criar lanche')
+      const novoLanche = await res.json()
+
+      // 2. Copia a distribuição (quantidades por escola por dia)
+      if (lanche.distribuicao.length > 0) {
+        const items = lanche.distribuicao.map(d => ({
+          lanche_id: novoLanche.id,
+          escola_id: d.escola_id,
+          dia_semana: d.dia_semana,
+          quantidade: d.quantidade,
+        }))
+        await fetch('/api/lanches/distribuicao', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(items),
+        })
+      }
+
+      toast.success(`Lanche clonado: "${novoLanche.nome}" com ${lanche.distribuicao.length} entradas de distribuição`)
+      const updated = await fetch('/api/lanches').then((r) => r.json())
+      setLanches(Array.isArray(updated) ? updated : [])
+    } catch {
+      toast.error('Erro ao clonar lanche')
     }
   }
 
@@ -379,6 +419,10 @@ export default function LanchesPage() {
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => startEditLanche(lanche)} className="text-xs">
                     <Edit2 className="w-3 h-3 mr-1" /> Editar
+                  </Button>
+                  {/* v9.4: Clonar lanche (copia nome + distribuição por escola) */}
+                  <Button size="sm" variant="outline" onClick={() => handleClone(lanche)} className="text-xs border-purple-200 text-purple-700 hover:bg-purple-50">
+                    <Copy className="w-3 h-3 mr-1" /> Clonar
                   </Button>
                 </div>
               </CardContent>

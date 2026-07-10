@@ -1,55 +1,33 @@
-# Patch v9.4 — Aviso/Observação por Semana
+# Patch — Fix TypeScript + Clonar Lanche
 
-## O que mudou
+## 1. Fix erro de TypeScript no dashboard
 
-### 1. Cardápio Semestral (`/cardapio`) — campo de aviso
+Erro: `'data' is possibly 'null'` na linha 152.
+Fix: trocado `data.obs` por `data?.obs` (optional chaining).
 
-Ao editar uma semana, agora tem um campo **"Aviso / Observação da Semana"**:
-- Aparece abaixo dos campos de pão/lanche
-- Placeholder: "Ex: Semana com feriado na quinta — ajustar produção"
-- Salva no campo `obs` do `CardapioSemestral`
+## 2. Botão "Clonar" nos lanches da padaria
 
-Na lista de semanas, se tem aviso, mostra um badge âmbar:
-```
-⚠️ Semana com feriado na quinta — ajustar produção
-```
+Adicionado botão roxo **"Clonar"** ao lado de "Distribuição" e "Editar".
 
-### 2. Página de Produção (`/producao`) — banner de aviso
+### O que faz:
+1. Cria um novo lanche com nome `"[nome original] (cópia)"`
+2. Copia a unidade, status ativo e observação
+3. Copia TODA a distribuição (quantidades por escola por dia)
+4. Toast de sucesso confirando
 
-Se a semana atual tem observação, aparece um banner âmbar no topo:
-```
-┌──────────────────────────────────────────────┐
-│ ⚠️ Aviso da Semana 15                        │
-│ Semana com feriado na quinta — ajustar...    │
-└──────────────────────────────────────────────┘
-```
-
-### 3. Dashboard (`/dashboard`) — banner de aviso
-
-Mesmo banner âmbar aparece no dashboard, entre o seletor de semana e os KPIs:
-```
-┌──────────────────────────────────────────────┐
-│ 📌 Aviso da Semana                           │
-│ Semana com feriado na quinta — ajustar...    │
-└──────────────────────────────────────────────┘
-```
+### Como usar:
+1. Vá em `/lanches`
+2. Configure um lanche com distribuição completa (quantidades por escola)
+3. Clique em **"Clonar"**
+4. Um novo lanche é criado com `(cópia)` no nome e TODAS as distribuições copiadas
+5. Clique em "Editar" e mude o nome para o lanche novo
+6. Pronto — mesmo padrão de distribuição, só com nome diferente
 
 ## Como aplicar
 
 ```bash
-unzip patch-aviso-semana.zip -d .
+unzip patch-fix-aviso-clone.zip -d .
 git add -A
-git commit -m "feat: aviso/observação por semana no cardápio, produção e dashboard"
+git commit -m "fix: TypeScript dashboard + botão clonar lanche"
 git push
 ```
-
-## Fluxo de uso
-
-1. Vá em `/cardapio`
-2. Clique no lápis (editar) da semana que quer adicionar aviso
-3. Digite o aviso no campo "Aviso / Observação da Semana"
-4. Salve
-5. O aviso aparece:
-   - Como badge âmbar na lista do cardápio
-   - Como banner no dashboard (se for a semana atual)
-   - Como banner na página de produção (se for a semana atual)
