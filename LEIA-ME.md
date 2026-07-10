@@ -1,40 +1,55 @@
-# Patch v9.4 — Data de início do semestre customizável
+# Patch v9.4 — Aviso/Observação por Semana
 
 ## O que mudou
 
-Adicionado campo **"Início do semestre"** na página `/cardapio` que aparece
-quando o semestre selecionado não tem semanas cadastradas.
+### 1. Cardápio Semestral (`/cardapio`) — campo de aviso
 
-### Como funciona
+Ao editar uma semana, agora tem um campo **"Aviso / Observação da Semana"**:
+- Aparece abaixo dos campos de pão/lanche
+- Placeholder: "Ex: Semana com feriado na quinta — ajustar produção"
+- Salva no campo `obs` do `CardapioSemestral`
 
-1. Selecione o ano e semestre (ex: 2026 / 2º Semestre)
-2. Se o semestre está vazio, aparece o campo de data:
-   ```
-   Início do semestre: [____/____/____]  (ajustado para a próxima segunda-feira)
-   ```
-3. A data vem pré-preenchida com o padrão:
-   - 1º semestre: 1ª segunda-feira de fevereiro
-   - 2º semestre: 1ª segunda-feira de agosto
-4. **Você pode alterar a data** para qualquer dia — o sistema ajusta para a
-   próxima segunda-feira automaticamente
-5. Clique em "Criar Semana 1" — a primeira semana começa nessa data
-6. As semanas seguintes são calculadas automaticamente (+7 dias)
+Na lista de semanas, se tem aviso, mostra um badge âmbar:
+```
+⚠️ Semana com feriado na quinta — ajustar produção
+```
 
-### Exemplo de uso
+### 2. Página de Produção (`/producao`) — banner de aviso
 
-- Ano letivo começa em 4 de agosto de 2026 (em vez de 1º de agosto)
-- Selecione: 2026 / 2º Semestre
-- Campo aparece: "Início do semestre: 2026-08-03" (1ª segunda de agosto)
-- Altere para: 2026-08-04
-- Clique "Criar Semana 1" → semana 1 começa em 04/08 (terça)
-  - O sistema ajusta para a próxima segunda: 10/08
-- Ou se quiser começar numa segunda específica, digite a data dessa segunda
+Se a semana atual tem observação, aparece um banner âmbar no topo:
+```
+┌──────────────────────────────────────────────┐
+│ ⚠️ Aviso da Semana 15                        │
+│ Semana com feriado na quinta — ajustar...    │
+└──────────────────────────────────────────────┘
+```
+
+### 3. Dashboard (`/dashboard`) — banner de aviso
+
+Mesmo banner âmbar aparece no dashboard, entre o seletor de semana e os KPIs:
+```
+┌──────────────────────────────────────────────┐
+│ 📌 Aviso da Semana                           │
+│ Semana com feriado na quinta — ajustar...    │
+└──────────────────────────────────────────────┘
+```
 
 ## Como aplicar
 
 ```bash
-unzip patch-cardapio-data-inicio.zip -d .
+unzip patch-aviso-semana.zip -d .
 git add -A
-git commit -m "feat: data de início do semestre customizável"
+git commit -m "feat: aviso/observação por semana no cardápio, produção e dashboard"
 git push
 ```
+
+## Fluxo de uso
+
+1. Vá em `/cardapio`
+2. Clique no lápis (editar) da semana que quer adicionar aviso
+3. Digite o aviso no campo "Aviso / Observação da Semana"
+4. Salve
+5. O aviso aparece:
+   - Como badge âmbar na lista do cardápio
+   - Como banner no dashboard (se for a semana atual)
+   - Como banner na página de produção (se for a semana atual)

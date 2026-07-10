@@ -14,6 +14,7 @@ import {
   Cookie,
   Printer,
   AlertTriangle,
+  AlertCircle,
   Table2,
   Calendar,
 } from 'lucide-react'
@@ -42,6 +43,7 @@ export default function ProducaoPage() {
     nomePao: string
     lancheRegular: string | null
     lancheBifasica: string | null
+    obs: string | null
     dias: ProducaoDia[]
   } | null>(null)
   const [loading, setLoading] = useState(true)
@@ -563,6 +565,17 @@ export default function ProducaoPage() {
           </Button>
         </div>
       </div>
+
+      {/* v9.4: Aviso da semana (vem do cardápio semestral) */}
+      {data.obs && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 flex items-start gap-3 print:hidden">
+          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Aviso da Semana {data.semana}</p>
+            <p className="text-sm text-amber-700">{data.obs}</p>
+          </div>
+        </div>
+      )}
 
       {/* ===== TELA — Por Dia ===== */}
       {viewMode === 'dia' && (

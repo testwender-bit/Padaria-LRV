@@ -18,6 +18,7 @@ import {
   CalendarDays,
   ArrowRight,
   AlertTriangle,
+  AlertCircle,
 } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
 import { dataISO } from '@/lib/date-utils'
@@ -32,6 +33,7 @@ interface DashboardData {
   nomePao: string
   lancheRegular: string | null
   lancheBifasica: string | null
+  obs: string | null
 }
 
 const container = {
@@ -113,6 +115,7 @@ export default function DashboardPage() {
           nomePao: producao.nomePao || 'Pão Francês',
           lancheRegular: producao.lancheRegular,
           lancheBifasica: producao.lancheBifasica,
+          obs: producao.obs || null,
         })
       } catch (err) {
         console.error('Erro ao carregar dashboard:', err)
@@ -144,6 +147,21 @@ export default function DashboardPage() {
         </div>
         <SeletorSemana />
       </div>
+
+      {/* v9.4: Aviso da semana (vem do cardápio semestral) */}
+      {data.obs && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3"
+        >
+          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">📌 Aviso da Semana</p>
+            <p className="text-sm text-amber-700 mt-0.5">{data.obs}</p>
+          </div>
+        </motion.div>
+      )}
 
       {/* KPI Cards */}
       <motion.div

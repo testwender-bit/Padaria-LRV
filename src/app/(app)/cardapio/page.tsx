@@ -21,7 +21,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { CalendarDays, Plus, Edit2, Save, Calendar } from 'lucide-react'
+import { CalendarDays, Plus, Edit2, Save, Calendar, AlertCircle } from 'lucide-react'
 import { TIPOS_PAO } from '@/lib/unit-options'
 import { getISOWeek } from 'date-fns'
 import { toast } from 'sonner'
@@ -368,6 +368,15 @@ export default function CardapioPage() {
                         </SelectContent>
                       </Select>
                     </div>
+                    <div className="col-span-2 sm:col-span-4 lg:col-span-6">
+                      <Label className="text-xs">Aviso / Observação da Semana</Label>
+                      <Input
+                        value={editData.obs || ''}
+                        onChange={(e) => setEditData((prev) => ({ ...prev, obs: e.target.value }))}
+                        placeholder="Ex: Semana com feriado na quinta — ajustar produção"
+                        className="h-8 text-sm"
+                      />
+                    </div>
                     <div className="flex gap-1">
                       <Button size="sm" onClick={handleSave} className="h-8 bg-[#1A3A5C]">
                         <Save className="w-3 h-3" />
@@ -400,6 +409,12 @@ export default function CardapioPage() {
                       {entry.lanche_bifasica && (
                         <Badge className="bg-purple-100 text-purple-700 text-[10px]">
                           B: {entry.lanche_bifasica.nome}
+                        </Badge>
+                      )}
+                      {entry.obs && (
+                        <Badge className="bg-amber-100 text-amber-800 text-[10px] flex items-center gap-1" title={entry.obs}>
+                          <AlertCircle className="w-2.5 h-2.5" />
+                          {entry.obs.length > 40 ? entry.obs.substring(0, 40) + '...' : entry.obs}
                         </Badge>
                       )}
                     </div>

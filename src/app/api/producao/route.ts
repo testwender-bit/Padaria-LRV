@@ -362,6 +362,7 @@ export async function GET(request: Request) {
       nomePao,
       lancheRegular: lancheRegular?.nome || null,
       lancheBifasica: lancheBifasica?.nome || null,
+      obs: cardapioFinal?.obs || null,
       dias: diasProducao,
     })
   } catch (error) {
