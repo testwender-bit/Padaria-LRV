@@ -1,33 +1,29 @@
-# Patch — Fix TypeScript + Clonar Lanche
+# Fix — Aviso aparecia em todas as semanas
 
-## 1. Fix erro de TypeScript no dashboard
+## Problema
 
-Erro: `'data' is possibly 'null'` na linha 152.
-Fix: trocado `data.obs` por `data?.obs` (optional chaining).
+Ao cadastrar um aviso em uma semana, ele aparecia em TODAS as semanas no
+dashboard e na produção.
 
-## 2. Botão "Clonar" nos lanches da padaria
+## Causa
 
-Adicionado botão roxo **"Clonar"** ao lado de "Distribuição" e "Editar".
+Quando a API não encontrava o cardápio exato da semana (ex: 2º semestre sem
+semanas cadastradas), usava fallback e pegava o primeiro cardápio do ano —
+que tinha o aviso. Resultado: o aviso da semana 1 aparecia em todas.
 
-### O que faz:
-1. Cria um novo lanche com nome `"[nome original] (cópia)"`
-2. Copia a unidade, status ativo e observação
-3. Copia TODA a distribuição (quantidades por escola por dia)
-4. Toast de sucesso confirando
+## Fix
 
-### Como usar:
-1. Vá em `/lanches`
-2. Configure um lanche com distribuição completa (quantidades por escola)
-3. Clique em **"Clonar"**
-4. Um novo lanche é criado com `(cópia)` no nome e TODAS as distribuições copiadas
-5. Clique em "Editar" e mude o nome para o lanche novo
-6. Pronto — mesmo padrão de distribuição, só com nome diferente
+Adicionado controle `matchExato`:
+- **Match exato** (ano + semana ISO, ou por data): retorna o aviso ✓
+- **Fallback genérico** (primeiro do ano, ou ISO sem ano): NÃO retorna o aviso ✗
+
+Assim, o aviso só aparece na semana que realmente tem o cardápio cadastrado.
 
 ## Como aplicar
 
 ```bash
-unzip patch-fix-aviso-clone.zip -d .
+unzip patch-fix-aviso-semana.zip -d .
 git add -A
-git commit -m "fix: TypeScript dashboard + botão clonar lanche"
+git commit -m "fix: aviso da semana só aparece na semana correta"
 git push
 ```

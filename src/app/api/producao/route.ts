@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     const ano = anoSemana(refDate)
 
     // Buscar dados
-    const [escolas, feriados, ajustes, cardapio] = await Promise.all([
+    const [escolas, feriados, ajustes] = await Promise.all([
       db.escola.findMany({
         where: { ativo: true },
         include: { pf_quantidades: true, pcq_quantidades: true },
@@ -27,15 +27,19 @@ export async function GET(request: Request) {
       }),
       db.feriado.findMany(),
       db.ajuste.findMany({ where: { ano, semana } }),
-      // v9.3: busca cardápio por ano + semana ISO (antes não filtrava por ano)
-      db.cardapioSemestral.findFirst({
-        where: { ano, numero_semana_iso: semana },
-        include: { lanche_regular: true, lanche_bifasica: true },
-      }),
     ])
 
+    // v9.4: busca cardápio por ano + semana ISO (match exato)
+    const cardapioExato = await db.cardapioSemestral.findFirst({
+      where: { ano, numero_semana_iso: semana },
+      include: { lanche_regular: true, lanche_bifasica: true },
+    })
+
+    // v9.4: controla se o match foi exato (para saber se o obs é desta semana)
+    let matchExato = !!cardapioExato
+
     // Fallback: try to find cardápio by date range if not found by ISO week
-    let cardapioFinal = cardapio
+    let cardapioFinal = cardapioExato
     if (!cardapioFinal) {
       const segundaStr = dataISO(inicio)
       const sextaStr = dataISO(addDays(inicio, 4))
@@ -46,24 +50,26 @@ export async function GET(request: Request) {
         },
         include: { lanche_regular: true, lanche_bifasica: true },
       })
+      if (cardapioFinal) matchExato = true // match por data também é exato
     }
 
-    // v9.3: Segundo fallback — se não encontrou por ano+semana nem por data,
-    // busca por semana ISO sem filtrar ano (pode ser cardápio do semestre anterior reutilizado)
+    // v9.3: Segundo fallback — busca por semana ISO sem filtrar ano
     if (!cardapioFinal) {
       cardapioFinal = await db.cardapioSemestral.findFirst({
         where: { numero_semana_iso: semana },
         include: { lanche_regular: true, lanche_bifasica: true },
       })
+      // match por ISO sem ano NÃO é exato — não deve usar obs
     }
 
-    // v9.3: Se mesmo assim não encontrou, busca o primeiro cardápio disponível do ano
+    // v9.3: Se mesmo assim não encontrou, busca o primeiro cardápio do ano
     if (!cardapioFinal) {
       cardapioFinal = await db.cardapioSemestral.findFirst({
         where: { ano },
         orderBy: { semana: 'asc' },
         include: { lanche_regular: true, lanche_bifasica: true },
       })
+      // fallback genérico NÃO é exato — não deve usar obs
     }
 
     // Feriados da semana
@@ -362,7 +368,8 @@ export async function GET(request: Request) {
       nomePao,
       lancheRegular: lancheRegular?.nome || null,
       lancheBifasica: lancheBifasica?.nome || null,
-      obs: cardapioFinal?.obs || null,
+      // v9.4: só retorna obs se o match foi exato (não fallback genérico)
+      obs: matchExato ? (cardapioFinal?.obs || null) : null,
       dias: diasProducao,
     })
   } catch (error) {
