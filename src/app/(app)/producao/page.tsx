@@ -96,7 +96,7 @@ export default function ProducaoPage() {
   }
 
   function openAjusteFromWeekly(escolaId: string, escolaNome: string, diaProd: DiaProducao, produto: 'PF' | 'PCQ' | 'LANCHE', quantidade: number) {
-    if (quantidade <= 0) return
+    // v9.4: permite ajustar mesmo se quantidade for 0 (célula vazia)
     const diaEntrega = entregaFromProducao(diaProd, produto)
     setAjusteTarget({
       escolaId,
@@ -233,6 +233,13 @@ export default function ProducaoPage() {
           </tr>
         </tbody>
       </table>
+      {/* v9.4: Aviso da semana na impressão (sutil, antes do footer) */}
+      {data.obs && (
+        <div style={{ marginTop: '3mm', padding: '2mm 3mm', border: '0.5pt solid #999', background: '#fffff0', fontSize: '7.5pt', fontStyle: 'italic' }}>
+          <strong>⚠️ AVISO DA SEMANA:</strong> {data.obs}
+        </div>
+      )}
+
       {/* Footer */}
       <div className="print-footer">Sistema de Gestão da Padaria Escolar Municipal — Lucas do Rio Verde / MT</div>
     </div>
@@ -324,43 +331,44 @@ export default function ProducaoPage() {
               </>
             )}
 
-            {/* Lanche Section */}
+            {/* v9.4: Lanche Section — agrupado por dia */}
             {consolidado.total_lanche > 0 && (
               <>
                 <div className="print-section-header print-section-spacer">
-                  <span className="print-section-title-text">{lancheNome.toUpperCase()}</span>
+                  <span className="print-section-title-text">{lancheNome.toUpperCase()} — AGRUPADO POR DIA</span>
                   <span className="print-section-total">Total: {consolidado.total_lanche.toLocaleString('pt-BR')}</span>
                 </div>
-                <table className="print-table">
-                  <thead>
-                    <tr>
-                      <th className="print-col-escola">ESCOLA / UNIDADE</th>
-                      {DIAS_PRODUCAO.map((d) => (
-                        <th key={d} className="print-col-dia">{DIAS_LABEL_CURTO_PRODUCAO[d]}</th>
-                      ))}
-                      <th className="print-col-total">TOTAL</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {escolasLanche.map((escola) => (
-                      <tr key={escola.id}>
-                        <td className="print-col-escola">{escola.nome_curto}</td>
-                        {DIAS_PRODUCAO.map((d) => (
-                          <td key={d} className="print-col-dia">{escola.lanche[d] > 0 ? escola.lanche[d] : '—'}</td>
+                {DIAS_PRODUCAO.filter(d => consolidado.totais_por_dia.lanche[d] > 0).map((d) => (
+                  <div key={d} style={{ marginBottom: '4mm' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '8pt', background: '#f5f5f5', padding: '1mm 2mm', borderLeft: '3pt solid #999', marginBottom: '1mm' }}>
+                      {DIAS_LABEL_CURTO_PRODUCAO[d].toUpperCase()} — {consolidado.totais_por_dia.lanche[d]} unid.
+                    </div>
+                    <table className="print-table">
+                      <thead>
+                        <tr>
+                          <th className="print-col-escola">ESCOLA / UNIDADE</th>
+                          <th className="print-col-total">QUANTIDADE</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {escolasLanche.filter(e => e.lanche[d] > 0).map((escola) => (
+                          <tr key={escola.id}>
+                            <td className="print-col-escola">{escola.nome_curto}</td>
+                            <td className="print-col-total">{escola.lanche[d]}</td>
+                          </tr>
                         ))}
-                        <td className="print-col-total">{escola.total_lanche.toLocaleString('pt-BR')}</td>
-                      </tr>
-                    ))}
-                    <tr className="print-row-subtotal">
-                      <td className="print-col-escola">TOTAL GERAL</td>
-                      {DIAS_PRODUCAO.map((d) => (
-                        <td key={d} className="print-col-dia">{consolidado.totais_por_dia.lanche[d] || '—'}</td>
-                      ))}
-                      <td className="print-col-total">{consolidado.total_lanche.toLocaleString('pt-BR')}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
               </>
+            )}
+
+            {/* v9.4: Aviso da semana na impressão */}
+            {data.obs && (
+              <div style={{ marginTop: '3mm', padding: '2mm 3mm', border: '0.5pt solid #999', background: '#fffff0', fontSize: '7.5pt', fontStyle: 'italic' }}>
+                <strong>⚠️ AVISO DA SEMANA:</strong> {data.obs}
+              </div>
             )}
 
             {/* Footer */}
@@ -429,6 +437,12 @@ export default function ProducaoPage() {
                     </tr>
                   </tbody>
                 </table>
+                {/* v9.4: Aviso da semana no romaneio PF */}
+                {data.obs && (
+                  <div style={{ marginTop: '2mm', padding: '1.5mm 3mm', border: '0.5pt solid #999', background: '#fffff0', fontSize: '7pt', fontStyle: 'italic' }}>
+                    <strong>⚠️ AVISO:</strong> {data.obs}
+                  </div>
+                )}
                 <div className="print-footer">Sistema de Gestão da Padaria Escolar Municipal — Lucas do Rio Verde / MT</div>
               </div>
             )}
@@ -527,6 +541,12 @@ export default function ProducaoPage() {
                   </>
                 )}
 
+                {/* v9.4: Aviso da semana no romaneio PCQ/Lanche */}
+                {data.obs && (
+                  <div style={{ marginTop: '2mm', padding: '1.5mm 3mm', border: '0.5pt solid #999', background: '#fffff0', fontSize: '7pt', fontStyle: 'italic' }}>
+                    <strong>⚠️ AVISO:</strong> {data.obs}
+                  </div>
+                )}
                 <div className="print-footer">Sistema de Gestão da Padaria Escolar Municipal — Lucas do Rio Verde / MT</div>
               </div>
             )}

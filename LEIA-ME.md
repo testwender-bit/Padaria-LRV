@@ -1,48 +1,54 @@
-# Patch — Produção em Retrato + Brasão do Município
+# Patch — 3 ajustes na produção
 
-## 1. Impressão em RETRATO (era paisagem)
+## 1. Aviso da semana na impressão
 
-**Problema:** O CSS de impressão do cardápio nutricional (`@page { size: A4 landscape }`)
-sobrescrevia o `@page { size: A4 portrait }` geral, fazendo TODAS as impressões
-(inclusive produção) saírem em paisagem.
+A observação cadastrada no cardápio semestral agora aparece na impressão:
+- **Páginas de PF (1ª e 2ª via):** aviso sutil antes do footer
+- **Página de PCQ/Lanches:** aviso sutil antes do footer
+- **Romaneios (PF e PCQ/Lanche):** aviso sutil antes do footer
 
-**Fix:** Removido o `@page landscape` que sobrescrevia o geral. Agora:
-- **Produção:** sai em RETRATO (A4 portrait) ✓
-- **Cardápio nutricional:** continua em paisagem (via CSS específico da `.semana-page` se necessário no futuro)
+Estilo: caixa com borda cinza fina, fundo amarelo claro, fonte itálica 7.5pt.
 
-### Separação por página (7 páginas):
-1. PRODUÇÃO — PÃO FRANCÊS (1ª VIA)
-2. PRODUÇÃO — PÃO FRANCÊS (2ª VIA)
-3. PRODUÇÃO — PCQ E LANCHES
-4. ROTA MOTORISTA JOSÉ — PÃO FRANCÊS
-5. ROTA MOTORISTA JOSÉ — PCQ E LANCHES
-6. ROTA MOTORISTA AROLDO — PÃO FRANCÊS
-7. ROTA MOTORISTA AROLDO — PCQ E LANCHES
+## 2. Bug: células vazias não deixavam editar
 
-Cada página tem `page-break-before: always` garantindo quebra.
+**Problema:** Ao clicar numa célula vazia (quantidade=0) na edição manual,
+não abria o diálogo de ajuste.
 
-## 2. Brasão do Município
+**Causa:** `if (quantidade <= 0) return` bloqueava células vazias.
 
-Substituído o "P" (letra) pelo brasão de Lucas do Rio Verde:
-- Arquivo: `public/brasao.jpg`
-- Tamanho: 12mm × 12mm (aumentado de 8mm)
-- `object-fit: contain` para não distorcer
-- Sem borda preta (antes tinha `border: 1.5pt solid #000`)
+**Fix:** Removida a verificação — agora pode clicar em qualquer célula
+(com ou sem valor) para ajustar/adicionar.
 
-Aparece em TODAS as 7 páginas de impressão (no canto superior esquerdo do header).
+## 3. Lanche agrupado por dia na impressão
+
+**Antes:** Lanche mostrado em tabela com escolas × dias (igual PF/PCQ).
+
+**Agora:** Lanche agrupado por dia:
+```
+SEGUNDA — 150 unid.
+┌──────────────────────┬──────────┐
+│ ESCOLA / UNIDADE     │ QTD      │
+├──────────────────────┼──────────┤
+│ Anjo da Guarda       │ 50       │
+│ Chico Mendes         │ 60       │
+│ São Cristóvão        │ 40       │
+└──────────────────────┴──────────┘
+
+TERÇA — 120 unid.
+┌──────────────────────┬──────────┐
+│ ...
+```
+
+Cada dia tem seu próprio mini-bloco com:
+- Header cinza com nome do dia + total do dia
+- Tabela simples: Escola × Quantidade
+- Só aparecem dias que têm lanche
 
 ## Como aplicar
 
 ```bash
-unzip patch-producao-retrato-brasao.zip -d .
+unzip patch-producao-ajustes3.zip -d .
 git add -A
-git commit -m "fix: produção em retrato + brasão do município"
+git commit -m "fix: aviso na impressão + editar células vazias + lanche agrupado por dia"
 git push
 ```
-
-## Após aplicar
-
-1. Abra `/producao`
-2. Clique em "Imprimir"
-3. Deve sair em RETRATO com 7 páginas separadas
-4. Cada página tem o brasão no canto superior esquerdo
