@@ -126,16 +126,19 @@
   }
 
   .print-doc-logo {
-    width: 8mm;
-    height: 8mm;
-    border: 1.5pt solid #000;
+    width: 12mm;
+    height: 12mm;
     display: flex !important;
     align-items: center;
     justify-content: center;
-    font-size: 10pt;
-    font-weight: 800;
     flex-shrink: 0;
     margin-top: 0.5mm;
+  }
+
+  .print-doc-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
   }
 
   .print-doc-title-block {
@@ -786,12 +789,11 @@
 }
 
 /* ── Print styles — A4 LANDSCAPE, B&W OPTIMIZED ── */
+/* v9.4: landscape SÓ para cardápio nutricional (.semana-page) */
+/* Produção e outras páginas continuam em portrait (definido no @page geral) */
 @media print {
-  /* Override the general @page portrait for cardápio pages */
-  @page {
-    size: A4 landscape;
-    margin: 4mm 4mm 3mm 4mm;
-  }
+  /* NÃO sobrescreve @page geral — produção usa portrait */
+  /* Landscape só se aplica via classe específica se necessário futuramente */
 
   .semana-page {
     page-break-after: always;

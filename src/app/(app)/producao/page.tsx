@@ -158,7 +158,7 @@ export default function ProducaoPage() {
       {/* Header */}
       <div className="print-doc-header">
         <div className="print-doc-header-left">
-          <div className="print-doc-logo">P</div>
+          <div className="print-doc-logo"><img src="/brasao.jpg" alt="Brasão" /></div>
           <div className="print-doc-title-block">
             <div className="print-doc-title">PRODUÇÃO — PÃO FRANCÊS{copyLabel ? ` (${copyLabel})` : ''}</div>
             <div className="print-doc-subtitle">Padaria Escolar Municipal — Prefeitura de Lucas do Rio Verde / MT</div>
@@ -258,7 +258,7 @@ export default function ProducaoPage() {
             {/* Header */}
             <div className="print-doc-header">
               <div className="print-doc-header-left">
-                <div className="print-doc-logo">P</div>
+                <div className="print-doc-logo"><img src="/brasao.jpg" alt="Brasão" /></div>
                 <div className="print-doc-title-block">
                   <div className="print-doc-title">PRODUÇÃO — PCQ E LANCHES</div>
                   <div className="print-doc-subtitle">Padaria Escolar Municipal — Prefeitura de Lucas do Rio Verde / MT</div>
@@ -377,7 +377,7 @@ export default function ProducaoPage() {
                 {/* Header */}
                 <div className="print-doc-header">
                   <div className="print-doc-header-left">
-                    <div className="print-doc-logo">P</div>
+                    <div className="print-doc-logo"><img src="/brasao.jpg" alt="Brasão" /></div>
                     <div className="print-doc-title-block">
                       <div className="print-doc-title">ROTA {romaneio.rota_label.toUpperCase()} — PÃO FRANCÊS</div>
                       <div className="print-doc-subtitle">Padaria Escolar Municipal — Prefeitura de Lucas do Rio Verde / MT</div>
@@ -439,7 +439,7 @@ export default function ProducaoPage() {
                 {/* Header */}
                 <div className="print-doc-header">
                   <div className="print-doc-header-left">
-                    <div className="print-doc-logo">P</div>
+                    <div className="print-doc-logo"><img src="/brasao.jpg" alt="Brasão" /></div>
                     <div className="print-doc-title-block">
                       <div className="print-doc-title">ROTA {romaneio.rota_label.toUpperCase()} — PCQ E LANCHES</div>
                       <div className="print-doc-subtitle">Padaria Escolar Municipal — Prefeitura de Lucas do Rio Verde / MT</div>
