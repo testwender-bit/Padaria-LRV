@@ -343,6 +343,19 @@ export async function GET(request: Request) {
       })
     }
 
+    // v9.5.4: buscar produções extras (instituições avulsas) — usado pela
+    // página para injetá-las como ItemProducao nos dias de produção.
+    let producaoExtra: any[] = []
+    try {
+      producaoExtra = await (db as any).producaoExtra.findMany({
+        where: { ano, semana },
+        orderBy: [{ produto: 'asc' }, { dia_semana: 'asc' }],
+      })
+    } catch {
+      // Model pode não existir ainda no banco — ignora silenciosamente.
+      producaoExtra = []
+    }
+
     return NextResponse.json({
       semana,
       ano,
@@ -351,6 +364,8 @@ export async function GET(request: Request) {
       lancheRegular: lancheRegular?.nome || null,
       lancheBifasica: lancheBifasica?.nome || null,
       dias: diasProducao,
+      // v9.5.4: produções extras para a página injetar como ItemProducao
+      producaoExtra,
     })
   } catch (error) {
     console.error('Erro ao calcular produção:', error)

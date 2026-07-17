@@ -194,46 +194,43 @@ export default function ConfiguracoesPage() {
     }
   }
 
-  // v9.5.3: Renumerar automaticamente as escolas dentro de cada rota
-  // atribui 1, 2, 3, ... em ordem alfabética por nome_curto, garantindo
-  // que toda escola tenha um número único (sem conflitos nem zeros repetidos).
+  // v9.5.4: Renumerar automaticamente TODAS as escolas com sequência GLOBAL
+  // (1, 2, 3, 4... independente do motorista/rota).
+  // Ordena por rota → nome_curto só para deixar a numeração estável e
+  // previsível, mas os números em si são globais (1..N) — então quando o
+  // usuário mudar um número, a sequência final respeita apenas o número,
+  // não a rota.
   async function handleRenumerar() {
     const confirmado = window.confirm(
       'Renumerar TODAS as escolas automaticamente?\n\n' +
-      'Cada escola receberá um número sequencial (1, 2, 3...) dentro de sua rota, ' +
-      'em ordem alfabética por nome curto.\n\n' +
+      'Cada escola receberá um número SEQUENCIAL GLOBAL (1, 2, 3, 4...) ' +
+      'independente do motorista. A ordem inicial segue rota + nome curto ' +
+      '(alfabético), mas você pode trocar os números livremente depois.\n\n' +
       'Isso substitui todos os números de Ordem atuais. Deseja continuar?'
     )
     if (!confirmado) return
     try {
       toast.loading('Renumerando escolas...', { id: 'renum' })
-      // Agrupa por rota, ordena por nome_curto, atribui 1..N
-      const porRota: Record<string, typeof escolas> = {}
-      for (const e of escolas) {
-        const r = e.rota || 'OUTROS'
-        if (!porRota[r]) porRota[r] = []
-        porRota[r].push(e)
-      }
-      const updates: Array<{ id: string; ordem_rota: number; nome: string; nome_curto: string; categoria: string; rota: string; busca_propria: boolean; recebe_pf: boolean; recebe_pcq: boolean; recebe_lanche: boolean; ativo: boolean; obs: string | null }> = []
-      for (const [rota, lista] of Object.entries(porRota)) {
-        const ordenada = [...lista].sort((a, b) => (a.nome_curto || '').localeCompare(b.nome_curto || ''))
-        ordenada.forEach((e, idx) => {
-          updates.push({
-            id: e.id,
-            ordem_rota: idx + 1,
-            nome: e.nome,
-            nome_curto: e.nome_curto,
-            categoria: e.categoria,
-            rota: e.rota,
-            busca_propria: e.busca_propria,
-            recebe_pf: e.recebe_pf,
-            recebe_pcq: e.recebe_pcq,
-            recebe_lanche: e.recebe_lanche,
-            ativo: e.ativo,
-            obs: e.obs,
-          })
-        })
-      }
+      // Ordena por rota → nome_curto só para atribuir números iniciais estáveis
+      const ordenada = [...escolas].sort((a, b) => {
+        const ra = (a.rota || '').localeCompare(b.rota || '')
+        if (ra !== 0) return ra
+        return (a.nome_curto || '').localeCompare(b.nome_curto || '')
+      })
+      const updates = ordenada.map((e, idx) => ({
+        id: e.id,
+        ordem_rota: idx + 1,
+        nome: e.nome,
+        nome_curto: e.nome_curto,
+        categoria: e.categoria,
+        rota: e.rota,
+        busca_propria: e.busca_propria,
+        recebe_pf: e.recebe_pf,
+        recebe_pcq: e.recebe_pcq,
+        recebe_lanche: e.recebe_lanche,
+        ativo: e.ativo,
+        obs: e.obs,
+      }))
       // Envia todas as atualizações em paralelo
       const results = await Promise.all(
         updates.map((u) =>
@@ -437,13 +434,13 @@ export default function ConfiguracoesPage() {
         </TabsList>
 
         <TabsContent value="escolas" className="mt-4">
-          {/* v9.5.3: Botão para renumerar todas as escolas automaticamente */}
+          {/* v9.5.4: Botão para renumerar todas as escolas automaticamente */}
           <div className="flex items-center justify-between mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
             <div className="text-sm">
-              <p className="font-medium text-blue-900">Ordenação por Ordem de Rota</p>
+              <p className="font-medium text-blue-900">Ordenação Sequencial Global</p>
               <p className="text-xs text-blue-700 mt-0.5">
-                Cada escola recebe um número sequencial (1, 2, 3...) dentro de sua rota, em ordem alfabética.
-                Ajuste os números individuais clicando no ícone de editar.
+                Cada escola recebe um número único (1, 2, 3, 4...) <strong>independente do motorista</strong>.
+                A produção respeita a sequência dos números — não agrupa por rota.
               </p>
             </div>
             <Button onClick={handleRenumerar} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-100">

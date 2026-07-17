@@ -248,16 +248,19 @@ export default function ProducaoPage() {
   // Data/hora de geração
   const geradoEm = format(new Date(), "dd/MM/yyyy 'às' HH:mm")
 
-  // v9.5: ordenação por rota → ordem_rota → nome_curto (alfabético)
+  // v9.5.4: ordenação puramente SEQUENCIAL por ordem_rota → nome_curto.
+  // NÃO agrupa por rota — usuário quer 1, 2, 3, 4... independente do motorista.
   function sortEscolas(a: any, b: any) {
-    if (a.rota !== b.rota) return (a.rota || '').localeCompare(b.rota || '')
     if ((a.ordem_rota ?? 0) !== (b.ordem_rota ?? 0)) return (a.ordem_rota ?? 0) - (b.ordem_rota ?? 0)
     return (a.nome_curto || '').localeCompare(b.nome_curto || '')
   }
 
   const escolasPF = consolidado.escolas.filter(e => e.total_pf > 0).sort(sortEscolas)
-  const escolasRegularesPF = escolasPF.filter(e => !['OUTROS', 'INTERIOR'].includes(e.rota?.toUpperCase()))
-  const escolasOutrasPF = escolasPF.filter(e => ['OUTROS', 'INTERIOR'].includes(e.rota?.toUpperCase()))
+  // v9.5.4: "Produção Extra" = apenas rota OUTROS (instituições avulsas:
+  // Bombeiros, Ambulância, etc.). INTERIOR (Fredolino, São Cristóvão) é
+  // escola regular e fica junto com as demais.
+  const escolasRegularesPF = escolasPF.filter(e => (e.rota || '').toUpperCase() !== 'OUTROS')
+  const escolasOutrasPF = escolasPF.filter(e => (e.rota || '').toUpperCase() === 'OUTROS')
 
   // Agrupa escolas PCQ e Lanche (mesma ordenação)
   const escolasPCQ = consolidado.escolas.filter(e => e.total_pcq > 0).sort(sortEscolas)
@@ -324,7 +327,7 @@ export default function ProducaoPage() {
           {escolasRegularesPF.map((escola) => (
             <tr key={escola.id}>
               <td className="print-col-escola">
-                <span style={{ color: '#999', fontSize: '0.85em', marginRight: '0.3em' }}>{escola.ordem_rota}</span>
+                <span className="print:hidden" style={{ color: '#999', fontSize: '0.85em', marginRight: '0.3em' }}>{escola.ordem_rota}</span>
                 {escola.nome_curto}
               </td>
               {DIAS_PRODUCAO.map((d) => (
@@ -341,7 +344,7 @@ export default function ProducaoPage() {
           {escolasOutrasPF.map((escola) => (
             <tr key={`outros-${escola.id}`}>
               <td className="print-col-escola">
-                <span style={{ color: '#999', fontSize: '0.85em', marginRight: '0.3em' }}>{escola.ordem_rota}</span>
+                <span className="print:hidden" style={{ color: '#999', fontSize: '0.85em', marginRight: '0.3em' }}>{escola.ordem_rota}</span>
                 {escola.nome_curto}
               </td>
               {DIAS_PRODUCAO.map((d) => (
@@ -746,7 +749,7 @@ export default function ProducaoPage() {
       {viewMode === 'dia' && (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="print-hidden">
           <TabsList className="flex flex-wrap h-auto gap-1 bg-amber-50/50 p-1">
-            {data.dias.map((dia) => (
+            {diasComExtra.map((dia) => (
               <TabsTrigger key={dia.data} value={dia.data}
                 className="data-[state=active]:bg-[#1A3A5C] data-[state=active]:text-white text-xs px-3 py-1.5">
                 <span>{dia.dia_curto}</span>
@@ -754,7 +757,7 @@ export default function ProducaoPage() {
               </TabsTrigger>
             ))}
           </TabsList>
-          {data.dias.map((dia) => (
+          {diasComExtra.map((dia) => (
             <TabsContent key={dia.data} value={dia.data}>
               <DiaProducaoCard dia={dia} onAjuste={openAjuste} />
             </TabsContent>

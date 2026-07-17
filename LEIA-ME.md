@@ -1,141 +1,109 @@
-# Fix v9.5.3 — Retrato OBRIGATÓRIO + Brasão sem caixa + Renumerar
+# Fix v9.5.4 — Produção Extra aparece + Ordem Sequencial Global + Print sem número
 
-## 1. Impressão sempre RETRATO (corrigido)
+## 1. Produção Extra não aparecia — CORRIGIDO
 
-### Problema
+### Sintoma
 
-A impressão da página de Produção estava saindo em **paisagem** (landscape)
-em vez de retrato (portrait).
-
-### Causa raiz
-
-No `print.css`, havia DUAS regras `@page` dentro de `@media print`:
-
-```css
-/* linha 22 — topo do arquivo */
-@page { size: A4 portrait; ... }
-
-/* linha 768 — dentro do bloco "CARDÁPIO NUTRICIONAL — A4 PAISAGEM" */
-@page { size: A4 landscape; ... }
-```
-
-`@page` em CSS **não pode ser scoped por seletor** — é sempre global.
-Quando há múltiplas regras `@page`, a última vence (ordem do arquivo).
-Como a regra `landscape` vinha depois da `portrait`, ela sobrescrevia a
-orientação para TODAS as páginas, incluindo produção.
-
-### Fix
-
-Usado o recurso de **named pages** do CSS:
-
-```css
-@page { size: A4 portrait; ... }              /* default — todas as páginas */
-@page landscape_cardapio {                    /* named page — só quando ativada */
-  size: A4 landscape;
-  margin: 4mm;
-}
-
-.semana-page { page: landscape_cardapio; }    /* ativa só no cardápio */
-```
-
-Agora produção/romaneio usam o default (retrato), e o cardápio continua
-saindo em paisagem como antes.
-
-## 2. Brasão sem caixa quadrada (corrigido)
-
-### Problema
-
-A imagem do brasão da prefeitura aparecia dentro de um quadrado com borda
-preta, em vez de aparecer sozinha.
+> "quando adiciono inst. extra ela não aparece na produção na onde verifica
+> que nesse caso que adicionei era pão frances não aparece na produção nem
+> na impressão da produção."
 
 ### Causa raiz
 
-A classe `.print-doc-logo` tinha:
-```css
-width: 8mm;
-height: 8mm;
-border: 1.5pt solid #000;
-```
+O patch v9.5.2 reescreveu `src/app/api/producao/route.ts` para adicionar
+`ordem_rota`, mas **perdeu a busca em `db.producaoExtra`** que estava no
+patch v9.5 original. A resposta JSON voltou a não incluir `producaoExtra`,
+então a página fazia `setProducaoExtra(prodJson.producaoExtra || [])` →
+sempre array vazio.
 
-Essa classe foi originalmente criada para uma letra "P" (logo textual) —
-quando migrou para `<img>`, a borda ficou em volta da imagem.
+Além disso:
+- O **Prisma schema não tinha o model `ProducaoExtra`** no stage/.
+- A **API `/api/producao/extra/route.ts`** (POST/GET/DELETE) não estava
+  sendo entregue nos patches recentes.
+- A visão **Por Dia** usava `data.dias` em vez de `diasComExtra`.
 
 ### Fix
 
-Atualizada a classe para:
-- Sem borda (`border: none`)
-- Altura de 12mm (proporcional ao header)
-- Largura automática (respeita aspect ratio do brasão)
+1. **`prisma/schema.prisma`**: adicionado `model ProducaoExtra` (com
+   campos `ano`, `semana`, `nome_instituicao`, `produto`, `dia_semana`,
+   `quantidade`, `observacao`) e campo `pao_fixo` na `Escola`.
+2. **`src/app/api/producao/extra/route.ts`**: incluída (GET/POST/DELETE).
+3. **`src/app/api/producao/route.ts`**: agora busca `producaoExtra` no
+   banco e retorna no JSON da resposta (com try/catch — se a tabela não
+   existir ainda, retorna `[]` em vez de quebrar).
+4. **`src/app/(app)/producao/page.tsx`**: a visão **Por Dia** agora usa
+   `diasComExtra` (não `data.dias`), então extras aparecem também lá.
 
-E adicionada regra específica para `img` dentro de `.print-doc-logo`:
-```css
-.print-doc-logo img {
-  height: 12mm !important;
-  width: auto !important;
-  object-fit: contain !important;
-  border: none !important;
-  background: transparent !important;
-}
+### IMPORTANTE — Migração do banco
+
+Após aplicar o patch, é necessário rodar `prisma db push` para criar a
+tabela `ProducaoExtra` no banco:
+
+```bash
+npx prisma db push
+# ou
+npx prisma migrate dev --name add-producao-extra
 ```
 
-O brasão agora aparece **sozinho, sem caixa**, no tamanho correto.
+Sem isso, a API retorna `producaoExtra: []` (silenciosamente) e nada
+aparece — mas não quebra a aplicação.
 
-## 3. Botão "Renumerar" na tela de Configurações
+## 2. Ordenação agora é SEQUENCIAL GLOBAL
 
-### Contexto
+### Sintoma
 
-Você notou que **números negativos funcionavam** mas **positivos não
-pareciam ter efeito**. Isso acontecia porque a maioria das escolas estava
-com `ordem_rota = 0` (default). Quando você mudava uma para `3`, ela ia
-para depois do grupo de 0s — mas como todas as outras continuavam em 0,
-a mudança parecia sutil. Já com `-1`, a escola ia para ANTES de todos os
-0s, sendo uma mudança dramática e visível.
+> "ele está agrupando por rota ou seja ele primeiro vem rota do motorista
+> aroldo 1 2 3 4. depois para buscar 1 2 3, depois rota do motorista jose
+> 1 2 3. não quero que ele organize assim. quero que ordem seja sequencia
+> mesmo vou demonimar o numero de ordem 1 2 3 4 para cada um el
+> independente do motorista ele via ficar na ordem."
 
-A ordenação v9.5.2 **está funcionando corretamente** — você validou isso
-com o teste dos negativos.
+### Fix
 
-### Solução
+- **`consolidarProducaoSemana`** agora ordena APENAS por
+  `ordem_rota → nome_curto` (sem comparar `rota`).
+- **`sortEscolas`** na página também faz o mesmo.
+- **Botão "Renumerar"** agora atribui números GLOBAIS (1..N) a todas as
+  escolas, independente do motorista. A ordenação inicial ainda segue
+  `rota → nome_curto` para ser estável/previsível, mas os números em si
+  são globais — então você pode trocar livremente e a sequência final
+  respeita só o número.
 
-Adicionado botão **"Renumerar"** na aba Escolas em Configurações:
+### Importante: Romaneio continua agrupado por motorista
 
-- Clica no botão → confirma
-- O sistema agrupa as escolas por rota (José, Aroldo, Busca Própria,
-  Outros)
-- Dentro de cada rota, ordena por nome curto (alfabético)
-- Atribui números sequenciais: 1, 2, 3, 4, ... (sem zeros, sem repetição)
-- Salva todas via PUT em paralelo
-- Recarrega a lista
+O **romaneio** (página de impressão por motorista) ainda agrupa por rota
+— isso é necessário porque cada motorista leva só as escolas da sua rota.
+A mudança de ordenação sequencial vale apenas para a **página de produção**
+(visão consolidada) e a **impressão da produção** (PF, PCQ, Lanches).
 
-Resultado: **cada escola tem um número único dentro de sua rota**.
-Agora quando você quiser reordenar, basta trocar dois números (ex.: a
-escola 3 vira 5, a 5 vira 3) e a ordem será exatamente a que você definiu.
+## 3. Número da ordem SOME na impressão
 
-### Display do número na produção
+### Sintoma
 
-A tabela de produção agora mostra o número da ordem_rota ao lado do nome
-da escola (em cinza claro, sutil):
+> "na impressão no pão frances ficou numeração junto nome da escola não
+> quero isso."
 
-```
-1  CEI Anjo Gabriel
-2  CEI Aquarela
-3  CEI Balão Mágico
-...
-```
+### Fix
 
-Isso permite **ver imediatamente** qual número cada escola tem, sem
-precisar ir até Configurações.
+O `<span>` que mostra o `ordem_rota` ao lado do nome agora tem a classe
+`print:hidden` do Tailwind. Resultado:
+- **Na tela** (visão semana e dia): continua aparecendo o número em cinza
+  claro ao lado do nome, para você conferir a ordem.
+- **Na impressão** (Ctrl+P): o número some, só aparece o nome da escola.
 
 ## Arquivos incluídos
 
 ```
-src/app/print.css                                       # named pages + brasão sem caixa
-src/app/(app)/producao/page.tsx                         # mostra ordem_rota ao lado do nome
-src/app/(app)/configuracoes/page.tsx                    # botão Renumerar
-src/app/api/escolas/route.ts                            # orderBy + nome_curto tie-breaker
-src/app/api/producao/route.ts                           # 5× ordem_rota
+prisma/schema.prisma                                    # ProducaoExtra model + pao_fixo
+src/app/api/producao/route.ts                           # retorna producaoExtra no JSON
+src/app/api/producao/extra/route.ts                     # CRUD de ProducaoExtra (NOVO)
 src/app/api/romaneio/route.ts                           # ordem_rota + sort
+src/app/api/escolas/route.ts                            # orderBy + nome_curto tie-breaker
+src/app/(app)/producao/page.tsx                         # usa diasComExtra na visão Por Dia + print:hidden
+src/app/(app)/configuracoes/page.tsx                    # Renumerar GLOBAL
+src/app/print.css                                       # (mantido do v9.5.3)
 src/lib/producao-utils.ts                               # ItemProducao.ordem_rota obrigatório
-src/lib/producao-semana-utils.ts                        # sem as any
+src/lib/producao-semana-utils.ts                        # sort sem rota
 src/lib/romaneio-utils.ts                               # EscolaRomaneio.ordem_rota
 ```
 
@@ -143,25 +111,39 @@ src/lib/romaneio-utils.ts                               # EscolaRomaneio.ordem_r
 
 ```bash
 # Na RAIZ do projeto:
-unzip -o patch-portrait-brasao-renumerar-v9.5.3.zip -d .
+unzip -o patch-extra-show-ordem-global-v9.5.4.zip -d .
 
+# CRIAR A TABELA ProducaoExtra NO BANCO (importante!):
+npx prisma db push
+
+# Commit
 git add -A
-git commit -m "fix(v9.5.3): retrato obrigatório + brasão sem caixa + botão renumerar"
+git commit -m "fix(v9.5.4): extra aparece + ordem sequencial global + print sem número"
 git push
 ```
 
 ## Verificação
 
-1. **Produção → Imprimir (Ctrl+P)** → deve abrir em **RETRATO** (A4 portrait).
-2. **Brasão da prefeitura** aparece **sozinho, sem borda quadrada** no
-   canto superior esquerdo do cabeçalho.
-3. **Cardápio nutricional → Imprimir** → continua em **PAISAGEM** como
-   antes (não quebrou).
-4. **Configurações → Escolas** → aparece um botão azul **"Renumerar"**
-   no topo da lista. Clique para atribuir 1, 2, 3... a todas as escolas
-   automaticamente.
-5. **Página de Produção** → cada escola agora mostra seu número de ordem
-   em cinza claro antes do nome. Confira se está na ordem que você
-   definiu.
-6. Para reordenar duas escolas: vá em Configurações, edite uma, troque
-   o número, salve. Volte para Produção e a ordem vai estar trocada.
+1. **Configurações → Escolas → Renumerar** → todas as escolas recebem
+   números 1..N (globais, sem agrupar por motorista).
+2. **Página de Produção** → as escolas aparecem na sequência 1, 2, 3, 4
+   ... sem agrupar por motorista. (O número aparece em cinza claro ao
+   lado do nome.)
+3. **Imprimir (Ctrl+P)** → o número SOME na impressão, só fica o nome.
+4. **Cadastre uma Produção Extra** (botão "+ Produções Extras"):
+   - Escolha PF, dia (ex: segunda), quantidade.
+   - Salve.
+   - Na página de produção (visão semana ou dia), a instituição extra
+     aparece na lista com a quantidade correta.
+   - Na impressão, aparece na seção "Produção Extra" ao final.
+5. **Romaneio** (página de impressão por motorista) → continua agrupado
+   por motorista, com as escolas de cada motorista ordenadas por
+   `ordem_rota` dentro daquela rota.
+
+## Nota técnica
+
+A busca de `producaoExtra` na API de produção foi envolvida em
+`try/catch` com fallback `[]`. Isso garante que se a tabela não tiver
+sido criada ainda (esquecimento do `prisma db push`), a aplicação não
+quebra — apenas os extras não aparecem. Após rodar `prisma db push`,
+eles passam a aparecer normalmente.

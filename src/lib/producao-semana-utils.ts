@@ -123,9 +123,10 @@ export function consolidarProducaoSemana(
     total_lanche += e.total_lanche
   })
 
-  // v9.5: ordenação por rota → ordem_rota → nome_curto (alfabético)
+  // v9.5.4: ordenação puramente SEQUENCIAL por ordem_rota → nome_curto.
+  // NÃO agrupa por rota — o usuário quer 1, 2, 3, 4... independente do
+  // motorista. Romaneio continua agrupado por rota (lógica própria).
   const escolas = Array.from(mapa.values()).sort((a, b) => {
-    if ((a.rota || '') !== (b.rota || '')) return (a.rota || '').localeCompare(b.rota || '')
     if ((a.ordem_rota ?? 0) !== (b.ordem_rota ?? 0)) return (a.ordem_rota ?? 0) - (b.ordem_rota ?? 0)
     return (a.nome_curto || '').localeCompare(b.nome_curto || '')
   })
