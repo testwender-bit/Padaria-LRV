@@ -1,32 +1,97 @@
-# Fix — TypeError itens + ordenação
+# Fix v9.5.1 — Corrige erro de Hooks + Produção Extra silenciosa
 
-## 1. TypeError: Property 'itens' does not exist on type 'ProducaoDia'
+## Problema corrigido
 
-**Causa:** `ProducaoDia` tem `itens_pf`, `itens_pcq`, `itens_lanche` (NÃO `itens`).
-O código tentava fazer `dia.itens.push()` que não existe.
+```
+Error: Minified React error #310
+React has detected a change in the order of Hooks called by ProducaoPage.
+Rendered more hooks than during the previous render.
+```
 
-**Fix:** Agora faz push no array correto:
-- PF → `dia.itens_pf.push(item)`
-- PCQ → `dia.itens_pcq.push(item)`
-- LANCHE → `dia.itens_lanche.push(item)`
+### Causa raiz
 
-Também adicionado deep copy dos arrays para não mutar o estado original.
+O `useMemo(diasComExtra)` adicionado na v9.5 estava posicionado **depois**
+do early return `if (loading || !data) return (...)`. Isso viola as
+Rules of Hooks do React:
 
-## 2. Ordenação
+- Quando `loading=true`, o componente retornava antes de chegar ao `useMemo`
+  (16 hooks executados).
+- Quando `loading=false` (após carregar dados), o componente passava pelo
+  early return e executava o `useMemo` (17 hooks).
 
-A ordenação foi corrigida no patch anterior (`producao-semana-utils.ts`).
-Este patch só tem a página de produção que corrige o TypeScript.
+React detecta a mudança na ordem/quantidade de hooks entre renders e aborta
+com o erro #310.
 
-Se a ordenação ainda não funciona após este patch:
-1. Verifique se o patch anterior (`patch-ordenacao-extra-print.zip`) foi aplicado
-2. Reinicie o dev server: `npm run dev`
-3. Limpe o cache do navegador (Ctrl+Shift+R)
+### Fix
+
+O `useMemo(diasComExtra)` foi **movido para ANTES do early return**, junto
+com os demais hooks. O guard interno `if (!data || producaoExtra.length === 0)
+return data?.dias || []` já trata o caso nulo com segurança.
+
+## Produção Extra agora é silenciosa
+
+Conforme solicitado pelo usuário:
+
+> "Quero que quando colocar uma instituição extra ela silenciosamente agrege
+> como última da produção do pão frances sem separação sem nada."
+
+Mudanças:
+
+1. **Removida a página de impressão "PRODUÇÃO EXTRA — INSTITUIÇÕES"** — não
+   existe mais como página separada.
+
+2. **As produções extras são agora injetadas como `ItemProducao`** nos
+   arrays `itens_pf` / `itens_pcq` / `itens_lanche` do dia de produção
+   correspondente, via `useMemo(diasComExtra)`.
+
+3. **Aparecem como a última instituição da rota `OUTROS`** na tabela de
+   produção, junto com as demais escolas — sem separação visual.
+
+4. **`consolidarProducaoSemana` agora recebe `diasComExtra`** em vez de
+   `data.dias`, então os totais da semana já incluem as extras.
+
+### Mapeamento de dia (entrega → produção)
+
+- **PF**: dia_semana = entrega → produção = D-1
+  (segunda→domingo, terça→segunda, etc., via `PF_PRODUCAO_PARA_ENTREGA`)
+- **PCQ / Lanche**: dia_semana = entrega = produção (mesmo dia, D-0)
+
+### Ordenação das extras
+
+As extras recebem `rota = 'OUTROS'` e `ordem_rota = 9999`, garantindo que
+apareçam **por último** dentro do bloco "OUTRAS INSTITUIÇÕES" da impressão,
+depois das escolas reais que estejam nessa rota.
+
+## Arquivos incluídos
+
+```
+src/app/(app)/producao/page.tsx       # Fix principal (hooks + extra silenciosa)
+src/lib/producao-semana-utils.ts      # Sort por rota → ordem_rota → nome_curto
+```
 
 ## Como aplicar
 
 ```bash
-unzip -o patch-fix-itens-tipo.zip -d .
+# Na RAIZ do projeto (onde está o package.json):
+unzip -o patch-fix-extra-hooks.zip -d .
+
+# Commit
 git add -A
-git commit -m "fix: itens_pf/pcq/lanche push + deep copy"
+git commit -m "fix(v9.5.1): corrige erro de hooks + produção extra silenciosa"
 git push
 ```
+
+Após aplicar, **rebuild e redeploy** (Vercel fará automaticamente após o
+push).
+
+## Verificação
+
+1. Acesse a página `/producao` — não deve mais exibir o erro #310.
+2. Cadastre uma produção extra (botão "+ Produções Extras").
+3. A produção extra deve aparecer:
+   - Na tabela de produção PF (ou PCQ/Lanche), como última linha do bloco
+     "OUTRAS INSTITUIÇÕES".
+   - Na impressão (PF 1ª via, PF 2ª via), sem página separada.
+   - Os totais da semana devem incluir as extras.
+4. **Não deve existir** mais a página "PRODUÇÃO EXTRA — INSTITUIÇÕES" na
+   impressão.

@@ -159,6 +159,68 @@ export default function ProducaoPage() {
     setAjusteOpen(true)
   }
 
+  // v9.5: injeta produções extras como ItemProducao nos dias de produção
+  // (silenciosamente — aparecem junto com as escolas na produção e impressão)
+  // IMPORTANTE: este useMemo fica ANTES do early return para respeitar
+  // as Rules of Hooks do React (não pode haver hook depois de return).
+  const diasComExtra = useMemo<ProducaoDia[]>(() => {
+    if (!data || producaoExtra.length === 0) return data?.dias || []
+    // Deep copy dos dias com seus arrays de itens (para não mutar o estado)
+    const novosDias: ProducaoDia[] = (data.dias || []).map((d) => ({
+      ...d,
+      itens_pf: [...(d.itens_pf || [])],
+      itens_pcq: [...(d.itens_pcq || [])],
+      itens_lanche: [...(d.itens_lanche || [])],
+    }))
+    // Inverte o mapa PF: entrega -> produção (D-1)
+    const entregaParaProducaoPF: Record<string, string> = {}
+    Object.entries(PF_PRODUCAO_PARA_ENTREGA).forEach(([prodKey, entregaKey]) => {
+      entregaParaProducaoPF[entregaKey] = prodKey
+    })
+    for (const extra of producaoExtra) {
+      let diaKeyAlvo: string | null = null
+      if (extra.produto === 'PF') {
+        diaKeyAlvo = entregaParaProducaoPF[extra.dia_semana] || null
+      } else {
+        // PCQ/Lanche: produção = entrega (mesmo dia)
+        diaKeyAlvo = extra.dia_semana
+      }
+      if (!diaKeyAlvo) continue
+      const dia = novosDias.find((d) => d.dia_key === diaKeyAlvo)
+      if (!dia) continue
+      const nomeCurto =
+        extra.nome_instituicao.length > 25
+          ? extra.nome_instituicao.substring(0, 25)
+          : extra.nome_instituicao
+      const novoItem: ItemProducao = {
+        escola_id: `extra_${extra.id}`,
+        escola_nome: extra.nome_instituicao,
+        escola_curto: nomeCurto,
+        categoria: 'EXTRA',
+        rota: 'OUTROS',
+        busca_propria: false,
+        produto: extra.produto as ItemProducao['produto'],
+        quantidade: extra.quantidade,
+        unidade: extra.produto === 'PF' ? 'un' : 'formas',
+        dia_entrega: extra.dia_semana,
+        obs: extra.observacao || undefined,
+      } as any
+      // (item as any).ordem_rota alto para aparecer por último dentro da rota OUTROS
+      ;(novoItem as any).ordem_rota = 9999
+      if (extra.produto === 'PF') {
+        dia.itens_pf.push(novoItem)
+        dia.total_pf = (dia.total_pf || 0) + extra.quantidade
+      } else if (extra.produto === 'PCQ') {
+        dia.itens_pcq.push(novoItem)
+        dia.total_pcq = (dia.total_pcq || 0) + extra.quantidade
+      } else if (extra.produto === 'LANCHE') {
+        dia.itens_lanche.push(novoItem)
+        dia.total_lanche = (dia.total_lanche || 0) + extra.quantidade
+      }
+    }
+    return novosDias
+  }, [data, producaoExtra])
+
   if (loading || !data) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -173,61 +235,7 @@ export default function ProducaoPage() {
   const inicio = semanaReferencia ? new Date(semanaReferencia + 'T12:00:00') : new Date()
   const domingo = addDays(inicio, -1) // domingo antes da segunda
   const semanaLabel = `Semana ${data.semana} — ${formatarPeriodoSemana(inicioSemana(inicio), fimSemana(inicio))}`
-  // v9.5: injeta produções extras como ItemProducao nos dias de produção
-  // (silenciosamente — aparecem junto com as escolas na produção e impressão)
-  const diasComExtra = useMemo(() => {
-    if (!data || producaoExtra.length === 0) return data?.dias || []
-    // Deep copy para não mutar o estado original
-    const novosDias = data.dias.map(d => ({
-      ...d,
-      itens_pf: [...d.itens_pf],
-      itens_pcq: [...d.itens_pcq],
-      itens_lanche: [...d.itens_lanche],
-    }))
-    for (const extra of producaoExtra) {
-      // Encontra o dia de PRODUÇÃO (PF é produzido D-1, PCQ/Lanche no dia)
-      const diaProducao = extra.produto === 'PF'
-        ? DIAS_PRODUCAO.find(d => {
-            // PF: produz no dia anterior à entrega
-            const diaIdx = DIAS_PRODUCAO.indexOf(d)
-            const diaEntregaIdx = DIAS_PRODUCAO.indexOf(extra.dia_semana as DiaProducao)
-            return diaIdx === diaEntregaIdx - 1 || (diaEntregaIdx === 0 && d === 'domingo')
-          })
-        : DIAS_PRODUCAO.find(d => d === extra.dia_semana)
-
-      if (!diaProducao) continue
-      const dia = novosDias.find(d => d.dia_key === diaProducao)
-      if (!dia) continue
-
-      const item = {
-        escola_id: `extra_${extra.id}`,
-        escola_nome: extra.nome_instituicao,
-        escola_curto: extra.nome_instituicao.substring(0, 20),
-        categoria: 'OUTROS',
-        rota: 'BUSCA_PROPRIA',
-        ordem_rota: 999,
-        busca_propria: true,
-        produto: extra.produto as 'PF' | 'PCQ' | 'LANCHE',
-        quantidade: extra.quantidade,
-        unidade: extra.produto === 'PCQ' ? 'formas' : 'un',
-        dia_entrega: extra.dia_semana,
-        ajustado: false,
-        zerado: false,
-        feriado_nome: '',
-      }
-
-      // v9.5: ProducaoDia tem itens_pf, itens_pcq, itens_lanche (NÃO itens)
-      if (extra.produto === 'PF') {
-        dia.itens_pf.push(item)
-      } else if (extra.produto === 'PCQ') {
-        dia.itens_pcq.push(item)
-      } else {
-        dia.itens_lanche.push(item)
-      }
-    }
-    return novosDias
-  }, [data, producaoExtra])
-
+  // Usa diasComExtra para que as instituições extras apareçam junto (silenciosamente)
   const consolidado = consolidarProducaoSemana(diasComExtra)
 
   // PF unit label
@@ -493,7 +501,10 @@ export default function ProducaoPage() {
           </div>
         )}
 
-        {/* v9.5: Produções extras são injetadas como ItemProducao nos dias (silenciosamente) */}
+        {/* v9.5: Produções extras NÃO têm mais página separada — foram
+            injetadas silenciosamente como ItemProducao nos dias de produção
+            (ver useMemo diasComExtra acima). Aparecem como última instituição
+            na rota OUTROS, junto com as demais. */}
 
         {/* ==================== ROMANEIO POR MOTORISTA ==================== */}
         {romaneios.map((romaneio) => (
