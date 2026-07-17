@@ -23,7 +23,7 @@ export async function GET(request: Request) {
       db.escola.findMany({
         where: { ativo: true },
         include: { pf_quantidades: true, pcq_quantidades: true },
-        orderBy: [{ rota: 'asc' }, { ordem_rota: 'asc' }],
+        orderBy: [{ rota: 'asc' }, { ordem_rota: 'asc' }, { nome_curto: 'asc' }],
       }),
       db.feriado.findMany(),
       db.ajuste.findMany({ where: { ano, semana } }),
@@ -118,7 +118,9 @@ export async function GET(request: Request) {
     const itensPfDomingo: ItemProducao[] = []
     for (const escola of escolas) {
       if (!escola.recebe_pf) continue
-      const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPao)
+      // v9.5: escolas com pao_fixo sempre usam PADRAO (ignora cardápio da semana)
+      const tipoPaoEscola = escola.pao_fixo ? 'PADRAO' : tipoPao
+      const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEscola)
       if (!pfQ) continue
 
       // Check feriado on DELIVERY day (segunda)
@@ -179,7 +181,9 @@ export async function GET(request: Request) {
 
         for (const escola of escolas) {
           if (!escola.recebe_pf) continue
-          const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPao)
+          // v9.5: escolas com pao_fixo sempre usam PADRAO (ignora cardápio da semana)
+          const tipoPaoEscola = escola.pao_fixo ? 'PADRAO' : tipoPao
+          const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEscola)
           if (!pfQ) continue
 
           // Check feriado on DELIVERY day

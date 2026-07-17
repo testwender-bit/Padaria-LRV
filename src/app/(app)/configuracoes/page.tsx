@@ -46,6 +46,7 @@ interface Escola {
   segmento?: string
   dia_pao_frances?: string | null
   dia_lanche?: string | null
+  pao_fixo?: boolean  // v9.5
   pf_quantidades: {
     id: string
     tipo_pao: string
@@ -414,6 +415,21 @@ export default function ConfiguracoesPage() {
                   />
                   <span>Mescla parcial + integral na refeição principal (comem juntos no almoço)</span>
                 </label>
+                {/* v9.5: Pão fixo para órgãos (ignora cardápio escolar) */}
+                <label className="flex items-center gap-2 text-sm bg-blue-50 p-2 rounded border border-blue-200">
+                  <input
+                    type="checkbox"
+                    checked={editEscola.pao_fixo ?? false}
+                    onChange={(e) => setEditEscola((prev) => ({ ...prev, pao_fixo: e.target.checked }))}
+                  />
+                  <div>
+                    <span className="font-medium text-blue-800">🍞 Pão Fixo (Órgão/Instituição)</span>
+                    <p className="text-[10px] text-blue-600">
+                      Marque para órgãos que recebem pão TODA semana, independente do cardápio escolar.
+                      Ignora tipo de pão da semana (sempre Pão Francês).
+                    </p>
+                  </div>
+                </label>
                 {(editEscola.alunos_parcial ?? 0) + (editEscola.alunos_integral ?? 0) > 0 && (
                   <div className="text-xs text-muted-foreground bg-blue-50 p-2 rounded border border-blue-100">
                     Total de alunos: <strong>{(editEscola.alunos_parcial ?? 0) + (editEscola.alunos_integral ?? 0)}</strong>
@@ -446,7 +462,12 @@ export default function ConfiguracoesPage() {
 
         <TabsContent value="escolas" className="mt-4">
           <div className="space-y-2">
-            {escolas.map((escola) => (
+            {[...escolas].sort((a, b) => {
+              // v9.5: ordena por rota → ordem_rota → nome_curto (alfabético)
+              if (a.rota !== b.rota) return a.rota.localeCompare(b.rota)
+              if (a.ordem_rota !== b.ordem_rota) return a.ordem_rota - b.ordem_rota
+              return (a.nome_curto || '').localeCompare(b.nome_curto || '')
+            }).map((escola) => (
               <motion.div key={escola.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                 <Card className="hover:shadow-md transition-shadow">
                   <CardContent className="p-4 flex items-center gap-4">
@@ -490,6 +511,7 @@ export default function ConfiguracoesPage() {
                           segmento: escola.segmento ?? 'REGULAR',
                           dia_pao_frances: escola.dia_pao_frances ?? null,
                           dia_lanche: escola.dia_lanche ?? null,
+                          pao_fixo: escola.pao_fixo ?? false,
                         })
                         setEditEscolaDialogOpen(true)
                       }}

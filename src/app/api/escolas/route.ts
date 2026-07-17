@@ -103,6 +103,7 @@ export async function PUT(request: Request) {
         dia_pao_frances: body.dia_pao_frances,
         dia_lanche: body.dia_lanche,
         mescla_parcial_integral: body.mescla_parcial_integral,
+        pao_fixo: body.pao_fixo ?? false,  // v9.5
       },
     })
     return NextResponse.json(escola)

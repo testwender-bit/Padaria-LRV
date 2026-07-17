@@ -134,14 +134,14 @@ export default function ProducaoPage() {
   // Data/hora de geração
   const geradoEm = format(new Date(), "dd/MM/yyyy 'às' HH:mm")
 
-  // Agrupa escolas PF por tipo (Escolas / Outras Instituições)
-  const escolasPF = consolidado.escolas.filter(e => e.total_pf > 0)
+  // v9.5: ordenação alfabética como critério secundário (depois da rota/ordem)
+  const escolasPF = consolidado.escolas.filter(e => e.total_pf > 0).sort((a, b) => (a.nome_curto || '').localeCompare(b.nome_curto || ''))
   const escolasRegularesPF = escolasPF.filter(e => !['OUTROS', 'INTERIOR'].includes(e.rota?.toUpperCase()))
   const escolasOutrasPF = escolasPF.filter(e => ['OUTROS', 'INTERIOR'].includes(e.rota?.toUpperCase()))
 
-  // Agrupa escolas PCQ e Lanche
-  const escolasPCQ = consolidado.escolas.filter(e => e.total_pcq > 0)
-  const escolasLanche = consolidado.escolas.filter(e => e.total_lanche > 0)
+  // Agrupa escolas PCQ e Lanche (também ordenados alfabeticamente)
+  const escolasPCQ = consolidado.escolas.filter(e => e.total_pcq > 0).sort((a, b) => (a.nome_curto || '').localeCompare(b.nome_curto || ''))
+  const escolasLanche = consolidado.escolas.filter(e => e.total_lanche > 0).sort((a, b) => (a.nome_curto || '').localeCompare(b.nome_curto || ''))
 
   // Datas para o romaneio (entrega: segunda-sexta)
   const datasEntrega: Record<DiaSemana, string> = {

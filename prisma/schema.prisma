@@ -100,6 +100,10 @@ model Escola {
   // Indica se a escola mescla alunos regular + integral numa mesma refeição (afeta percapita)
   mescla_parcial_integral Boolean @default(false)
 
+  // v9.5: Órgãos fixos — produzem pão TODA semana independente do cardápio escolar
+  // true = sempre produz PF (ignora tipo_pao do cardápio semestral)
+  pao_fixo Boolean @default(false)
+
   pf_quantidades    PfQuantidade[]
   pcq_quantidades   PcqQuantidade[]
   lanche_distribuicao LancheDistribuicao[]
