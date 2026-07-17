@@ -1,45 +1,68 @@
-# Fix — Lanche compacto na impressão
+# Fix — Lanche compacto + alinhamento + destaque P&B
 
-## Problema
+## 3 correções
 
-O lanche agrupado por dia estava com tabelas separadas demais — cada dia
-tinha sua própria tabela com header, ocupando muito espaço e podendo não
-caber numa folha só.
+### 1. Alinhamento da coluna TOTAL (todas as tabelas)
 
-## Solução
+**Problema:** Coluna TOTAL estava alinhada à direita enquanto as colunas
+dos dias estavam centralizadas — ficava descentralizado.
 
-Agora é UMA tabela só com 2 colunas (DIA/ESCOLA + QUANTIDADE), onde os dias
-aparecem como sub-headers dentro da própria tabela:
+**Fix:** Mudado `text-align: right` para `text-align: center` na classe
+`.print-col-total` do print.css. Agora todas as colunas (dias + total)
+estão centralizadas.
 
+### 2. Lanche em tabela única compacta
+
+**Problema:** Lanche tinha tabelas separadas por dia — ocupava muito espaço.
+
+**Fix:** Agora é UMA tabela com 2 colunas (65% / 35%):
+- Coluna 1: "DIA / ESCOLA" (65% da largura)
+- Coluna 2: "QUANTIDADE" (35% da largura, centralizada)
+- `tableLayout: fixed` para garantir larguras consistentes
+
+### 3. Sub-headers de dia com destaque P&B
+
+**Problema:** Sub-headers de dia (SEGUNDA, TERÇA, etc.) tinham fundo cinza
+claro que sumia em P&B — ficavam iguais às linhas de escolas.
+
+**Fix:** Agora os sub-headers de dia têm:
+- `■` (marcador preto) antes do nome do dia
+- `font-weight: 800` (extra bold)
+- `text-transform: uppercase`
+- `border-top: 1.5pt solid #000` (linha preta forte acima)
+- `border-bottom: 0.5pt solid #000` (linha preta fina abaixo)
+- `letter-spacing: 0.3pt` (espaçamento entre letras)
+
+As linhas de escolas ficam com:
+- `padding-left: 6mm` (indentadas sob o dia)
+- `font-weight: normal`
+- Sem bordas extras
+
+Resultado em P&B:
 ```
 ┌──────────────────────────┬────────────┐
-│ DIA / ESCOLA             │ QUANTIDADE │
+│ DIA / ESCOLA             │ QUANTIDADE │ ← header com linha preta
 ├──────────────────────────┼────────────┤
-│ SEGUNDA                  │ 150 unid.  │ ← sub-header bold
-│   Anjo da Guarda         │ 50         │ ← indentado
+████████████████████████████████████████████ ← linha preta forte
+│ ■ SEGUNDA                │ 150 unid.  │ ← bold + ■ + uppercase
+├──────────────────────────┼────────────┤
+│   Anjo da Guarda         │ 50         │ ← indentado, normal
 │   Chico Mendes           │ 60         │
 │   São Cristóvão          │ 40         │
-│ TERÇA                    │ 120 unid.  │ ← sub-header bold
+████████████████████████████████████████████ ← linha preta forte
+│ ■ TERÇA                  │ 120 unid.  │
 │   Anjo da Guarda         │ 50         │
 │   Fredolino              │ 70         │
-│ SEXTA                    │ 80 unid.   │
-│   ...                    │            │
 └──────────────────────────┴────────────┘
 ```
 
-Vantagens:
-- Ocupa muito menos espaço vertical
-- Cabe numa folha só
-- Fácil de ler — cada dia é um bloco visual dentro da tabela
-- As escolas ficam indentadas (4mm) sob o dia
-
-Aplicado tanto na produção (página 3) quanto nos romaneios por motorista.
+Aplicado tanto na produção quanto nos romaneios.
 
 ## Como aplicar
 
 ```bash
-unzip patch-lanche-compacto.zip -d .
+unzip patch-lanche-bw-alinhado.zip -d .
 git add -A
-git commit -m "fix: lanche compacto numa tabela só na impressão"
+git commit -m "fix: lanche compacto + alinhamento centralizado + destaque P&B nos sub-headers"
 git push
 ```

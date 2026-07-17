@@ -315,7 +315,7 @@
   /* Column widths: Escola 25%, 6 dias 10.7% each, Total 10.8% */
   .print-col-escola { width: 25%; text-align: left; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .print-col-dia { width: 10.7%; text-align: center; }
-  .print-col-total { width: 10.8%; text-align: right; font-weight: 600; }
+  .print-col-total { width: 10.8%; text-align: center; font-weight: 600; }
 
   /* Alternating row stripes */
   table.print-table tbody tr:nth-child(even) td {
