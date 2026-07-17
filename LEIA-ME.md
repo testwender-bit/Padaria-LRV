@@ -1,29 +1,32 @@
-# Fix — Produção extra silenciosa + remover Busca Própria do romaneio
+# Fix — TypeError itens + ordenação
 
-## 1. Produção extra agregada silenciosamente
+## 1. TypeError: Property 'itens' does not exist on type 'ProducaoDia'
 
-**Antes:** Produções extras apareciam em página separada na impressão.
-**Agora:** São injetadas como `ItemProducao` nos dias de produção, aparecendo
-junto com as escolas na tabela de PF/PCQ/Lanche — como última entrada
-(rota BUSCA_PROPRIA, ordem_rota=999).
+**Causa:** `ProducaoDia` tem `itens_pf`, `itens_pcq`, `itens_lanche` (NÃO `itens`).
+O código tentava fazer `dia.itens.push()` que não existe.
 
-### Como funciona:
-- PF extra → injetado no dia de produção (D-1 da entrega)
-- PCQ/Lanche extra → injetado no próprio dia
-- Aparece na tabela de produção, na impressão, e nos totais
-- Não aparece em romaneio (não tem motorista)
+**Fix:** Agora faz push no array correto:
+- PF → `dia.itens_pf.push(item)`
+- PCQ → `dia.itens_pcq.push(item)`
+- LANCHE → `dia.itens_lanche.push(item)`
 
-## 2. Removido romaneio "Busca Própria"
+Também adicionado deep copy dos arrays para não mutar o estado original.
 
-A rota BUSCA_PROPRIA foi removida do romaneio. Só aparecem:
-- Motorista José
-- Motorista Aroldo
+## 2. Ordenação
+
+A ordenação foi corrigida no patch anterior (`producao-semana-utils.ts`).
+Este patch só tem a página de produção que corrige o TypeScript.
+
+Se a ordenação ainda não funciona após este patch:
+1. Verifique se o patch anterior (`patch-ordenacao-extra-print.zip`) foi aplicado
+2. Reinicie o dev server: `npm run dev`
+3. Limpe o cache do navegador (Ctrl+Shift+R)
 
 ## Como aplicar
 
 ```bash
-unzip -o patch-extra-silencioso.zip -d .
+unzip -o patch-fix-itens-tipo.zip -d .
 git add -A
-git commit -m "fix: produção extra silenciosa + remover busca própria do romaneio"
+git commit -m "fix: itens_pf/pcq/lanche push + deep copy"
 git push
 ```

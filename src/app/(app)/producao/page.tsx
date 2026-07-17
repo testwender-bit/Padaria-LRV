@@ -177,7 +177,13 @@ export default function ProducaoPage() {
   // (silenciosamente — aparecem junto com as escolas na produção e impressão)
   const diasComExtra = useMemo(() => {
     if (!data || producaoExtra.length === 0) return data?.dias || []
-    const novosDias = [...data.dias]
+    // Deep copy para não mutar o estado original
+    const novosDias = data.dias.map(d => ({
+      ...d,
+      itens_pf: [...d.itens_pf],
+      itens_pcq: [...d.itens_pcq],
+      itens_lanche: [...d.itens_lanche],
+    }))
     for (const extra of producaoExtra) {
       // Encontra o dia de PRODUÇÃO (PF é produzido D-1, PCQ/Lanche no dia)
       const diaProducao = extra.produto === 'PF'
@@ -193,7 +199,7 @@ export default function ProducaoPage() {
       const dia = novosDias.find(d => d.dia_key === diaProducao)
       if (!dia) continue
 
-      dia.itens.push({
+      const item = {
         escola_id: `extra_${extra.id}`,
         escola_nome: extra.nome_instituicao,
         escola_curto: extra.nome_instituicao.substring(0, 20),
@@ -208,7 +214,16 @@ export default function ProducaoPage() {
         ajustado: false,
         zerado: false,
         feriado_nome: '',
-      })
+      }
+
+      // v9.5: ProducaoDia tem itens_pf, itens_pcq, itens_lanche (NÃO itens)
+      if (extra.produto === 'PF') {
+        dia.itens_pf.push(item)
+      } else if (extra.produto === 'PCQ') {
+        dia.itens_pcq.push(item)
+      } else {
+        dia.itens_lanche.push(item)
+      }
     }
     return novosDias
   }, [data, producaoExtra])
