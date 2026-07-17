@@ -1,40 +1,29 @@
-# Fix — Ordenação definitiva + Produção Extra na impressão
+# Fix — Produção extra silenciosa + remover Busca Própria do romaneio
 
-## 1. Ordenação corrigida (definitiva)
+## 1. Produção extra agregada silenciosamente
 
-**Causa raiz:** A função `consolidarProducaoSemana` (producao-semana-utils.ts)
-tinha um `sort((a, b) => a.ordem - b.ordem)` que ordenava por `ordem` (que
-vinha de `ordensEscola` que era `undefined` na chamada da página — tudo ficava
-999 = aleatório). Depois a página fazia OUTRO sort. Os dois conflitavam.
+**Antes:** Produções extras apareciam em página separada na impressão.
+**Agora:** São injetadas como `ItemProducao` nos dias de produção, aparecendo
+junto com as escolas na tabela de PF/PCQ/Lanche — como última entrada
+(rota BUSCA_PROPRIA, ordem_rota=999).
 
-**Fix:** O sort final agora usa a MESMA lógica da página:
-```
-rota (asc) → ordem_rota (asc) → nome_curto (asc alfabético)
-```
+### Como funciona:
+- PF extra → injetado no dia de produção (D-1 da entrega)
+- PCQ/Lanche extra → injetado no próprio dia
+- Aparece na tabela de produção, na impressão, e nos totais
+- Não aparece em romaneio (não tem motorista)
 
-Isso garante que mesmo que todas as escolas tenham `ordem_rota=0`, elas
-ficam ordenadas alfabeticamente por `nome_curto`.
+## 2. Removido romaneio "Busca Própria"
 
-## 2. Produção Extra na impressão
-
-Adicionada nova página na impressão (entre PCQ/Lanches e Romaneio):
-```
-PRODUÇÃO EXTRA — INSTITUIÇÕES
-┌──────────────┬─────────┬──────┬──────┬─────┐
-│ INSTITUIÇÃO  │ PRODUTO │ DIA  │ QTD  │ OBS │
-├──────────────┼─────────┼──────┼──────┼─────┤
-│ Sec. Educação│ PF      │ Seg  │ 50   │ —   │
-│ CRAS         │ LANCHE  │ Qua  │ 30   │ —   │
-└──────────────┴─────────┴──────┴──────┴─────┘
-```
-
-Só aparece se houver produções extras cadastradas.
+A rota BUSCA_PROPRIA foi removida do romaneio. Só aparecem:
+- Motorista José
+- Motorista Aroldo
 
 ## Como aplicar
 
 ```bash
-unzip -o patch-ordenacao-extra-print.zip -d .
+unzip -o patch-extra-silencioso.zip -d .
 git add -A
-git commit -m "fix: ordenação alfabética definitiva + produção extra na impressão"
+git commit -m "fix: produção extra silenciosa + remover busca própria do romaneio"
 git push
 ```

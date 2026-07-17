@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { SeletorSemana } from '@/components/seletor-semana'
 import { AjusteDialog } from '@/components/ajuste-dialog'
@@ -173,7 +173,47 @@ export default function ProducaoPage() {
   const inicio = semanaReferencia ? new Date(semanaReferencia + 'T12:00:00') : new Date()
   const domingo = addDays(inicio, -1) // domingo antes da segunda
   const semanaLabel = `Semana ${data.semana} — ${formatarPeriodoSemana(inicioSemana(inicio), fimSemana(inicio))}`
-  const consolidado = consolidarProducaoSemana(data.dias)
+  // v9.5: injeta produções extras como ItemProducao nos dias de produção
+  // (silenciosamente — aparecem junto com as escolas na produção e impressão)
+  const diasComExtra = useMemo(() => {
+    if (!data || producaoExtra.length === 0) return data?.dias || []
+    const novosDias = [...data.dias]
+    for (const extra of producaoExtra) {
+      // Encontra o dia de PRODUÇÃO (PF é produzido D-1, PCQ/Lanche no dia)
+      const diaProducao = extra.produto === 'PF'
+        ? DIAS_PRODUCAO.find(d => {
+            // PF: produz no dia anterior à entrega
+            const diaIdx = DIAS_PRODUCAO.indexOf(d)
+            const diaEntregaIdx = DIAS_PRODUCAO.indexOf(extra.dia_semana as DiaProducao)
+            return diaIdx === diaEntregaIdx - 1 || (diaEntregaIdx === 0 && d === 'domingo')
+          })
+        : DIAS_PRODUCAO.find(d => d === extra.dia_semana)
+
+      if (!diaProducao) continue
+      const dia = novosDias.find(d => d.dia_key === diaProducao)
+      if (!dia) continue
+
+      dia.itens.push({
+        escola_id: `extra_${extra.id}`,
+        escola_nome: extra.nome_instituicao,
+        escola_curto: extra.nome_instituicao.substring(0, 20),
+        categoria: 'OUTROS',
+        rota: 'BUSCA_PROPRIA',
+        ordem_rota: 999,
+        busca_propria: true,
+        produto: extra.produto as 'PF' | 'PCQ' | 'LANCHE',
+        quantidade: extra.quantidade,
+        unidade: extra.produto === 'PCQ' ? 'formas' : 'un',
+        dia_entrega: extra.dia_semana,
+        ajustado: false,
+        zerado: false,
+        feriado_nome: '',
+      })
+    }
+    return novosDias
+  }, [data, producaoExtra])
+
+  const consolidado = consolidarProducaoSemana(diasComExtra)
 
   // PF unit label
   const pfUnit = 'unid.'
@@ -438,54 +478,7 @@ export default function ProducaoPage() {
           </div>
         )}
 
-        {/* ==================== PÁGINA: PRODUÇÕES EXTRAS ==================== */}
-        {producaoExtra.length > 0 && (
-          <div className="print-page-break">
-            <div className="print-doc-header">
-              <div className="print-doc-header-left">
-                <div className="print-doc-logo"><img src="/brasao.jpg" alt="Brasão" /></div>
-                <div className="print-doc-title-block">
-                  <div className="print-doc-title">PRODUÇÃO EXTRA — INSTITUIÇÕES</div>
-                  <div className="print-doc-subtitle">Padaria Escolar Municipal — Prefeitura de Lucas do Rio Verde / MT</div>
-                  <div className="print-doc-subtitle">Produções avulsas da semana</div>
-                </div>
-              </div>
-              <div className="print-doc-header-right">
-                <div className="print-doc-gerado">GERADO EM</div>
-                <div className="print-doc-gerado-date">{geradoEm}</div>
-              </div>
-            </div>
-            <div className="print-info-block">
-              <div className="print-info-left">
-                <div className="print-info-semana">SEMANA {data.semana} / {data.ano}</div>
-                <div className="print-info-periodo">{formatarPeriodoSemana(inicioSemana(inicio), fimSemana(inicio))}</div>
-              </div>
-            </div>
-            <table className="print-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '40%', textAlign: 'left', padding: '1mm 1.5mm', fontSize: '7pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>INSTITUIÇÃO</th>
-                  <th style={{ width: '15%', textAlign: 'center', padding: '1mm 1.5mm', fontSize: '7pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>PRODUTO</th>
-                  <th style={{ width: '15%', textAlign: 'center', padding: '1mm 1.5mm', fontSize: '7pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>DIA</th>
-                  <th style={{ width: '15%', textAlign: 'center', padding: '1mm 1.5mm', fontSize: '7pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>QUANTIDADE</th>
-                  <th style={{ width: '15%', textAlign: 'left', padding: '1mm 1.5mm', fontSize: '7pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>OBS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {producaoExtra.map((extra) => (
-                  <tr key={extra.id}>
-                    <td style={{ padding: '1mm 1.5mm', fontSize: '8pt' }}>{extra.nome_instituicao}</td>
-                    <td style={{ textAlign: 'center', padding: '1mm 1.5mm', fontSize: '8pt' }}>{extra.produto}</td>
-                    <td style={{ textAlign: 'center', padding: '1mm 1.5mm', fontSize: '8pt', textTransform: 'capitalize' }}>{extra.dia_semana}</td>
-                    <td style={{ textAlign: 'center', padding: '1mm 1.5mm', fontSize: '8pt', fontWeight: 'bold' }}>{extra.quantidade}</td>
-                    <td style={{ padding: '1mm 1.5mm', fontSize: '7pt' }}>{extra.observacao || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="print-footer">Sistema de Gestão da Padaria Escolar Municipal — Lucas do Rio Verde / MT</div>
-          </div>
-        )}
+        {/* v9.5: Produções extras são injetadas como ItemProducao nos dias (silenciosamente) */}
 
         {/* ==================== ROMANEIO POR MOTORISTA ==================== */}
         {romaneios.map((romaneio) => (

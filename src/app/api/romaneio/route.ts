@@ -177,10 +177,10 @@ export async function GET(request: Request) {
     })
 
     // Group by route
-    const rotas: { key: 'JOSE' | 'AROLDO' | 'BUSCA_PROPRIA'; label: string }[] = [
+    // v9.5: removido BUSCA_PROPRIA — não precisa de romaneio para busca própria
+    const rotas: { key: 'JOSE' | 'AROLDO'; label: string }[] = [
       { key: 'JOSE', label: 'Motorista José' },
       { key: 'AROLDO', label: 'Motorista Aroldo' },
-      { key: 'BUSCA_PROPRIA', label: 'Busca Própria' },
     ]
 
     const romaneios: RomaneioMotorista[] = rotas.map((rota) => {
