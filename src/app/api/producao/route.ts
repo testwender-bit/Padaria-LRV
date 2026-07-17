@@ -309,6 +309,7 @@ export async function GET(request: Request) {
               escola_curto: escola.nome_curto,
               categoria: escola.categoria,
               rota: escola.rota,
+              ordem_rota: escola.ordem_rota,  // v9.5
               busca_propria: escola.busca_propria,
               produto: 'PF',
               quantidade: qtd,

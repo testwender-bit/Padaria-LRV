@@ -1,51 +1,28 @@
-# Patch — Fix PCQQ + Produção Extra (Instituições Avulsas)
+# Fix v2 — PF_COMP faltava ordem_rota (patch completo)
 
-## 1. Fix erro de TypeScript
+## Problema
 
-`produto: 'PCQQ'` → `produto: 'PCQ'` (typo do replace_all anterior).
+O patch anterior só tinha 1 arquivo. Esse tem TODOS os arquivos para
+garantir que nada fique desatualizado.
 
-## 2. Nova funcionalidade: Produção Extra
+## O que tem neste patch (8 arquivos):
 
-Permite adicionar instituições avulsas diretamente na produção semanal,
-para situações extraordinárias (ex: pão para a Secretaria de Educação).
-
-### Como usar:
-1. Abra `/producao` → vista semanal
-2. Clique em **"Inst. Extra"** (botão azul ao lado de Imprimir)
-3. Preencha:
-   - Nome da Instituição (ex: "Secretaria de Educação")
-   - Produto (PF / PCQ / Lanche)
-   - Dia de entrega (seg-sex)
-   - Quantidade
-   - Observação (opcional)
-4. Clique "Adicionar"
-
-A produção extra aparece:
-- Na lista "Produções Extras" abaixo da tabela semanal (com botão de remover)
-- É salva no banco vinculada à semana (ano + semana ISO)
-- Cada semana tem suas próprias produções extras
-
-### Nova API: `/api/producao/extra`
-- `GET ?ano=2026&semana=30` → lista extras da semana
-- `POST { nome_instituicao, produto, dia_semana, quantidade, observacao, ano, semana }`
-- `DELETE ?id=xxx`
-
-### Novo modelo no schema: `ProducaoExtra`
-```prisma
-model ProducaoExtra {
-  id, ano, semana, nome_instituicao, produto, dia_semana, quantidade, observacao, criado_em
-}
-```
+1. `prisma/schema.prisma` — modelo ProducaoExtra + campo pao_fixo
+2. `src/app/api/producao/route.ts` — 6 ordem_rota (inclui PF_COMP) + producaoExtra
+3. `src/app/api/producao/extra/route.ts` — API de produções extras
+4. `src/app/api/romaneio/route.ts` — ordem_rota + ordenação
+5. `src/app/(app)/producao/page.tsx` — UI produção extra + ordenação
+6. `src/lib/producao-utils.ts` — ItemProducao com ordem_rota
+7. `src/lib/producao-semana-utils.ts` — EscolaConsolidada com ordem_rota
+8. `src/lib/romaneio-utils.ts` — EscolaRomaneio com ordem_rota
 
 ## Como aplicar
 
 ```bash
-unzip patch-pcqq-fix-extra.zip -d .
+unzip -o patch-fix-pf-comp-v2.zip -d .
 npx prisma generate
 npx prisma db push --accept-data-loss
 git add -A
-git commit -m "fix: PCQQ typo + feat: produção extra (instituições avulsas)"
+git commit -m "fix: ordem_rota em todos os push + produção extra + schema"
 git push
 ```
-
-⚠️ Rode `npx prisma db push` para criar a tabela `ProducaoExtra`.
