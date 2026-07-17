@@ -1,28 +1,40 @@
-# Fix v2 — PF_COMP faltava ordem_rota (patch completo)
+# Fix — Ordenação definitiva + Produção Extra na impressão
 
-## Problema
+## 1. Ordenação corrigida (definitiva)
 
-O patch anterior só tinha 1 arquivo. Esse tem TODOS os arquivos para
-garantir que nada fique desatualizado.
+**Causa raiz:** A função `consolidarProducaoSemana` (producao-semana-utils.ts)
+tinha um `sort((a, b) => a.ordem - b.ordem)` que ordenava por `ordem` (que
+vinha de `ordensEscola` que era `undefined` na chamada da página — tudo ficava
+999 = aleatório). Depois a página fazia OUTRO sort. Os dois conflitavam.
 
-## O que tem neste patch (8 arquivos):
+**Fix:** O sort final agora usa a MESMA lógica da página:
+```
+rota (asc) → ordem_rota (asc) → nome_curto (asc alfabético)
+```
 
-1. `prisma/schema.prisma` — modelo ProducaoExtra + campo pao_fixo
-2. `src/app/api/producao/route.ts` — 6 ordem_rota (inclui PF_COMP) + producaoExtra
-3. `src/app/api/producao/extra/route.ts` — API de produções extras
-4. `src/app/api/romaneio/route.ts` — ordem_rota + ordenação
-5. `src/app/(app)/producao/page.tsx` — UI produção extra + ordenação
-6. `src/lib/producao-utils.ts` — ItemProducao com ordem_rota
-7. `src/lib/producao-semana-utils.ts` — EscolaConsolidada com ordem_rota
-8. `src/lib/romaneio-utils.ts` — EscolaRomaneio com ordem_rota
+Isso garante que mesmo que todas as escolas tenham `ordem_rota=0`, elas
+ficam ordenadas alfabeticamente por `nome_curto`.
+
+## 2. Produção Extra na impressão
+
+Adicionada nova página na impressão (entre PCQ/Lanches e Romaneio):
+```
+PRODUÇÃO EXTRA — INSTITUIÇÕES
+┌──────────────┬─────────┬──────┬──────┬─────┐
+│ INSTITUIÇÃO  │ PRODUTO │ DIA  │ QTD  │ OBS │
+├──────────────┼─────────┼──────┼──────┼─────┤
+│ Sec. Educação│ PF      │ Seg  │ 50   │ —   │
+│ CRAS         │ LANCHE  │ Qua  │ 30   │ —   │
+└──────────────┴─────────┴──────┴──────┴─────┘
+```
+
+Só aparece se houver produções extras cadastradas.
 
 ## Como aplicar
 
 ```bash
-unzip -o patch-fix-pf-comp-v2.zip -d .
-npx prisma generate
-npx prisma db push --accept-data-loss
+unzip -o patch-ordenacao-extra-print.zip -d .
 git add -A
-git commit -m "fix: ordem_rota em todos os push + produção extra + schema"
+git commit -m "fix: ordenação alfabética definitiva + produção extra na impressão"
 git push
 ```

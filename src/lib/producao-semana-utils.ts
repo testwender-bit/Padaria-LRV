@@ -121,7 +121,12 @@ export function consolidarProducaoSemana(
     total_lanche += e.total_lanche
   })
 
-  const escolas = Array.from(mapa.values()).sort((a, b) => a.ordem - b.ordem)
+  // v9.5: ordenação por rota → ordem_rota → nome_curto (alfabético)
+  const escolas = Array.from(mapa.values()).sort((a, b) => {
+    if ((a.rota || '') !== (b.rota || '')) return (a.rota || '').localeCompare(b.rota || '')
+    if ((a.ordem_rota ?? 0) !== (b.ordem_rota ?? 0)) return (a.ordem_rota ?? 0) - (b.ordem_rota ?? 0)
+    return (a.nome_curto || '').localeCompare(b.nome_curto || '')
+  })
 
   return { escolas, totais_por_dia, total_pf, total_pcq, total_lanche }
 }
