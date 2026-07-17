@@ -1,54 +1,45 @@
-# Patch — 3 ajustes na produção
+# Fix — Lanche compacto na impressão
 
-## 1. Aviso da semana na impressão
+## Problema
 
-A observação cadastrada no cardápio semestral agora aparece na impressão:
-- **Páginas de PF (1ª e 2ª via):** aviso sutil antes do footer
-- **Página de PCQ/Lanches:** aviso sutil antes do footer
-- **Romaneios (PF e PCQ/Lanche):** aviso sutil antes do footer
+O lanche agrupado por dia estava com tabelas separadas demais — cada dia
+tinha sua própria tabela com header, ocupando muito espaço e podendo não
+caber numa folha só.
 
-Estilo: caixa com borda cinza fina, fundo amarelo claro, fonte itálica 7.5pt.
+## Solução
 
-## 2. Bug: células vazias não deixavam editar
+Agora é UMA tabela só com 2 colunas (DIA/ESCOLA + QUANTIDADE), onde os dias
+aparecem como sub-headers dentro da própria tabela:
 
-**Problema:** Ao clicar numa célula vazia (quantidade=0) na edição manual,
-não abria o diálogo de ajuste.
-
-**Causa:** `if (quantidade <= 0) return` bloqueava células vazias.
-
-**Fix:** Removida a verificação — agora pode clicar em qualquer célula
-(com ou sem valor) para ajustar/adicionar.
-
-## 3. Lanche agrupado por dia na impressão
-
-**Antes:** Lanche mostrado em tabela com escolas × dias (igual PF/PCQ).
-
-**Agora:** Lanche agrupado por dia:
 ```
-SEGUNDA — 150 unid.
-┌──────────────────────┬──────────┐
-│ ESCOLA / UNIDADE     │ QTD      │
-├──────────────────────┼──────────┤
-│ Anjo da Guarda       │ 50       │
-│ Chico Mendes         │ 60       │
-│ São Cristóvão        │ 40       │
-└──────────────────────┴──────────┘
-
-TERÇA — 120 unid.
-┌──────────────────────┬──────────┐
-│ ...
+┌──────────────────────────┬────────────┐
+│ DIA / ESCOLA             │ QUANTIDADE │
+├──────────────────────────┼────────────┤
+│ SEGUNDA                  │ 150 unid.  │ ← sub-header bold
+│   Anjo da Guarda         │ 50         │ ← indentado
+│   Chico Mendes           │ 60         │
+│   São Cristóvão          │ 40         │
+│ TERÇA                    │ 120 unid.  │ ← sub-header bold
+│   Anjo da Guarda         │ 50         │
+│   Fredolino              │ 70         │
+│ SEXTA                    │ 80 unid.   │
+│   ...                    │            │
+└──────────────────────────┴────────────┘
 ```
 
-Cada dia tem seu próprio mini-bloco com:
-- Header cinza com nome do dia + total do dia
-- Tabela simples: Escola × Quantidade
-- Só aparecem dias que têm lanche
+Vantagens:
+- Ocupa muito menos espaço vertical
+- Cabe numa folha só
+- Fácil de ler — cada dia é um bloco visual dentro da tabela
+- As escolas ficam indentadas (4mm) sob o dia
+
+Aplicado tanto na produção (página 3) quanto nos romaneios por motorista.
 
 ## Como aplicar
 
 ```bash
-unzip patch-producao-ajustes3.zip -d .
+unzip patch-lanche-compacto.zip -d .
 git add -A
-git commit -m "fix: aviso na impressão + editar células vazias + lanche agrupado por dia"
+git commit -m "fix: lanche compacto numa tabela só na impressão"
 git push
 ```

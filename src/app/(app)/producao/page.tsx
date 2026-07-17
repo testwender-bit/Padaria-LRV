@@ -331,36 +331,41 @@ export default function ProducaoPage() {
               </>
             )}
 
-            {/* v9.4: Lanche Section — agrupado por dia */}
+            {/* v9.4: Lanche Section — tabela compacta com escolas agrupadas por dia */}
             {consolidado.total_lanche > 0 && (
               <>
                 <div className="print-section-header print-section-spacer">
-                  <span className="print-section-title-text">{lancheNome.toUpperCase()} — AGRUPADO POR DIA</span>
+                  <span className="print-section-title-text">{lancheNome.toUpperCase()} — ENTREGAS POR DIA</span>
                   <span className="print-section-total">Total: {consolidado.total_lanche.toLocaleString('pt-BR')}</span>
                 </div>
-                {DIAS_PRODUCAO.filter(d => consolidado.totais_por_dia.lanche[d] > 0).map((d) => (
-                  <div key={d} style={{ marginBottom: '4mm' }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '8pt', background: '#f5f5f5', padding: '1mm 2mm', borderLeft: '3pt solid #999', marginBottom: '1mm' }}>
-                      {DIAS_LABEL_CURTO_PRODUCAO[d].toUpperCase()} — {consolidado.totais_por_dia.lanche[d]} unid.
-                    </div>
-                    <table className="print-table">
-                      <thead>
-                        <tr>
-                          <th className="print-col-escola">ESCOLA / UNIDADE</th>
-                          <th className="print-col-total">QUANTIDADE</th>
+                <table className="print-table">
+                  <thead>
+                    <tr>
+                      <th className="print-col-escola">DIA / ESCOLA</th>
+                      <th className="print-col-total" style={{ width: '30%' }}>QUANTIDADE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {DIAS_PRODUCAO.filter(d => consolidado.totais_por_dia.lanche[d] > 0).map((d) => (
+                      <>
+                        <tr key={d} className="print-row-subtotal">
+                          <td className="print-col-escola" style={{ fontWeight: 'bold', fontSize: '8pt' }}>
+                            {DIAS_LABEL_CURTO_PRODUCAO[d].toUpperCase()}
+                          </td>
+                          <td className="print-col-total" style={{ fontWeight: 'bold', fontSize: '8pt' }}>
+                            {consolidado.totais_por_dia.lanche[d]} unid.
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
                         {escolasLanche.filter(e => e.lanche[d] > 0).map((escola) => (
-                          <tr key={escola.id}>
-                            <td className="print-col-escola">{escola.nome_curto}</td>
+                          <tr key={`${d}-${escola.id}`}>
+                            <td className="print-col-escola" style={{ paddingLeft: '4mm' }}>{escola.nome_curto}</td>
                             <td className="print-col-total">{escola.lanche[d]}</td>
                           </tr>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
+                      </>
+                    ))}
+                  </tbody>
+                </table>
               </>
             )}
 
@@ -514,28 +519,33 @@ export default function ProducaoPage() {
                 {romaneio.total_lanche > 0 && (
                   <>
                     <div className="print-section-header print-section-spacer">
-                      <span className="print-section-title-text">{lancheNome.toUpperCase()}</span>
+                      <span className="print-section-title-text">{lancheNome.toUpperCase()} — ENTREGAS POR DIA</span>
                       <span className="print-section-total">Total: {romaneio.total_lanche.toLocaleString('pt-BR')}</span>
                     </div>
                     <table className="print-table">
                       <thead><tr>
-                        <th className="print-col-escola">ESCOLA / UNIDADE</th>
-                        {DIAS_SEMANA.map((d) => (<th key={d} className="print-col-dia">{DIAS_LABEL_CURTO[d]}</th>))}
-                        <th className="print-col-total">TOTAL</th>
+                        <th className="print-col-escola">DIA / ESCOLA</th>
+                        <th className="print-col-total" style={{ width: '30%' }}>QUANTIDADE</th>
                       </tr></thead>
                       <tbody>
-                        {romaneio.escolas.filter((e) => e.total_lanche > 0).map((escola) => (
-                          <tr key={escola.id}>
-                            <td className="print-col-escola">{escola.nome_curto}</td>
-                            {DIAS_SEMANA.map((d) => (<td key={d} className="print-col-dia">{escola.lanche[d] > 0 ? escola.lanche[d] : '—'}</td>))}
-                            <td className="print-col-total">{escola.total_lanche.toLocaleString('pt-BR')}</td>
-                          </tr>
+                        {DIAS_SEMANA.filter(d => romaneio.totais_lanche[d] > 0).map((d) => (
+                          <>
+                            <tr key={d} className="print-row-subtotal">
+                              <td className="print-col-escola" style={{ fontWeight: 'bold', fontSize: '8pt' }}>
+                                {DIAS_LABEL_CURTO[d].toUpperCase()}
+                              </td>
+                              <td className="print-col-total" style={{ fontWeight: 'bold', fontSize: '8pt' }}>
+                                {romaneio.totais_lanche[d]} unid.
+                              </td>
+                            </tr>
+                            {romaneio.escolas.filter((e) => e.lanche[d] > 0).map((escola) => (
+                              <tr key={`${d}-${escola.id}`}>
+                                <td className="print-col-escola" style={{ paddingLeft: '4mm' }}>{escola.nome_curto}</td>
+                                <td className="print-col-total">{escola.lanche[d]}</td>
+                              </tr>
+                            ))}
+                          </>
                         ))}
-                        <tr className="print-row-subtotal">
-                          <td className="print-col-escola">TOTAL GERAL</td>
-                          {DIAS_SEMANA.map((d) => (<td key={d} className="print-col-dia">{romaneio.totais_lanche[d] || '—'}</td>))}
-                          <td className="print-col-total">{romaneio.total_lanche.toLocaleString('pt-BR')}</td>
-                        </tr>
                       </tbody>
                     </table>
                   </>
