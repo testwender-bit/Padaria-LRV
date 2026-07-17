@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Settings, Plus, Edit2, Save, Trash2, School, Wheat, Package, X, Users } from 'lucide-react'
+import { Settings, Plus, Edit2, Save, Trash2, School, Wheat, Package, X, ListOrdered } from 'lucide-react'
 import { CATEGORIAS_ESCOLA, ROTAS, TIPOS_PAO } from '@/lib/unit-options'
 import { DIAS_SEMANA, DIAS_LABEL_CURTO } from '@/lib/date-utils'
 import { toast } from 'sonner'
@@ -40,13 +40,6 @@ interface Escola {
   ativo: boolean
   ordem_rota: number
   obs: string | null
-  alunos_parcial?: number
-  alunos_integral?: number
-  mescla_parcial_integral?: boolean
-  segmento?: string
-  dia_pao_frances?: string | null
-  dia_lanche?: string | null
-  pao_fixo?: boolean  // v9.5
   pf_quantidades: {
     id: string
     tipo_pao: string
@@ -198,6 +191,69 @@ export default function ConfiguracoesPage() {
       }
     } catch {
       toast.error('Erro ao atualizar escola')
+    }
+  }
+
+  // v9.5.3: Renumerar automaticamente as escolas dentro de cada rota
+  // atribui 1, 2, 3, ... em ordem alfabética por nome_curto, garantindo
+  // que toda escola tenha um número único (sem conflitos nem zeros repetidos).
+  async function handleRenumerar() {
+    const confirmado = window.confirm(
+      'Renumerar TODAS as escolas automaticamente?\n\n' +
+      'Cada escola receberá um número sequencial (1, 2, 3...) dentro de sua rota, ' +
+      'em ordem alfabética por nome curto.\n\n' +
+      'Isso substitui todos os números de Ordem atuais. Deseja continuar?'
+    )
+    if (!confirmado) return
+    try {
+      toast.loading('Renumerando escolas...', { id: 'renum' })
+      // Agrupa por rota, ordena por nome_curto, atribui 1..N
+      const porRota: Record<string, typeof escolas> = {}
+      for (const e of escolas) {
+        const r = e.rota || 'OUTROS'
+        if (!porRota[r]) porRota[r] = []
+        porRota[r].push(e)
+      }
+      const updates: Array<{ id: string; ordem_rota: number; nome: string; nome_curto: string; categoria: string; rota: string; busca_propria: boolean; recebe_pf: boolean; recebe_pcq: boolean; recebe_lanche: boolean; ativo: boolean; obs: string | null }> = []
+      for (const [rota, lista] of Object.entries(porRota)) {
+        const ordenada = [...lista].sort((a, b) => (a.nome_curto || '').localeCompare(b.nome_curto || ''))
+        ordenada.forEach((e, idx) => {
+          updates.push({
+            id: e.id,
+            ordem_rota: idx + 1,
+            nome: e.nome,
+            nome_curto: e.nome_curto,
+            categoria: e.categoria,
+            rota: e.rota,
+            busca_propria: e.busca_propria,
+            recebe_pf: e.recebe_pf,
+            recebe_pcq: e.recebe_pcq,
+            recebe_lanche: e.recebe_lanche,
+            ativo: e.ativo,
+            obs: e.obs,
+          })
+        })
+      }
+      // Envia todas as atualizações em paralelo
+      const results = await Promise.all(
+        updates.map((u) =>
+          fetch('/api/escolas', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(u),
+          })
+        )
+      )
+      const ok = results.every((r) => r.ok)
+      if (ok) {
+        toast.success(`${updates.length} escolas renumeradas!`, { id: 'renum' })
+        const updated = await fetch('/api/escolas').then((r) => r.json())
+        setEscolas(Array.isArray(updated) ? updated : [])
+      } else {
+        toast.error('Erro ao renumerar (algumas escolas falharam)', { id: 'renum' })
+      }
+    } catch {
+      toast.error('Erro ao renumerar', { id: 'renum' })
     }
   }
 
@@ -361,86 +417,6 @@ export default function ConfiguracoesPage() {
                   Escola ativa
                 </label>
               </div>
-
-              {/* v9.2: Configuração de alunos para lista de compras */}
-              <div className="border-t pt-3 mt-3 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4 text-[#1A3A5C]" />
-                  <span className="text-sm font-semibold text-[#1A3A5C]">Alunos (para Lista de Compras)</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>Alunos Parcial (turno único)</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={editEscola.alunos_parcial ?? 0}
-                      onChange={(e) => setEditEscola((prev) => ({ ...prev, alunos_parcial: parseInt(e.target.value) || 0 }))}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <Label>Alunos Integral (permanece o dia)</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={editEscola.alunos_integral ?? 0}
-                      onChange={(e) => setEditEscola((prev) => ({ ...prev, alunos_integral: parseInt(e.target.value) || 0 }))}
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label>Segmento (define fase escolar para percapita)</Label>
-                  <Select
-                    value={editEscola.segmento || 'REGULAR'}
-                    onValueChange={(v) => setEditEscola((prev) => ({ ...prev, segmento: v }))}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="CRECHE">Creche / Berçário</SelectItem>
-                      <SelectItem value="PRE_ESCOLA">Pré-Escola (4-5 anos)</SelectItem>
-                      <SelectItem value="FUND_INICIAL">Fundamental Inicial (6-10)</SelectItem>
-                      <SelectItem value="FUND_FINAL">Fundamental Final (11-15)</SelectItem>
-                      <SelectItem value="REGULAR">Regular (misto)</SelectItem>
-                      <SelectItem value="INTEGRAL">Integral</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={editEscola.mescla_parcial_integral ?? false}
-                    onChange={(e) => setEditEscola((prev) => ({ ...prev, mescla_parcial_integral: e.target.checked }))}
-                  />
-                  <span>Mescla parcial + integral na refeição principal (comem juntos no almoço)</span>
-                </label>
-                {/* v9.5: Pão fixo para órgãos (ignora cardápio escolar) */}
-                <label className="flex items-center gap-2 text-sm bg-blue-50 p-2 rounded border border-blue-200">
-                  <input
-                    type="checkbox"
-                    checked={editEscola.pao_fixo ?? false}
-                    onChange={(e) => setEditEscola((prev) => ({ ...prev, pao_fixo: e.target.checked }))}
-                  />
-                  <div>
-                    <span className="font-medium text-blue-800">🍞 Pão Fixo (Órgão/Instituição)</span>
-                    <p className="text-[10px] text-blue-600">
-                      Marque para órgãos que recebem pão TODA semana, independente do cardápio escolar.
-                      Ignora tipo de pão da semana (sempre Pão Francês).
-                    </p>
-                  </div>
-                </label>
-                {(editEscola.alunos_parcial ?? 0) + (editEscola.alunos_integral ?? 0) > 0 && (
-                  <div className="text-xs text-muted-foreground bg-blue-50 p-2 rounded border border-blue-100">
-                    Total de alunos: <strong>{(editEscola.alunos_parcial ?? 0) + (editEscola.alunos_integral ?? 0)}</strong>
-                    {editEscola.mescla_parcial_integral && (editEscola.alunos_parcial ?? 0) > 0 && (editEscola.alunos_integral ?? 0) > 0
-                      ? ` · Refeição principal: ${(editEscola.alunos_parcial ?? 0) + (editEscola.alunos_integral ?? 0)} alunos juntos`
-                      : ' · Sem mescla'
-                    }
-                  </div>
-                )}
-              </div>
-
               <Button onClick={handleUpdateEscola} className="w-full bg-[#1A3A5C]">Salvar Alterações</Button>
             </div>
           </DialogContent>
@@ -461,13 +437,21 @@ export default function ConfiguracoesPage() {
         </TabsList>
 
         <TabsContent value="escolas" className="mt-4">
+          {/* v9.5.3: Botão para renumerar todas as escolas automaticamente */}
+          <div className="flex items-center justify-between mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="text-sm">
+              <p className="font-medium text-blue-900">Ordenação por Ordem de Rota</p>
+              <p className="text-xs text-blue-700 mt-0.5">
+                Cada escola recebe um número sequencial (1, 2, 3...) dentro de sua rota, em ordem alfabética.
+                Ajuste os números individuais clicando no ícone de editar.
+              </p>
+            </div>
+            <Button onClick={handleRenumerar} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-100">
+              <ListOrdered className="w-4 h-4 mr-1" /> Renumerar
+            </Button>
+          </div>
           <div className="space-y-2">
-            {[...escolas].sort((a, b) => {
-              // v9.5: ordena por rota → ordem_rota → nome_curto (alfabético)
-              if (a.rota !== b.rota) return a.rota.localeCompare(b.rota)
-              if (a.ordem_rota !== b.ordem_rota) return a.ordem_rota - b.ordem_rota
-              return (a.nome_curto || '').localeCompare(b.nome_curto || '')
-            }).map((escola) => (
+            {escolas.map((escola) => (
               <motion.div key={escola.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                 <Card className="hover:shadow-md transition-shadow">
                   <CardContent className="p-4 flex items-center gap-4">
@@ -504,14 +488,6 @@ export default function ConfiguracoesPage() {
                           ativo: escola.ativo,
                           ordem_rota: escola.ordem_rota,
                           obs: escola.obs,
-                          // v9.3: carregar campos de alunos (estavam faltando!)
-                          alunos_parcial: escola.alunos_parcial ?? 0,
-                          alunos_integral: escola.alunos_integral ?? 0,
-                          mescla_parcial_integral: escola.mescla_parcial_integral ?? false,
-                          segmento: escola.segmento ?? 'REGULAR',
-                          dia_pao_frances: escola.dia_pao_frances ?? null,
-                          dia_lanche: escola.dia_lanche ?? null,
-                          pao_fixo: escola.pao_fixo ?? false,
                         })
                         setEditEscolaDialogOpen(true)
                       }}
@@ -745,12 +721,11 @@ export default function ConfiguracoesPage() {
                                 <Input
                                   type="number"
                                   min={0}
-                                  step="0.01"
                                   value={editPcqData[field] || 0}
                                   onChange={(e) =>
                                     setEditPcqData((prev) => ({
                                       ...prev,
-                                      [field]: parseFloat(e.target.value) || 0,
+                                      [field]: parseInt(e.target.value) || 0,
                                     }))
                                   }
                                   className="h-7 w-16 text-center text-sm mx-auto"

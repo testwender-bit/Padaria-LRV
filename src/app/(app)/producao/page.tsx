@@ -323,7 +323,10 @@ export default function ProducaoPage() {
         <tbody>
           {escolasRegularesPF.map((escola) => (
             <tr key={escola.id}>
-              <td className="print-col-escola">{escola.nome_curto}</td>
+              <td className="print-col-escola">
+                <span style={{ color: '#999', fontSize: '0.85em', marginRight: '0.3em' }}>{escola.ordem_rota}</span>
+                {escola.nome_curto}
+              </td>
               {DIAS_PRODUCAO.map((d) => (
                 <td key={d} className="print-col-dia">{escola.pf[d] > 0 ? escola.pf[d] : '—'}</td>
               ))}
@@ -337,7 +340,10 @@ export default function ProducaoPage() {
           )}
           {escolasOutrasPF.map((escola) => (
             <tr key={`outros-${escola.id}`}>
-              <td className="print-col-escola">{escola.nome_curto}</td>
+              <td className="print-col-escola">
+                <span style={{ color: '#999', fontSize: '0.85em', marginRight: '0.3em' }}>{escola.ordem_rota}</span>
+                {escola.nome_curto}
+              </td>
               {DIAS_PRODUCAO.map((d) => (
                 <td key={d} className="print-col-dia">{escola.pf[d] > 0 ? escola.pf[d] : '—'}</td>
               ))}

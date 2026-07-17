@@ -19,9 +19,14 @@
    ============================================================ */
 
 @media print {
+  /* v9.5.3: portrait é o default. Cardápio usa named page landscape_cardapio. */
   @page {
     size: A4 portrait;
     margin: 12mm 10mm 12mm 10mm;
+  }
+  @page landscape_cardapio {
+    size: A4 landscape;
+    margin: 4mm 4mm 3mm 4mm;
   }
 
   * {
@@ -126,9 +131,11 @@
   }
 
   .print-doc-logo {
-    width: 8mm;
-    height: 8mm;
-    border: 1.5pt solid #000;
+    /* v9.5.3: quando há <img> (brasão), NÃO exibir borda quadrada —
+       apenas a imagem sozinha. */
+    width: auto;
+    height: 12mm;
+    border: none;
     display: flex !important;
     align-items: center;
     justify-content: center;
@@ -136,6 +143,19 @@
     font-weight: 800;
     flex-shrink: 0;
     margin-top: 0.5mm;
+  }
+  /* v9.5.3: imagem do brasão preenche o espaço sem caixa */
+  .print-doc-logo img {
+    width: auto !important;
+    height: 12mm !important;
+    max-width: 12mm !important;
+    max-height: 12mm !important;
+    object-fit: contain !important;
+    display: block !important;
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
   .print-doc-title-block {
@@ -764,13 +784,13 @@
 
 /* ── Print styles — A4 LANDSCAPE, B&W OPTIMIZED ── */
 @media print {
-  /* Override the general @page portrait for cardápio pages */
-  @page {
-    size: A4 landscape;
-    margin: 4mm 4mm 3mm 4mm;
-  }
-
+  /* v9.5.3: REMOVIDO o @page landscape incondicional que sobrescrevia
+     o portrait para TODAS as páginas (incluindo produção).
+     Agora a página paisagem é ativada apenas via named page
+     `landscape_cardapio` aplicada no .semana-page (ver abaixo). */
   .semana-page {
+    /* v9.5.3: ativa a named page landscape_cardapio definida no topo do arquivo */
+    page: landscape_cardapio;
     page-break-after: always;
     page-break-inside: avoid;
     margin: 0 !important;
