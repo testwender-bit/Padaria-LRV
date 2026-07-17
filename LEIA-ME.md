@@ -1,149 +1,127 @@
-# Fix v9.5.4 — Produção Extra aparece + Ordem Sequencial Global + Print sem número
+# Fix v9.5.4.1 — RECUPERAÇÃO do schema Postgres
 
-## 1. Produção Extra não aparecia — CORRIGIDO
+## ⚠️ PROBLEMA CAUSADO PELO PATCH v9.5.4
 
-### Sintoma
+O patch v9.5.4 que você aplicou **substituiu seu `prisma/schema.prisma`
+inteiro** por uma versão SQLite do meu ambiente de desenvolvimento.
+Isso causou dois erros:
 
-> "quando adiciono inst. extra ela não aparece na produção na onde verifica
-> que nesse caso que adicionei era pão frances não aparece na produção nem
-> na impressão da produção."
-
-### Causa raiz
-
-O patch v9.5.2 reescreveu `src/app/api/producao/route.ts` para adicionar
-`ordem_rota`, mas **perdeu a busca em `db.producaoExtra`** que estava no
-patch v9.5 original. A resposta JSON voltou a não incluir `producaoExtra`,
-então a página fazia `setProducaoExtra(prodJson.producaoExtra || [])` →
-sempre array vazio.
-
-Além disso:
-- O **Prisma schema não tinha o model `ProducaoExtra`** no stage/.
-- A **API `/api/producao/extra/route.ts`** (POST/GET/DELETE) não estava
-  sendo entregue nos patches recentes.
-- A visão **Por Dia** usava `data.dias` em vez de `diasComExtra`.
-
-### Fix
-
-1. **`prisma/schema.prisma`**: adicionado `model ProducaoExtra` (com
-   campos `ano`, `semana`, `nome_instituicao`, `produto`, `dia_semana`,
-   `quantidade`, `observacao`) e campo `pao_fixo` na `Escola`.
-2. **`src/app/api/producao/extra/route.ts`**: incluída (GET/POST/DELETE).
-3. **`src/app/api/producao/route.ts`**: agora busca `producaoExtra` no
-   banco e retorna no JSON da resposta (com try/catch — se a tabela não
-   existir ainda, retorna `[]` em vez de quebrar).
-4. **`src/app/(app)/producao/page.tsx`**: a visão **Por Dia** agora usa
-   `diasComExtra` (não `data.dias`), então extras aparecem também lá.
-
-### IMPORTANTE — Migração do banco
-
-Após aplicar o patch, é necessário rodar `prisma db push` para criar a
-tabela `ProducaoExtra` no banco:
-
-```bash
-npx prisma db push
-# ou
-npx prisma migrate dev --name add-producao-extra
-```
-
-Sem isso, a API retorna `producaoExtra: []` (silenciosamente) e nada
-aparece — mas não quebra a aplicação.
-
-## 2. Ordenação agora é SEQUENCIAL GLOBAL
-
-### Sintoma
-
-> "ele está agrupando por rota ou seja ele primeiro vem rota do motorista
-> aroldo 1 2 3 4. depois para buscar 1 2 3, depois rota do motorista jose
-> 1 2 3. não quero que ele organize assim. quero que ordem seja sequencia
-> mesmo vou demonimar o numero de ordem 1 2 3 4 para cada um el
-> independente do motorista ele via ficar na ordem."
-
-### Fix
-
-- **`consolidarProducaoSemana`** agora ordena APENAS por
-  `ordem_rota → nome_curto` (sem comparar `rota`).
-- **`sortEscolas`** na página também faz o mesmo.
-- **Botão "Renumerar"** agora atribui números GLOBAIS (1..N) a todas as
-  escolas, independente do motorista. A ordenação inicial ainda segue
-  `rota → nome_curto` para ser estável/previsível, mas os números em si
-  são globais — então você pode trocar livremente e a sequência final
-  respeita só o número.
-
-### Importante: Romaneio continua agrupado por motorista
-
-O **romaneio** (página de impressão por motorista) ainda agrupa por rota
-— isso é necessário porque cada motorista leva só as escolas da sua rota.
-A mudança de ordenação sequencial vale apenas para a **página de produção**
-(visão consolidada) e a **impressão da produção** (PF, PCQ, Lanches).
-
-## 3. Número da ordem SOME na impressão
-
-### Sintoma
-
-> "na impressão no pão frances ficou numeração junto nome da escola não
-> quero isso."
-
-### Fix
-
-O `<span>` que mostra o `ordem_rota` ao lado do nome agora tem a classe
-`print:hidden` do Tailwind. Resultado:
-- **Na tela** (visão semana e dia): continua aparecendo o número em cinza
-  claro ao lado do nome, para você conferir a ordem.
-- **Na impressão** (Ctrl+P): o número some, só aparece o nome da escola.
-
-## Arquivos incluídos
+### Erro 1 — `prisma db push` falhou
 
 ```
-prisma/schema.prisma                                    # ProducaoExtra model + pao_fixo
-src/app/api/producao/route.ts                           # retorna producaoExtra no JSON
-src/app/api/producao/extra/route.ts                     # CRUD de ProducaoExtra (NOVO)
-src/app/api/romaneio/route.ts                           # ordem_rota + sort
-src/app/api/escolas/route.ts                            # orderBy + nome_curto tie-breaker
-src/app/(app)/producao/page.tsx                         # usa diasComExtra na visão Por Dia + print:hidden
-src/app/(app)/configuracoes/page.tsx                    # Renumerar GLOBAL
-src/app/print.css                                       # (mantido do v9.5.3)
-src/lib/producao-utils.ts                               # ItemProducao.ordem_rota obrigatório
-src/lib/producao-semana-utils.ts                        # sort sem rota
-src/lib/romaneio-utils.ts                               # EscolaRomaneio.ordem_rota
+Error: Prisma schema validation - (get-config wasm)
+error: Error validating datasource `db`: the URL must start with the protocol `file:`.
+  -->  prisma/schema.prisma:12
+   | 
+11 |   provider = "sqlite"
+12 |   url      = env("DATABASE_URL")
 ```
+
+Seu `DATABASE_URL` (Vercel + Supabase/Neon) é Postgres, mas o schema
+diz SQLite. Incompatibilidade.
+
+### Erro 2 — Build da Vercel falhou
+
+```
+./src/app/api/nutricao/cardapios/[id]/localizar-substituir/route.ts:40:32
+Type error: Object literal may only specify known properties,
+and 'mode' does not exist in type 'StringFilter<"Preparacao"'.
+```
+
+`mode: 'insensitive'` é um recurso exclusivo de Postgres. Com SQLite
+(o que o schema errado dizia), o Prisma Client gerado não tem essa
+propriedade → erro de TypeScript no build.
+
+## ✅ SOLUÇÃO — Script de recuperação
+
+Este patch contém **apenas um arquivo**:
+
+- `restore-schema-postgres.sh` — script bash que:
+
+1. **Restaura seu schema do commit anterior** (`git checkout HEAD~1`)
+   — volta para o seu Postgres original, com todos os seus models
+   intactos.
+2. **Adiciona APENAS o `model ProducaoExtra`** (antes de
+   `model HistoricoSemana`), com try/catch seguro na API.
+3. **Adiciona APENAS o campo `pao_fixo Boolean @default(false)`**
+   após `ordem_rota Int @default(0)` no `model Escola`.
+4. **Verifica** que tudo está no lugar (Postgres + ProducaoExtra + pao_fixo).
+
+**Não substitui nenhum outro model. Não altera datasource. Não mexe em
+nenhum outro arquivo.**
 
 ## Como aplicar
 
 ```bash
-# Na RAIZ do projeto:
-unzip -o patch-extra-show-ordem-global-v9.5.4.zip -d .
+# 1. Extraia o patch (apenas o script, sem tocar em mais nada):
+unzip -o patch-schema-recovery-v9.5.4.1.zip -d .
 
-# CRIAR A TABELA ProducaoExtra NO BANCO (importante!):
+# 2. Rode o script de recuperação:
+bash restore-schema-postgres.sh
+
+# 3. Crie a tabela ProducaoExtra no banco:
 npx prisma db push
 
-# Commit
+# 4. Commit e push:
 git add -A
-git commit -m "fix(v9.5.4): extra aparece + ordem sequencial global + print sem número"
+git commit -m "fix(v9.5.4.1): restaura schema Postgres + adiciona ProducaoExtra"
 git push
 ```
 
 ## Verificação
 
-1. **Configurações → Escolas → Renumerar** → todas as escolas recebem
-   números 1..N (globais, sem agrupar por motorista).
-2. **Página de Produção** → as escolas aparecem na sequência 1, 2, 3, 4
-   ... sem agrupar por motorista. (O número aparece em cinza claro ao
-   lado do nome.)
-3. **Imprimir (Ctrl+P)** → o número SOME na impressão, só fica o nome.
-4. **Cadastre uma Produção Extra** (botão "+ Produções Extras"):
-   - Escolha PF, dia (ex: segunda), quantidade.
-   - Salve.
-   - Na página de produção (visão semana ou dia), a instituição extra
-     aparece na lista com a quantidade correta.
-   - Na impressão, aparece na seção "Produção Extra" ao final.
-5. **Romaneio** (página de impressão por motorista) → continua agrupado
-   por motorista, com as escolas de cada motorista ordenadas por
-   `ordem_rota` dentro daquela rota.
+Após rodar o script, o `prisma/schema.prisma` deve ter:
 
-## Nota técnica
+```prisma
+datasource db {
+  provider = "postgresql"        ← restaurado (não sqlite)
+  url      = env("DATABASE_URL")
+}
 
-A busca de `producaoExtra` na API de produção foi envolvida em
-`try/catch` com fallback `[]`. Isso garante que se a tabela não tiver
-sido criada ainda (esquecimento do `prisma db push`), a aplicação não
-quebra — apenas os extras não aparecem. Após rodar `prisma db push`,
-eles passam a aparecer normalmente.
+model Escola {
+  ...
+  ordem_rota    Int      @default(0)
+  pao_fixo      Boolean  @default(false)   ← adicionado
+  obs           String?
+  ...
+}
+
+model ProducaoExtra {              ← adicionado (novo bloco)
+  id               String   @id @default(cuid())
+  ano              Int
+  semana           Int
+  nome_instituicao String
+  produto          String
+  dia_semana       String
+  quantidade       Int      @default(0)
+  observacao       String?
+  criado_em        DateTime @default(now())
+
+  @@index([ano, semana])
+}
+```
+
+Todos os outros models do seu schema (User, Account, Preparacao,
+CardapioSemestral, etc.) permanecem **intactos**.
+
+## Por que isso aconteceu?
+
+No meu ambiente de desenvolvimento local, o `stage/` usa SQLite para
+testes. Quando montei o patch v9.5.4, copiei o `schema.prisma` inteiro
+do stage/ — incluindo `provider = "sqlite"`. O patch substituiu o seu
+arquivo inteiro em vez de fazer uma inserção cirúrgica.
+
+Este patch v9.5.4.1 corrige o problema: o script `restore-schema-postgres.sh`
+restaura seu schema original e adiciona só o que falta.
+
+## As outras mudanças do v9.5.4 continuam valendo
+
+Todas as outras alterações do patch v9.5.4 (route.ts, page.tsx, lib/*)
+continuam funcionando normalmente — elas não dependem do tipo de banco.
+Apenas o `schema.prisma` precisa ser restaurado para Postgres.
+
+Após rodar `prisma db push` com sucesso:
+- A tabela `ProducaoExtra` será criada no seu banco Postgres
+- A API `/api/producao` vai retornar `producaoExtra` corretamente
+- A página de Produção vai mostrar as instituições extras
+- O build da Vercel vai passar (sem erro de `mode: 'insensitive'`)

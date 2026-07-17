@@ -8,8 +8,21 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  // v8.6: trocado de "sqlite" para "postgresql" para deploy na Vercel + Supabase.
+  // SQLite não funciona em serverless (filesystem efêmero da Vercel perde dados a cada cold start).
+  // O schema Prisma é 100% compatível (apenas String/Int/Boolean/DateTime/Float — sem tipos Postgres-only).
+
+  provider  = "postgresql"
+
+  // url = usada pelo Prisma Client em runtime (queries da app).
+  // Deve apontar para o TRANSACTION POOLER (porta 6543) — escala em serverless Vercel.
+  // Adicionar ?pgbouncer=true&connection_limit=1 é CRÍTICO para Vercel + Supabase free tier.
+  url       = env("DATABASE_URL")
+
+  // directUrl = usada APENAS por prisma db push / prisma migrate (criação/alteração de schema).
+  // Deve apontar para a DIRECT CONNECTION (porta 5432 do db.xxx.supabase.co).
+  // Não pode ser pooler porque migrations precisam de sessão sticky.
+  directUrl = env("DIRECT_URL")
 }
 
 // ── Autenticação (NextAuth) ─────────────────────────────────
@@ -77,9 +90,6 @@ model Escola {
   ativo         Boolean  @default(true)
   ordem_rota    Int      @default(0)
   obs           String?
-  // v9.5: marca escolas que recebem pão francês em quantidade fixa
-  // (não segue a tabela padrão seg/ter/qua/qui/sex)
-  pao_fixo      Boolean  @default(false)
 
   // ── NOVOS CAMPOS: lista de compras / cardápio ──
   segmento        String  @default("REGULAR")  // CRECHE, PRE_ESCOLA, FUND_INICIAL, FUND_FINAL, REGULAR, INTEGRAL
@@ -89,6 +99,10 @@ model Escola {
   dia_lanche      String? // SEG, TER, QUA, QUI, SEX — dia fixo de lanche especial (null = não recebe)
   // Indica se a escola mescla alunos regular + integral numa mesma refeição (afeta percapita)
   mescla_parcial_integral Boolean @default(false)
+
+  // v9.5: Órgãos fixos — produzem pão TODA semana independente do cardápio escolar
+  // true = sempre produz PF (ignora tipo_pao do cardápio semestral)
+  pao_fixo Boolean @default(false)
 
   pf_quantidades    PfQuantidade[]
   pcq_quantidades   PcqQuantidade[]
@@ -122,12 +136,12 @@ model PfQuantidade {
 model PcqQuantidade {
   id              String  @id @default(cuid())
   escola_id       String
-  prod_segunda    Int     @default(0)
-  prod_quarta     Int     @default(0)
-  prod_sexta      Int     @default(0)
-  pf_comp_segunda Int     @default(0)
-  pf_comp_quarta  Int     @default(0)
-  pf_comp_sexta   Int     @default(0)
+  prod_segunda    Float   @default(0)
+  prod_quarta     Float   @default(0)
+  prod_sexta      Float   @default(0)
+  pf_comp_segunda Float   @default(0)
+  pf_comp_quarta  Float   @default(0)
+  pf_comp_sexta   Float   @default(0)
 
   escola Escola @relation(fields: [escola_id], references: [id], onDelete: Cascade)
 
@@ -362,10 +376,15 @@ model Nutricionista {
 // ── Tipo de Refeição ────────────────────────────────────────
 model TipoRefeicao {
   id       String  @id @default(cuid())
-  codigo   String  @unique // CAFE_MANHA, FRUTA_MANHA, ALMOCO, LANCHE, HIDRATACAO, JANTAR, LANCHE_1, LANCHE_2
+  codigo   String  @unique // CAFE_MANHA, FRUTA_MANHA, ALMOCO, LANCHE, HIDRATACAO, JANTAR, LANCHE_1, LANCHE_2, LANCHE_PRE_ESCOLA
   nome     String  // "Café da Manhã"
   horario  String  // "07h30min"
   ordem    Int     @default(0)
+
+  // v8.13: Se preenchido, este slot é renderizado como SUB de outro slot
+  // (ex: FRUTA_MANHA é sub de CAFE_MANHA — mesma caixa visual, sem linha separada no PDF)
+  // O campo armazena o CÓDIGO do tipo pai (não o ID) para facilitar migrações.
+  sub_de_codigo String?
 
   categoria_refeicoes CategoriaRefeicao[]
   cardapio_itens      CardapioItem[]
