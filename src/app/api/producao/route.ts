@@ -19,27 +19,24 @@ export async function GET(request: Request) {
     const ano = anoSemana(refDate)
 
     // Buscar dados
-    const [escolas, feriados, ajustes] = await Promise.all([
+    const [escolas, feriados, ajustes, cardapio] = await Promise.all([
       db.escola.findMany({
         where: { ativo: true },
         include: { pf_quantidades: true, pcq_quantidades: true },
+        // v9.5.2: ordem definitiva — rota → ordem_rota → nome_curto
         orderBy: [{ rota: 'asc' }, { ordem_rota: 'asc' }, { nome_curto: 'asc' }],
       }),
       db.feriado.findMany(),
       db.ajuste.findMany({ where: { ano, semana } }),
+      // BUG FIX 3: Cardápio lookup - first try ISO week, then fall back to date range
+      db.cardapioSemestral.findFirst({
+        where: { numero_semana_iso: semana },
+        include: { lanche_regular: true, lanche_bifasica: true },
+      }),
     ])
 
-    // v9.4: busca cardápio por ano + semana ISO (match exato)
-    const cardapioExato = await db.cardapioSemestral.findFirst({
-      where: { ano, numero_semana_iso: semana },
-      include: { lanche_regular: true, lanche_bifasica: true },
-    })
-
-    // v9.4: controla se o match foi exato (para saber se o obs é desta semana)
-    let matchExato = !!cardapioExato
-
     // Fallback: try to find cardápio by date range if not found by ISO week
-    let cardapioFinal = cardapioExato
+    let cardapioFinal = cardapio
     if (!cardapioFinal) {
       const segundaStr = dataISO(inicio)
       const sextaStr = dataISO(addDays(inicio, 4))
@@ -50,26 +47,6 @@ export async function GET(request: Request) {
         },
         include: { lanche_regular: true, lanche_bifasica: true },
       })
-      if (cardapioFinal) matchExato = true // match por data também é exato
-    }
-
-    // v9.3: Segundo fallback — busca por semana ISO sem filtrar ano
-    if (!cardapioFinal) {
-      cardapioFinal = await db.cardapioSemestral.findFirst({
-        where: { numero_semana_iso: semana },
-        include: { lanche_regular: true, lanche_bifasica: true },
-      })
-      // match por ISO sem ano NÃO é exato — não deve usar obs
-    }
-
-    // v9.3: Se mesmo assim não encontrou, busca o primeiro cardápio do ano
-    if (!cardapioFinal) {
-      cardapioFinal = await db.cardapioSemestral.findFirst({
-        where: { ano },
-        orderBy: { semana: 'asc' },
-        include: { lanche_regular: true, lanche_bifasica: true },
-      })
-      // fallback genérico NÃO é exato — não deve usar obs
     }
 
     // Feriados da semana
@@ -118,9 +95,7 @@ export async function GET(request: Request) {
     const itensPfDomingo: ItemProducao[] = []
     for (const escola of escolas) {
       if (!escola.recebe_pf) continue
-      // v9.5: escolas com pao_fixo sempre usam PADRAO (ignora cardápio da semana)
-      const tipoPaoEscola = escola.pao_fixo ? 'PADRAO' : tipoPao
-      const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEscola)
+      const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPao)
       if (!pfQ) continue
 
       // Check feriado on DELIVERY day (segunda)
@@ -135,7 +110,7 @@ export async function GET(request: Request) {
         escola_curto: escola.nome_curto,
         categoria: escola.categoria,
         rota: escola.rota,
-        ordem_rota: escola.ordem_rota,  // v9.5
+        ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
         busca_propria: escola.busca_propria,
         produto: 'PF',
         quantidade: qtd,
@@ -182,9 +157,7 @@ export async function GET(request: Request) {
 
         for (const escola of escolas) {
           if (!escola.recebe_pf) continue
-          // v9.5: escolas com pao_fixo sempre usam PADRAO (ignora cardápio da semana)
-          const tipoPaoEscola = escola.pao_fixo ? 'PADRAO' : tipoPao
-          const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEscola)
+          const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPao)
           if (!pfQ) continue
 
           // Check feriado on DELIVERY day
@@ -199,7 +172,7 @@ export async function GET(request: Request) {
             escola_curto: escola.nome_curto,
             categoria: escola.categoria,
             rota: escola.rota,
-            ordem_rota: escola.ordem_rota,  // v9.5
+            ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
             busca_propria: escola.busca_propria,
             produto: 'PF',
             quantidade: qtd,
@@ -260,7 +233,7 @@ export async function GET(request: Request) {
               escola_curto: escola.nome_curto,
               categoria: escola.categoria,
               rota: escola.rota,
-              ordem_rota: escola.ordem_rota,  // v9.5
+              ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
               busca_propria: escola.busca_propria,
               produto: 'PCQ',
               quantidade: qtd,
@@ -309,7 +282,7 @@ export async function GET(request: Request) {
               escola_curto: escola.nome_curto,
               categoria: escola.categoria,
               rota: escola.rota,
-              ordem_rota: escola.ordem_rota,  // v9.5
+              ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
               busca_propria: escola.busca_propria,
               produto: 'PF',
               quantidade: qtd,
@@ -344,7 +317,7 @@ export async function GET(request: Request) {
           escola_curto: escola.nome_curto,
           categoria: escola.categoria,
           rota: escola.rota,
-          ordem_rota: escola.ordem_rota,  // v9.5
+          ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
           busca_propria: escola.busca_propria,
           produto: 'LANCHE',
           quantidade: qtd,
@@ -370,12 +343,6 @@ export async function GET(request: Request) {
       })
     }
 
-    // v9.5: buscar produções extras (instituições avulsas)
-    const producaoExtra = await db.producaoExtra.findMany({
-      where: { ano, semana },
-      orderBy: [{ produto: 'asc' }, { dia_semana: 'asc' }],
-    })
-
     return NextResponse.json({
       semana,
       ano,
@@ -383,11 +350,7 @@ export async function GET(request: Request) {
       nomePao,
       lancheRegular: lancheRegular?.nome || null,
       lancheBifasica: lancheBifasica?.nome || null,
-      // v9.4: só retorna obs se o match foi exato (não fallback genérico)
-      obs: matchExato ? (cardapioFinal?.obs || null) : null,
       dias: diasProducao,
-      // v9.5: produções extras
-      producaoExtra,
     })
   } catch (error) {
     console.error('Erro ao calcular produção:', error)

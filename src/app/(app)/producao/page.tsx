@@ -198,15 +198,15 @@ export default function ProducaoPage() {
         escola_curto: nomeCurto,
         categoria: 'EXTRA',
         rota: 'OUTROS',
+        // v9.5.2: ordem_rota alta para aparecer por último dentro da rota OUTROS
+        ordem_rota: 9999,
         busca_propria: false,
         produto: extra.produto as ItemProducao['produto'],
         quantidade: extra.quantidade,
         unidade: extra.produto === 'PF' ? 'un' : 'formas',
         dia_entrega: extra.dia_semana,
         obs: extra.observacao || undefined,
-      } as any
-      // (item as any).ordem_rota alto para aparecer por último dentro da rota OUTROS
-      ;(novoItem as any).ordem_rota = 9999
+      }
       if (extra.produto === 'PF') {
         dia.itens_pf.push(novoItem)
         dia.total_pf = (dia.total_pf || 0) + extra.quantidade
@@ -331,8 +331,8 @@ export default function ProducaoPage() {
             </tr>
           ))}
           {escolasOutrasPF.length > 0 && (
-            <tr className="print-row-separator">
-              <td colSpan={8}>OUTRAS INSTITUIÇÕES</td>
+            <tr className="print-row-separator-black">
+              <td colSpan={8}>Produção Extra</td>
             </tr>
           )}
           {escolasOutrasPF.map((escola) => (

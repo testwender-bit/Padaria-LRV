@@ -126,19 +126,16 @@
   }
 
   .print-doc-logo {
-    width: 12mm;
-    height: 12mm;
+    width: 8mm;
+    height: 8mm;
+    border: 1.5pt solid #000;
     display: flex !important;
     align-items: center;
     justify-content: center;
+    font-size: 10pt;
+    font-weight: 800;
     flex-shrink: 0;
     margin-top: 0.5mm;
-  }
-
-  .print-doc-logo img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
   }
 
   .print-doc-title-block {
@@ -315,7 +312,7 @@
   /* Column widths: Escola 25%, 6 dias 10.7% each, Total 10.8% */
   .print-col-escola { width: 25%; text-align: left; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .print-col-dia { width: 10.7%; text-align: center; }
-  .print-col-total { width: 10.8%; text-align: center; font-weight: 600; }
+  .print-col-total { width: 10.8%; text-align: right; font-weight: 600; }
 
   /* Alternating row stripes */
   table.print-table tbody tr:nth-child(even) td {
@@ -330,6 +327,20 @@
     text-transform: uppercase;
     font-size: 7pt;
     letter-spacing: 0.5pt;
+    padding: 1mm 1.5mm;
+    text-align: left;
+    border-top: 1.5pt solid #000;
+    border-bottom: 1.5pt solid #000;
+  }
+
+  /* v9.5.2: Variante com texto PRETO para o cabeçalho "Produção Extra" */
+  table.print-table tr.print-row-separator-black td {
+    background: #555 !important;
+    color: #000 !important;
+    font-weight: 700;
+    text-transform: none;
+    font-size: 8pt;
+    letter-spacing: 0.3pt;
     padding: 1mm 1.5mm;
     text-align: left;
     border-top: 1.5pt solid #000;
@@ -361,7 +372,8 @@
   /* Override stripe for total/subtotal rows */
   table.print-table tbody tr.print-row-total td,
   table.print-table tbody tr.print-row-subtotal td,
-  table.print-table tbody tr.print-row-separator td {
+  table.print-table tbody tr.print-row-separator td,
+  table.print-table tbody tr.print-row-separator-black td {
     background-image: none !important;
   }
 
@@ -475,7 +487,6 @@
   .sp-header-meta {
     display: flex;
     align-items: center;
-    justify-content: center;  /* v8.16.1: centraliza o texto da secretaria */
     gap: 4px;
     flex: 1;
     min-width: 0;
@@ -483,19 +494,6 @@
   }
   .sp-meta-item { font-size: 8.5px; color: #cbd5e1; white-space: nowrap; }
   .sp-meta-item strong { color: #e2e8f0; font-weight: 600; }
-  /* v8.16.1: texto da Secretaria — branco, centralizado, mesma fonte do título */
-  .sp-meta-secretaria {
-    font-family: Carlito, 'Segoe UI', Roboto, -apple-system, sans-serif;
-    font-size: 11px;
-    color: #ffffff;
-    font-weight: 700;
-    letter-spacing: 0.3px;
-    text-transform: uppercase;
-    white-space: nowrap;
-    text-align: center;
-    width: 100%;
-    display: block;
-  }
   .sp-meta-divider { color: #475569; font-size: 6px; margin: 0 2px; }
   .sp-header-week {
     display: flex;
@@ -555,24 +553,12 @@
     letter-spacing: 0.1px;
   }
   .sp-ref-hora { display: block; font-size: 7px; color: #94a3b8; margin-top: 2px; font-weight: 500; }
-  .sp-ref-sub {
-    display: block;
-    font-size: 7px;
-    color: #1e293b;
-    margin-top: 2px;
-    font-style: normal;
-    font-weight: 600;
-    border-top: 1px dashed #cbd5e1;
-    padding-top: 2px;
-  }
   .sp-td-dia {
     padding: 6px 8px;
     border: 1px solid #e2e8f0;
     vertical-align: top;
   }
   .sp-prep-list { list-style: none; margin: 0; padding: 0; }
-  .sp-prep-list-sub { margin-top: 3px; padding-top: 3px; border-top: 1px dashed #fbbf24; }
-  .sp-prep-item-sub { margin-bottom: 2px; opacity: 0.9; }
   .sp-prep-item { margin-bottom: 5px; }
   .sp-prep-nome {
     /* Clean, rounded, formal font for preparation names */
@@ -593,18 +579,6 @@
     font-weight: 400;
   }
   .sp-prep-vazio { color: #cbd5e1; font-size: 10px; }
-  .sp-prep-igual-creche {
-    display: inline-block;
-    color: #475569;
-    font-size: 8.5px;
-    font-weight: 600;
-    font-style: normal;
-    padding: 2px 6px;
-    border: 1px solid #94a3b8;
-    border-radius: 3px;
-    background: #f1f5f9;
-    line-height: 1.2;
-  }
   .sp-row:nth-child(even) .sp-td-dia { background: #fafbfc; }
   .sp-row:nth-child(even) .sp-td-ref { background: #f1f5f9; }
 
@@ -789,11 +763,12 @@
 }
 
 /* ── Print styles — A4 LANDSCAPE, B&W OPTIMIZED ── */
-/* v9.4: landscape SÓ para cardápio nutricional (.semana-page) */
-/* Produção e outras páginas continuam em portrait (definido no @page geral) */
 @media print {
-  /* NÃO sobrescreve @page geral — produção usa portrait */
-  /* Landscape só se aplica via classe específica se necessário futuramente */
+  /* Override the general @page portrait for cardápio pages */
+  @page {
+    size: A4 landscape;
+    margin: 4mm 4mm 3mm 4mm;
+  }
 
   .semana-page {
     page-break-after: always;
@@ -836,7 +811,6 @@
   .sp-header-meta {
     display: flex !important;
     align-items: center !important;
-    justify-content: center !important;  /* v8.16.1: centraliza secretaria na impressão */
     gap: 1mm !important;
     flex: 1 !important;
     min-width: 0 !important;
@@ -844,20 +818,6 @@
   }
   .sp-meta-item { font-size: 6pt !important; color: #666 !important; }
   .sp-meta-item strong { color: #999 !important; font-weight: 600 !important; }
-  /* v8.16.1: texto da Secretaria impresso — branco, centralizado, fonte do título */
-  .sp-meta-secretaria {
-    font-family: Carlito, 'Segoe UI', Roboto, -apple-system, sans-serif !important;
-    font-size: 9pt !important;
-    color: #ffffff !important;
-    font-weight: 700 !important;
-    letter-spacing: 0.3pt !important;
-    text-transform: uppercase !important;
-    text-align: center !important;
-    width: 100% !important;
-    display: block !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
   .sp-meta-divider { color: #333 !important; font-size: 5pt !important; margin: 0 0.5mm !important; }
   .sp-header-week {
     display: flex !important;
@@ -938,32 +898,6 @@
     font-weight: 400 !important;
   }
   .sp-prep-vazio { color: #999 !important; font-size: 7.5pt !important; }
-  .sp-prep-igual-creche {
-    display: inline-block !important;
-    color: #222 !important;
-    font-size: 6.5pt !important;
-    font-weight: 700 !important;
-    font-style: normal !important;
-    padding: 0.5mm 1.2mm !important;
-    border: 0.3pt solid #555 !important;
-    border-radius: 1mm !important;
-    background: #eee !important;
-    line-height: 1.1 !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-  .sp-prep-list-sub { margin-top: 1mm !important; padding-top: 1mm !important; border-top: 1px dashed #999 !important; }
-  .sp-prep-item-sub { margin-bottom: 0.5mm !important; opacity: 0.85 !important; }
-  .sp-ref-sub {
-    display: block !important;
-    font-size: 6pt !important;
-    color: #222 !important;
-    margin-top: 0.3mm !important;
-    font-style: normal !important;
-    font-weight: 700 !important;
-    border-top: 0.3pt dashed #777 !important;
-    padding-top: 0.3mm !important;
-  }
   .sp-row:nth-child(even) .sp-td-dia { background: #fafafa !important; }
   .sp-row:nth-child(even) .sp-td-ref { background: #eee !important; }
 

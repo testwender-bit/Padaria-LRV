@@ -60,7 +60,9 @@ export function consolidarProducaoSemana(
         nome_curto: item.escola_curto,
         rota: item.rota,
         ordem: ordensEscola?.get(item.escola_id) ?? 999,
-        ordem_rota: (item as any).ordem_rota ?? 0,  // v9.5
+        // v9.5.2: ordem_rota agora é campo obrigatório em ItemProducao.
+        // Fallback 0 só para segurança (não deve acontecer).
+        ordem_rota: typeof item.ordem_rota === 'number' ? item.ordem_rota : 0,
         pf: diasVazios(),
         pcq: diasVazios(),
         lanche: diasVazios(),

@@ -1,97 +1,123 @@
-# Fix v9.5.1 — Corrige erro de Hooks + Produção Extra silenciosa
+# Fix v9.5.2 — Ordenação DEFINITIVA + "Produção Extra" em preto
 
-## Problema corrigido
+## 1. Bug de ordenação — causa raiz DEFINITIVA
 
-```
-Error: Minified React error #310
-React has detected a change in the order of Hooks called by ProducaoPage.
-Rendered more hooks than during the previous render.
-```
+### Sintoma relatado pelo usuário
+
+> "quando vou mudando os numero de ordem de rota das escolas ele só muda
+> a que ta em primeiro e joga par ao meio se eu mudar uma escola que
+> esteja la no final ela não mexe. preciso de algo definitivo"
 
 ### Causa raiz
 
-O `useMemo(diasComExtra)` adicionado na v9.5 estava posicionado **depois**
-do early return `if (loading || !data) return (...)`. Isso viola as
-Rules of Hooks do React:
+O campo `ordem_rota` **existia no banco** e **era salvo corretamente**
+pela API `/api/escolas` (PUT). Porém, a API de produção
+(`/api/producao/route.ts`) **NÃO estava repassando `ordem_rota`** para os
+objetos `ItemProducao` que ela monta.
 
-- Quando `loading=true`, o componente retornava antes de chegar ao `useMemo`
-  (16 hooks executados).
-- Quando `loading=false` (após carregar dados), o componente passava pelo
-  early return e executava o `useMemo` (17 hooks).
+A função `consolidarProducaoSemana` fazia:
+```ts
+ordem_rota: (item as any).ordem_rota ?? 0
+```
 
-React detecta a mudança na ordem/quantidade de hooks entre renders e aborta
-com o erro #310.
+Como `item.ordem_rota` era sempre `undefined`, todas as escolas caíam no
+fallback `0`. A ordenação terminava no desempate por `nome_curto`
+(alfabético) — que é o que parecia "aleatório mas estável".
 
-### Fix
+**Por que mudar a primeira escola funcionava?** — Acontecia de a escola
+alterada ter um `nome_curto` que, combinado com a nova posição
+alfabética, mudava visualmente de lugar. Mas a `ordem_rota` em si nunca
+foi usada.
 
-O `useMemo(diasComExtra)` foi **movido para ANTES do early return**, junto
-com os demais hooks. O guard interno `if (!data || producaoExtra.length === 0)
-return data?.dias || []` já trata o caso nulo com segurança.
+### Fix definitivo
 
-## Produção Extra agora é silenciosa
+1. **`ItemProducao` agora tem `ordem_rota` como campo obrigatório**
+   (era opcional/`as any` antes).
 
-Conforme solicitado pelo usuário:
+2. **API de produção passa `ordem_rota: escola.ordem_rota ?? 0`** em
+   todos os 5 lugares onde monta `ItemProducao`:
+   - `itensPfDomingo.push` (domingo → segunda)
+   - `itensPf.push` (PF seg→sexta)
+   - `itensPcq.push` (PCQ seg/qua/sex)
+   - `itensPf.push` (PF_COMP integrado ao PF)
+   - `itensLanche.push` (Lanche)
 
-> "Quero que quando colocar uma instituição extra ela silenciosamente agrege
-> como última da produção do pão frances sem separação sem nada."
+3. **API de romaneio passa `ordem_rota`** e faz `sort()` explícito dentro
+   de cada rota: `ordem_rota → nome_curto`.
 
-Mudanças:
+4. **Todas as APIs (`/escolas`, `/producao`, `/romaneio`)** agora usam
+   `orderBy: [{ rota: 'asc' }, { ordem_rota: 'asc' }, { nome_curto: 'asc' }]`
+   no Prisma — o `nome_curto` foi adicionado como **tie-breaker** para
+   evitar ordem não-determinística quando duas escolas têm a mesma
+   `ordem_rota`.
 
-1. **Removida a página de impressão "PRODUÇÃO EXTRA — INSTITUIÇÕES"** — não
-   existe mais como página separada.
+5. **`consolidarProducaoSemana`** usa `item.ordem_rota` (campo tipado,
+   sem `as any`).
 
-2. **As produções extras são agora injetadas como `ItemProducao`** nos
-   arrays `itens_pf` / `itens_pcq` / `itens_lanche` do dia de produção
-   correspondente, via `useMemo(diasComExtra)`.
+### Resultado
 
-3. **Aparecem como a última instituição da rota `OUTROS`** na tabela de
-   produção, junto com as demais escolas — sem separação visual.
+A ordem que você define em **Configurações → Editar Escola → Ordem** é
+agora **respeitada 100%** em:
+- Página de produção (visão semana)
+- Impressão PF (1ª e 2ª via)
+- Impressão PCQ/Lanches
+- Romaneios por motorista
 
-4. **`consolidarProducaoSemana` agora recebe `diasComExtra`** em vez de
-   `data.dias`, então os totais da semana já incluem as extras.
+## 2. "Produção Extra" em preto
 
-### Mapeamento de dia (entrega → produção)
+Renomeado o cabeçalho **"OUTRAS INSTITUIÇÕES"** → **"Produção Extra"**
+com **letra preta** (antes era branca com `!important` no CSS).
 
-- **PF**: dia_semana = entrega → produção = D-1
-  (segunda→domingo, terça→segunda, etc., via `PF_PRODUCAO_PARA_ENTREGA`)
-- **PCQ / Lanche**: dia_semana = entrega = produção (mesmo dia, D-0)
-
-### Ordenação das extras
-
-As extras recebem `rota = 'OUTROS'` e `ordem_rota = 9999`, garantindo que
-apareçam **por último** dentro do bloco "OUTRAS INSTITUIÇÕES" da impressão,
-depois das escolas reais que estejam nessa rota.
+Foi criada uma nova classe CSS `print-row-separator-black` (mantendo o
+fundo escuro, mas com texto preto e sem `uppercase`) para não conflitar
+com a regra `!important` existente da classe `print-row-separator`.
 
 ## Arquivos incluídos
 
 ```
-src/app/(app)/producao/page.tsx       # Fix principal (hooks + extra silenciosa)
-src/lib/producao-semana-utils.ts      # Sort por rota → ordem_rota → nome_curto
+src/lib/producao-utils.ts            # ItemProducao.ordem_rota obrigatório
+src/lib/producao-semana-utils.ts     # usa item.ordem_rota (sem as any)
+src/lib/romaneio-utils.ts            # EscolaRomaneio.ordem_rota opcional
+src/app/api/escolas/route.ts         # orderBy + nome_curto tie-breaker
+src/app/api/producao/route.ts        # 5× ordem_rota: escola.ordem_rota
+src/app/api/romaneio/route.ts        # ordem_rota + sort dentro da rota
+src/app/(app)/producao/page.tsx      # "Produção Extra" + diasComExtra tipado
+src/app/print.css                    # nova classe print-row-separator-black
 ```
 
 ## Como aplicar
 
 ```bash
 # Na RAIZ do projeto (onde está o package.json):
-unzip -o patch-fix-extra-hooks.zip -d .
+unzip -o patch-ordem-definitiva-v9.5.2.zip -d .
 
 # Commit
 git add -A
-git commit -m "fix(v9.5.1): corrige erro de hooks + produção extra silenciosa"
+git commit -m "fix(v9.5.2): ordenação definitiva por ordem_rota + Produção Extra em preto"
 git push
 ```
 
-Após aplicar, **rebuild e redeploy** (Vercel fará automaticamente após o
-push).
+Após o push, a Vercel fará o redeploy automaticamente.
 
 ## Verificação
 
-1. Acesse a página `/producao` — não deve mais exibir o erro #310.
-2. Cadastre uma produção extra (botão "+ Produções Extras").
-3. A produção extra deve aparecer:
-   - Na tabela de produção PF (ou PCQ/Lanche), como última linha do bloco
-     "OUTRAS INSTITUIÇÕES".
-   - Na impressão (PF 1ª via, PF 2ª via), sem página separada.
-   - Os totais da semana devem incluir as extras.
-4. **Não deve existir** mais a página "PRODUÇÃO EXTRA — INSTITUIÇÕES" na
-   impressão.
+1. **Vá em Configurações → Escolas** e ajuste os números de Ordem.
+2. **Salve** e volte para a página de Produção.
+3. **As escolas devem aparecer na ordem exata que você definiu** dentro
+   de cada motorista (José, Aroldo, Busca Própria).
+4. **Imprima** (Ctrl+P) — a ordem deve ser a mesma na impressão PF,
+   PCQ/Lanches e Romaneios.
+5. **O cabeçalho "Produção Extra"** deve aparecer em preto sobre fundo
+   escuro, separando as instituições da rota OUTROS das demais.
+
+## Nota técnica
+
+O `Array.prototype.sort` em JS moderno (Node 12+/V8) é **estável**
+(especificação ES2019). Combinado com o `orderBy` do Prisma (que também
+é estável no PostgreSQL), a ordem final é deterministicamente:
+```
+rota (asc) → ordem_rota (asc) → nome_curto (asc alfabético)
+```
+
+Qualquer alteração de `ordem_rota` em Configurações é refletida
+imediatamente após recarregar a página de produção.

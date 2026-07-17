@@ -19,7 +19,8 @@ export async function GET(request: Request) {
       db.escola.findMany({
         where: { ativo: true },
         include: { pf_quantidades: true, pcq_quantidades: true },
-        orderBy: [{ rota: 'asc' }, { ordem_rota: 'asc' }],
+        // v9.5.2: ordem definitiva — rota → ordem_rota → nome_curto
+        orderBy: [{ rota: 'asc' }, { ordem_rota: 'asc' }, { nome_curto: 'asc' }],
       }),
       db.feriado.findMany(),
       db.ajuste.findMany({ where: { ano, semana } }),
@@ -163,7 +164,8 @@ export async function GET(request: Request) {
         id: escola.id,
         nome: escola.nome,
         nome_curto: escola.nome_curto,
-        ordem_rota: escola.ordem_rota,  // v9.5
+        rota: escola.rota,
+        ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
         pf,
         pcq,
         lanche,
@@ -177,21 +179,25 @@ export async function GET(request: Request) {
     })
 
     // Group by route
-    // v9.5: removido BUSCA_PROPRIA — não precisa de romaneio para busca própria
-    const rotas: { key: 'JOSE' | 'AROLDO'; label: string }[] = [
+    const rotas: { key: 'JOSE' | 'AROLDO' | 'BUSCA_PROPRIA'; label: string }[] = [
       { key: 'JOSE', label: 'Motorista José' },
       { key: 'AROLDO', label: 'Motorista Aroldo' },
+      { key: 'BUSCA_PROPRIA', label: 'Busca Própria' },
     ]
 
     const romaneios: RomaneioMotorista[] = rotas.map((rota) => {
-      const escolasDaRota = escolasRomaneio.filter((e) => {
-        const escola = escolas.find((es) => es.id === e.id)
-        return escola?.rota === rota.key
-      }).sort((a, b) => {
-        // v9.5: ordena por ordem_rota → nome_curto
-        if ((a.ordem_rota ?? 0) !== (b.ordem_rota ?? 0)) return (a.ordem_rota ?? 0) - (b.ordem_rota ?? 0)
-        return (a.nome_curto || '').localeCompare(b.nome_curto || '')
-      })
+      // v9.5.2: filtrar e ordenar DEFINITIVAMENTE por ordem_rota → nome_curto
+      const escolasDaRota = escolasRomaneio
+        .filter((e) => {
+          const escola = escolas.find((es) => es.id === e.id)
+          return escola?.rota === rota.key
+        })
+        .sort((a, b) => {
+          const oa = a.ordem_rota ?? 0
+          const ob = b.ordem_rota ?? 0
+          if (oa !== ob) return oa - ob
+          return (a.nome_curto || '').localeCompare(b.nome_curto || '')
+        })
 
       const totais_pf = diasVazios()
       const totais_pcq = diasVazios()

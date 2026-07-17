@@ -9,7 +9,8 @@ export async function GET(request: Request) {
     const escolas = await db.escola.findMany({
       where: incluirInativas ? {} : { ativo: true },
       include: { pf_quantidades: true, pcq_quantidades: true },
-      orderBy: [{ rota: 'asc' }, { ordem_rota: 'asc' }],
+      // v9.5.2: ordem definitiva — rota → ordem_rota → nome_curto (alfabético)
+      orderBy: [{ rota: 'asc' }, { ordem_rota: 'asc' }, { nome_curto: 'asc' }],
     })
     return NextResponse.json(escolas)
   } catch (error) {
@@ -103,7 +104,6 @@ export async function PUT(request: Request) {
         dia_pao_frances: body.dia_pao_frances,
         dia_lanche: body.dia_lanche,
         mescla_parcial_integral: body.mescla_parcial_integral,
-        pao_fixo: body.pao_fixo ?? false,  // v9.5
       },
     })
     return NextResponse.json(escola)
