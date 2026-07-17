@@ -8,6 +8,7 @@ export interface EscolaRomaneio {
   id: string
   nome: string
   nome_curto: string
+  ordem_rota: number  // v9.5
   pf: Record<DiaSemana, number>
   pcq: Record<DiaSemana, number>
   lanche: Record<DiaSemana, number>

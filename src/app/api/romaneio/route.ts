@@ -163,6 +163,7 @@ export async function GET(request: Request) {
         id: escola.id,
         nome: escola.nome,
         nome_curto: escola.nome_curto,
+        ordem_rota: escola.ordem_rota,  // v9.5
         pf,
         pcq,
         lanche,
@@ -186,6 +187,10 @@ export async function GET(request: Request) {
       const escolasDaRota = escolasRomaneio.filter((e) => {
         const escola = escolas.find((es) => es.id === e.id)
         return escola?.rota === rota.key
+      }).sort((a, b) => {
+        // v9.5: ordena por ordem_rota → nome_curto
+        if ((a.ordem_rota ?? 0) !== (b.ordem_rota ?? 0)) return (a.ordem_rota ?? 0) - (b.ordem_rota ?? 0)
+        return (a.nome_curto || '').localeCompare(b.nome_curto || '')
       })
 
       const totais_pf = diasVazios()

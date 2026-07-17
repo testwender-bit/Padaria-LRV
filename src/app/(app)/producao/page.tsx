@@ -134,14 +134,20 @@ export default function ProducaoPage() {
   // Data/hora de geração
   const geradoEm = format(new Date(), "dd/MM/yyyy 'às' HH:mm")
 
-  // v9.5: ordenação alfabética como critério secundário (depois da rota/ordem)
-  const escolasPF = consolidado.escolas.filter(e => e.total_pf > 0).sort((a, b) => (a.nome_curto || '').localeCompare(b.nome_curto || ''))
+  // v9.5: ordenação por rota → ordem_rota → nome_curto (alfabético)
+  function sortEscolas(a: any, b: any) {
+    if (a.rota !== b.rota) return (a.rota || '').localeCompare(b.rota || '')
+    if ((a.ordem_rota ?? 0) !== (b.ordem_rota ?? 0)) return (a.ordem_rota ?? 0) - (b.ordem_rota ?? 0)
+    return (a.nome_curto || '').localeCompare(b.nome_curto || '')
+  }
+
+  const escolasPF = consolidado.escolas.filter(e => e.total_pf > 0).sort(sortEscolas)
   const escolasRegularesPF = escolasPF.filter(e => !['OUTROS', 'INTERIOR'].includes(e.rota?.toUpperCase()))
   const escolasOutrasPF = escolasPF.filter(e => ['OUTROS', 'INTERIOR'].includes(e.rota?.toUpperCase()))
 
-  // Agrupa escolas PCQ e Lanche (também ordenados alfabeticamente)
-  const escolasPCQ = consolidado.escolas.filter(e => e.total_pcq > 0).sort((a, b) => (a.nome_curto || '').localeCompare(b.nome_curto || ''))
-  const escolasLanche = consolidado.escolas.filter(e => e.total_lanche > 0).sort((a, b) => (a.nome_curto || '').localeCompare(b.nome_curto || ''))
+  // Agrupa escolas PCQ e Lanche (mesma ordenação)
+  const escolasPCQ = consolidado.escolas.filter(e => e.total_pcq > 0).sort(sortEscolas)
+  const escolasLanche = consolidado.escolas.filter(e => e.total_lanche > 0).sort(sortEscolas)
 
   // Datas para o romaneio (entrega: segunda-sexta)
   const datasEntrega: Record<DiaSemana, string> = {

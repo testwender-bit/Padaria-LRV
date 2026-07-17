@@ -1,57 +1,49 @@
-# Patch v9.5 — Pão Fixo para Órgãos + Ordenação Alfabética
+# Fix — Ordenação por ordem_rota respeitada em todo lugar
 
-## 1. Pão Fixo (Órgãos/Instituições)
+## Problema
 
-**Problema:** Órgãos como CRAS, Associações, etc. recebem pão toda semana
-mas a produção depende do `tipo_pao` do cardápio semestral. Quando o
-cardápio é "Pão Proteína", os órgãos não puxavam pão (não têm quantidade
-de pão proteína cadastrada).
+O campo `ordem_rota` não era respeitado. Mesmo com escolas=0 e órgãos=99,
+ficavam misturados.
 
-**Solução:** Novo campo `pao_fixo` no modelo Escola:
-- `pao_fixo = true` → sempre usa `tipo_pao = 'PADRAO'` (Pão Francês)
-- Ignora o tipo de pão da semana do cardápio semestral
-- Produz pão toda semana, independente do cardápio escolar
+## Causa
 
-### Como usar:
-1. Cadastre o órgão em `/configuracoes` → Nova Escola → Categoria: **Outros**
-2. Configure as quantidades de PF (tipo PADRAO) na aba PF
-3. Edite a escola → marque **"🍞 Pão Fixo (Órgão/Instituição)"**
-4. Pronto — o órgão vai produzir pão toda semana, mesmo quando o cardápio
-   escolar for "Pão Proteína"
+1. `ItemProducao` não tinha campo `ordem_rota` — a info se perdia
+2. Página de produção re-ordenava SÓ por `nome_curto`, ignorando `ordem_rota`
+3. Romaneio não tinha `ordem_rota` na interface nem ordenava por ele
 
-### Onde funciona:
-- Produção (tela e API) ✅
-- Impressão ✅
-- Romaneio ✅
-- Feriados continuam funcionando (se feriado afeta OUTROS, zera o pão) ✅
+## Fix
 
-## 2. Ordenação Alfabética
+### 1. `ItemProducao` (producao-utils.ts)
+Adicionado campo `ordem_rota: number` na interface.
 
-**Problema:** Escolas com mesma rota e ordem_rota (ex: 0) apareciam em
-ordem aleatória.
+### 2. API de produção (producao/route.ts)
+- Todos os 5 loops que criam `ItemProducao` agora incluem `ordem_rota: escola.ordem_rota`
+- `orderBy` do banco já tem `[{ rota: 'asc' }, { ordem_rota: 'asc' }, { nome_curto: 'asc' }]`
 
-**Solução:** Adicionado `nome_curto` como critério de ordenação secundário:
+### 3. EscolaConsolidada (producao-semana-utils.ts)
+- Adicionado `ordem_rota` na interface
+- `obterOuCriar` copia `ordem_rota` do item
 
-1. Rota (José → Aroldo → Busca Própria)
-2. Ordem da rota (0, 1, 2, ...)
-3. **Nome curto (A-Z)** ← NOVO
+### 4. Página de produção (producao/page.tsx)
+- Função `sortEscolas` ordena por: `rota → ordem_rota → nome_curto`
+- Aplicada em `escolasPF`, `escolasPCQ`, `escolasLanche`
 
-Aplicado em:
-- API de produção (orderBy no banco)
-- Tela de configuração (sort na UI)
-- Tela de produção (sort nas listas de escolas)
-- Impressão (herda da ordenação da API)
+### 5. Romaneio (romaneio-utils.ts + romaneio/route.ts)
+- `EscolaRomaneio` agora tem `ordem_rota`
+- Construção inclui `ordem_rota: escola.ordem_rota`
+- Filtragem por rota agora ordena por `ordem_rota → nome_curto`
+
+## Resultado
+
+Escolas com `ordem_rota=0` aparecem PRIMEIRO.
+Órgãos com `ordem_rota=99` aparecem DEPOIS.
+Dentro da mesma ordem_rota, ordena alfabeticamente por nome_curto.
 
 ## Como aplicar
 
 ```bash
-unzip patch-pao-fixo-ordenacao.zip -d .
-npx prisma generate
-npx prisma db push --accept-data-loss
+unzip patch-ordenacao-ordem-rota.zip -d .
 git add -A
-git commit -m "feat(v9.5): pão fixo para órgãos + ordenação alfabética"
+git commit -m "fix: ordenação por ordem_rota respeitada em produção, romaneio e impressão"
 git push
 ```
-
-⚠️ Rode `npx prisma db push` para adicionar o campo `pao_fixo` no banco.
-Não causa perda de dados (apenas adiciona coluna boolean com default false).

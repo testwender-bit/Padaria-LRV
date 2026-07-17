@@ -36,6 +36,7 @@ export interface ItemProducao {
   escola_curto: string
   categoria: string
   rota: string
+  ordem_rota: number  // v9.5: para ordenação correta
   busca_propria: boolean
   produto: 'PF' | 'PCQ' | 'LANCHE' | 'PF_COMP'
   quantidade: number

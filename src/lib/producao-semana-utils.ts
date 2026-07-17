@@ -12,6 +12,7 @@ export interface EscolaConsolidada {
   nome_curto: string
   rota: string
   ordem: number
+  ordem_rota: number  // v9.5: para ordenação correta
   pf: Record<DiaProducao, number>
   pcq: Record<DiaProducao, number>
   lanche: Record<DiaProducao, number>
@@ -59,6 +60,7 @@ export function consolidarProducaoSemana(
         nome_curto: item.escola_curto,
         rota: item.rota,
         ordem: ordensEscola?.get(item.escola_id) ?? 999,
+        ordem_rota: (item as any).ordem_rota ?? 0,  // v9.5
         pf: diasVazios(),
         pcq: diasVazios(),
         lanche: diasVazios(),

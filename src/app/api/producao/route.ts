@@ -135,6 +135,7 @@ export async function GET(request: Request) {
         escola_curto: escola.nome_curto,
         categoria: escola.categoria,
         rota: escola.rota,
+        ordem_rota: escola.ordem_rota,  // v9.5
         busca_propria: escola.busca_propria,
         produto: 'PF',
         quantidade: qtd,
@@ -198,6 +199,7 @@ export async function GET(request: Request) {
             escola_curto: escola.nome_curto,
             categoria: escola.categoria,
             rota: escola.rota,
+            ordem_rota: escola.ordem_rota,  // v9.5
             busca_propria: escola.busca_propria,
             produto: 'PF',
             quantidade: qtd,
@@ -258,8 +260,9 @@ export async function GET(request: Request) {
               escola_curto: escola.nome_curto,
               categoria: escola.categoria,
               rota: escola.rota,
+              ordem_rota: escola.ordem_rota,  // v9.5
               busca_propria: escola.busca_propria,
-              produto: 'PCQ',
+              produto: 'PCQQ',
               quantidade: qtd,
               unidade: 'formas',
               dia_entrega: diaKey,
@@ -340,6 +343,7 @@ export async function GET(request: Request) {
           escola_curto: escola.nome_curto,
           categoria: escola.categoria,
           rota: escola.rota,
+          ordem_rota: escola.ordem_rota,  // v9.5
           busca_propria: escola.busca_propria,
           produto: 'LANCHE',
           quantidade: qtd,
