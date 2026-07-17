@@ -17,6 +17,8 @@ import {
   AlertCircle,
   Table2,
   Calendar,
+  Plus,
+  Trash2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { formatarData, numeroSemana, anoSemana, inicioSemana, fimSemana, formatarPeriodoSemana, dataISO, DIAS_SEMANA, DIAS_LABEL_CURTO, DIAS_PRODUCAO, DIAS_LABEL_CURTO_PRODUCAO, type DiaSemana, type DiaProducao } from '@/lib/date-utils'
@@ -26,6 +28,11 @@ import { consolidarProducaoSemana } from '@/lib/producao-semana-utils'
 import type { RomaneioMotorista } from '@/lib/romaneio-utils'
 import { useAppStore } from '@/store/app-store'
 import { addDays, format } from 'date-fns'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { toast } from 'sonner'
 
 // Mapeia dia de PRODUÇÃO → dia de ENTREGA para PCQ/Lanche (mesmo dia)
 function entregaFromProducao(diaProd: DiaProducao, produto: string): string {
@@ -53,6 +60,14 @@ export default function ProducaoPage() {
 
   const [romaneios, setRomaneios] = useState<RomaneioMotorista[]>([])
   const [ajusteOpen, setAjusteOpen] = useState(false)
+  // v9.5: produção extra (instituições avulsas)
+  const [producaoExtra, setProducaoExtra] = useState<Array<{
+    id: string; nome_instituicao: string; produto: string; dia_semana: string; quantidade: number; observacao?: string | null
+  }>>([])
+  const [extraDialogOpen, setExtraDialogOpen] = useState(false)
+  const [extraForm, setExtraForm] = useState({
+    nome_instituicao: '', produto: 'PF', dia_semana: 'segunda', quantidade: 0, observacao: '',
+  })
   const [ajusteTarget, setAjusteTarget] = useState({
     escolaId: '', escolaNome: '', diaSemana: '', produto: '', quantidadeOriginal: 0,
   })
@@ -71,8 +86,10 @@ export default function ProducaoPage() {
       if (prodJson && Array.isArray(prodJson.dias)) {
         setData(prodJson)
         setActiveTab(prodJson.dias[0]?.data || '')
+        setProducaoExtra(prodJson.producaoExtra || [])  // v9.5
       } else if (prodJson && !prodJson.error) {
         setData({ ...prodJson, dias: [] })
+        setProducaoExtra(prodJson.producaoExtra || [])  // v9.5
       } else {
         setData(null)
       }
@@ -85,6 +102,40 @@ export default function ProducaoPage() {
   }, [semanaReferencia])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // v9.5: handlers para produção extra
+  async function handleSaveExtra() {
+    if (!extraForm.nome_instituicao.trim() || extraForm.quantidade <= 0) {
+      toast.error('Preencha nome e quantidade')
+      return
+    }
+    try {
+      const inicio = semanaReferencia ? new Date(semanaReferencia + 'T12:00:00') : new Date()
+      const ano = inicio.getFullYear()
+      const semana = numeroSemana(inicio)
+      const res = await fetch('/api/producao/extra', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...extraForm, ano, semana }),
+      })
+      if (res.ok) {
+        toast.success('Produção extra adicionada!')
+        setExtraDialogOpen(false)
+        setExtraForm({ nome_instituicao: '', produto: 'PF', dia_semana: 'segunda', quantidade: 0, observacao: '' })
+        loadData()
+      }
+    } catch { toast.error('Erro ao salvar') }
+  }
+
+  async function handleDeleteExtra(id: string) {
+    try {
+      const res = await fetch(`/api/producao/extra?id=${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        toast.success('Removido')
+        loadData()
+      }
+    } catch { toast.error('Erro ao remover') }
+  }
 
   function openAjuste(item: ItemProducao) {
     setAjusteTarget({
@@ -599,6 +650,10 @@ export default function ProducaoPage() {
           <Button variant="outline" size="sm" onClick={() => window.print()} className="border-amber-200">
             <Printer className="w-4 h-4 mr-1" /> Imprimir
           </Button>
+          {/* v9.5: Botão adicionar instituição extra */}
+          <Button variant="outline" size="sm" onClick={() => setExtraDialogOpen(true)} className="border-blue-200 text-blue-700 hover:bg-blue-50">
+            <Plus className="w-4 h-4 mr-1" /> Inst. Extra
+          </Button>
         </div>
       </div>
 
@@ -778,6 +833,99 @@ export default function ProducaoPage() {
         diaSemana={ajusteTarget.diaSemana} produto={ajusteTarget.produto}
         quantidadeOriginal={ajusteTarget.quantidadeOriginal}
         ano={data.ano} semana={data.semana} onSaved={loadData} />
+
+      {/* v9.5: Lista de produções extras */}
+      {producaoExtra.length > 0 && (
+        <Card className="border-blue-200 print-hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold text-blue-700 flex items-center gap-2">
+              <Plus className="w-4 h-4" /> Produções Extras ({producaoExtra.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1">
+              {producaoExtra.map((extra) => (
+                <div key={extra.id} className="flex items-center gap-3 p-2 bg-blue-50/50 rounded border border-blue-100 text-sm">
+                  <Badge variant="outline" className="text-[9px]">{extra.produto}</Badge>
+                  <span className="font-medium flex-1 truncate">{extra.nome_instituicao}</span>
+                  <span className="text-xs text-muted-foreground capitalize">{extra.dia_semana}</span>
+                  <span className="font-mono font-semibold">{extra.quantidade}</span>
+                  <Button size="sm" variant="ghost" className="h-6 text-red-400 hover:text-red-600" onClick={() => handleDeleteExtra(extra.id)}>
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* v9.5: Dialog adicionar produção extra */}
+      <Dialog open={extraDialogOpen} onOpenChange={setExtraDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-[#1A3A5C]">Adicionar Produção Extra</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Nome da Instituição</Label>
+              <Input
+                value={extraForm.nome_instituicao}
+                onChange={(e) => setExtraForm({ ...extraForm, nome_instituicao: e.target.value })}
+                placeholder="Ex: Secretaria de Educação"
+                autoFocus
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Produto</Label>
+                <Select value={extraForm.produto} onValueChange={(v) => setExtraForm({ ...extraForm, produto: v })}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PF">Pão Francês</SelectItem>
+                    <SelectItem value="PCQ">Pão de Cachorro Quente</SelectItem>
+                    <SelectItem value="LANCHE">Lanche</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Dia de Entrega</Label>
+                <Select value={extraForm.dia_semana} onValueChange={(v) => setExtraForm({ ...extraForm, dia_semana: v })}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="segunda">Segunda</SelectItem>
+                    <SelectItem value="terca">Terça</SelectItem>
+                    <SelectItem value="quarta">Quarta</SelectItem>
+                    <SelectItem value="quinta">Quinta</SelectItem>
+                    <SelectItem value="sexta">Sexta</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Quantidade</Label>
+              <Input
+                type="number"
+                min={1}
+                value={extraForm.quantidade || ''}
+                onChange={(e) => setExtraForm({ ...extraForm, quantidade: parseInt(e.target.value) || 0 })}
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Observação (opcional)</Label>
+              <Input
+                value={extraForm.observacao}
+                onChange={(e) => setExtraForm({ ...extraForm, observacao: e.target.value })}
+                placeholder="Ex: Reunião na quarta"
+              />
+            </div>
+            <Button onClick={handleSaveExtra} className="w-full bg-[#1A3A5C] hover:bg-[#1A3A5C]/90">
+              Adicionar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

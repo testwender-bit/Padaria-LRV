@@ -227,6 +227,21 @@ model Ajuste {
   @@unique([ano, semana, escola_id, dia_semana, produto])
 }
 
+// ── Produção Extra (instituições avulsas) ──────────────────
+model ProducaoExtra {
+  id               String   @id @default(cuid())
+  ano              Int
+  semana           Int      // semana ISO do calendário
+  nome_instituicao String
+  produto          String   // 'PF' | 'PCQ' | 'LANCHE'
+  dia_semana       String   // segunda, terca, quarta, quinta, sexta
+  quantidade       Int      @default(0)
+  observacao       String?
+  criado_em        DateTime @default(now())
+
+  @@index([ano, semana])
+}
+
 // ── Histórico de Semanas (snapshot) ──────────────────────────
 model HistoricoSemana {
   id              String  @id @default(cuid())

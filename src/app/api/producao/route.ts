@@ -262,7 +262,7 @@ export async function GET(request: Request) {
               rota: escola.rota,
               ordem_rota: escola.ordem_rota,  // v9.5
               busca_propria: escola.busca_propria,
-              produto: 'PCQQ',
+              produto: 'PCQ',
               quantidade: qtd,
               unidade: 'formas',
               dia_entrega: diaKey,
@@ -369,6 +369,12 @@ export async function GET(request: Request) {
       })
     }
 
+    // v9.5: buscar produções extras (instituições avulsas)
+    const producaoExtra = await db.producaoExtra.findMany({
+      where: { ano, semana },
+      orderBy: [{ produto: 'asc' }, { dia_semana: 'asc' }],
+    })
+
     return NextResponse.json({
       semana,
       ano,
@@ -379,6 +385,8 @@ export async function GET(request: Request) {
       // v9.4: só retorna obs se o match foi exato (não fallback genérico)
       obs: matchExato ? (cardapioFinal?.obs || null) : null,
       dias: diasProducao,
+      // v9.5: produções extras
+      producaoExtra,
     })
   } catch (error) {
     console.error('Erro ao calcular produção:', error)

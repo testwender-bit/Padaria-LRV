@@ -1,49 +1,51 @@
-# Fix — Ordenação por ordem_rota respeitada em todo lugar
+# Patch — Fix PCQQ + Produção Extra (Instituições Avulsas)
 
-## Problema
+## 1. Fix erro de TypeScript
 
-O campo `ordem_rota` não era respeitado. Mesmo com escolas=0 e órgãos=99,
-ficavam misturados.
+`produto: 'PCQQ'` → `produto: 'PCQ'` (typo do replace_all anterior).
 
-## Causa
+## 2. Nova funcionalidade: Produção Extra
 
-1. `ItemProducao` não tinha campo `ordem_rota` — a info se perdia
-2. Página de produção re-ordenava SÓ por `nome_curto`, ignorando `ordem_rota`
-3. Romaneio não tinha `ordem_rota` na interface nem ordenava por ele
+Permite adicionar instituições avulsas diretamente na produção semanal,
+para situações extraordinárias (ex: pão para a Secretaria de Educação).
 
-## Fix
+### Como usar:
+1. Abra `/producao` → vista semanal
+2. Clique em **"Inst. Extra"** (botão azul ao lado de Imprimir)
+3. Preencha:
+   - Nome da Instituição (ex: "Secretaria de Educação")
+   - Produto (PF / PCQ / Lanche)
+   - Dia de entrega (seg-sex)
+   - Quantidade
+   - Observação (opcional)
+4. Clique "Adicionar"
 
-### 1. `ItemProducao` (producao-utils.ts)
-Adicionado campo `ordem_rota: number` na interface.
+A produção extra aparece:
+- Na lista "Produções Extras" abaixo da tabela semanal (com botão de remover)
+- É salva no banco vinculada à semana (ano + semana ISO)
+- Cada semana tem suas próprias produções extras
 
-### 2. API de produção (producao/route.ts)
-- Todos os 5 loops que criam `ItemProducao` agora incluem `ordem_rota: escola.ordem_rota`
-- `orderBy` do banco já tem `[{ rota: 'asc' }, { ordem_rota: 'asc' }, { nome_curto: 'asc' }]`
+### Nova API: `/api/producao/extra`
+- `GET ?ano=2026&semana=30` → lista extras da semana
+- `POST { nome_instituicao, produto, dia_semana, quantidade, observacao, ano, semana }`
+- `DELETE ?id=xxx`
 
-### 3. EscolaConsolidada (producao-semana-utils.ts)
-- Adicionado `ordem_rota` na interface
-- `obterOuCriar` copia `ordem_rota` do item
-
-### 4. Página de produção (producao/page.tsx)
-- Função `sortEscolas` ordena por: `rota → ordem_rota → nome_curto`
-- Aplicada em `escolasPF`, `escolasPCQ`, `escolasLanche`
-
-### 5. Romaneio (romaneio-utils.ts + romaneio/route.ts)
-- `EscolaRomaneio` agora tem `ordem_rota`
-- Construção inclui `ordem_rota: escola.ordem_rota`
-- Filtragem por rota agora ordena por `ordem_rota → nome_curto`
-
-## Resultado
-
-Escolas com `ordem_rota=0` aparecem PRIMEIRO.
-Órgãos com `ordem_rota=99` aparecem DEPOIS.
-Dentro da mesma ordem_rota, ordena alfabeticamente por nome_curto.
+### Novo modelo no schema: `ProducaoExtra`
+```prisma
+model ProducaoExtra {
+  id, ano, semana, nome_instituicao, produto, dia_semana, quantidade, observacao, criado_em
+}
+```
 
 ## Como aplicar
 
 ```bash
-unzip patch-ordenacao-ordem-rota.zip -d .
+unzip patch-pcqq-fix-extra.zip -d .
+npx prisma generate
+npx prisma db push --accept-data-loss
 git add -A
-git commit -m "fix: ordenação por ordem_rota respeitada em produção, romaneio e impressão"
+git commit -m "fix: PCQQ typo + feat: produção extra (instituições avulsas)"
 git push
 ```
+
+⚠️ Rode `npx prisma db push` para criar a tabela `ProducaoExtra`.
