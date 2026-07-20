@@ -301,17 +301,14 @@ function SemanaPrintPage({
       className={`semana-page${isLast ? ' last-week' : ''}`}
       style={escala !== 100 ? { zoom: escala / 100 } : undefined}
     >
-      {/* ── HEADER ── Premium compact strip */}
+      {/* ── HEADER ── Premium compact strip (uma linha só) */}
       <div className="sp-header">
         <div className="sp-header-brand">
           <span className="sp-title">{cardapio.nome}</span>
         </div>
         <div className="sp-header-meta">
-          <span className="sp-meta-item"><strong>Escola:</strong> {cardapio.escola?.nome || 'Modelo base'}</span>
-          <span className="sp-meta-divider">&#x2022;</span>
-          <span className="sp-meta-item"><strong>Categoria:</strong> {cardapio.categoria_escola}</span>
-          <span className="sp-meta-divider">&#x2022;</span>
-          <span className="sp-meta-item"><strong>Fase:</strong> {getFaseLabel(cardapio.fase_escolar)}</span>
+          {/* v9.5.6: Secretaria Municipal centralizada, em branco, substitui Escola/Categoria/Fase */}
+          <span className="sp-secretaria">Secretaria Municipal de Educação de Lucas do Rio Verde - MT</span>
         </div>
         <div className="sp-header-week">
           <span className="sp-week-label">Semana {semana.numero}</span>
