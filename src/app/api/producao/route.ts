@@ -23,8 +23,8 @@ export async function GET(request: Request) {
       db.escola.findMany({
         where: { ativo: true },
         include: { pf_quantidades: true, pcq_quantidades: true },
-        // v9.5.2: ordem definitiva — rota → ordem_rota → nome_curto
-        orderBy: [{ rota: 'asc' }, { ordem_rota: 'asc' }, { nome_curto: 'asc' }],
+        // v9.5.7: ordem puramente SEQUENCIAL — sem agrupar por rota.
+        orderBy: [{ ordem_rota: 'asc' }, { nome_curto: 'asc' }],
       }),
       db.feriado.findMany(),
       db.ajuste.findMany({ where: { ano, semana } }),
@@ -95,7 +95,12 @@ export async function GET(request: Request) {
     const itensPfDomingo: ItemProducao[] = []
     for (const escola of escolas) {
       if (!escola.recebe_pf) continue
-      const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPao)
+      // v9.5.7: se escola.pao_fixo === true, SEMPRE usa pf_quantidades do tipo PADRAO
+      // (ignora o tipo_pao do cardápio da semana). Garante que Outras Instituições
+      // como Bombeiros, Ambulância, etc. sempre apareçam na produção de PF.
+      const tipoPaoEfetivo = (escola as any).pao_fixo === true ? 'PADRAO' : tipoPao
+      const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEfetivo)
+        || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')
       if (!pfQ) continue
 
       // Check feriado on DELIVERY day (segunda)
@@ -157,7 +162,10 @@ export async function GET(request: Request) {
 
         for (const escola of escolas) {
           if (!escola.recebe_pf) continue
-          const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPao)
+          // v9.5.7: se escola.pao_fixo === true, SEMPRE usa PADRAO
+          const tipoPaoEfetivo = (escola as any).pao_fixo === true ? 'PADRAO' : tipoPao
+          const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEfetivo)
+            || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')
           if (!pfQ) continue
 
           // Check feriado on DELIVERY day

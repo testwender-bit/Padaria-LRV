@@ -19,8 +19,10 @@ export async function GET(request: Request) {
       db.escola.findMany({
         where: { ativo: true },
         include: { pf_quantidades: true, pcq_quantidades: true },
-        // v9.5.2: ordem definitiva — rota → ordem_rota → nome_curto
-        orderBy: [{ rota: 'asc' }, { ordem_rota: 'asc' }, { nome_curto: 'asc' }],
+        // v9.5.7: ordem puramente SEQUENCIAL — sem agrupar por rota.
+        // Romaneio continua agrupando por motorista na saída (filter por rota),
+        // mas a ordem DENTRO de cada motorista respeita ordem_rota global.
+        orderBy: [{ ordem_rota: 'asc' }, { nome_curto: 'asc' }],
       }),
       db.feriado.findMany(),
       db.ajuste.findMany({ where: { ano, semana } }),
@@ -104,7 +106,10 @@ export async function GET(request: Request) {
 
       // PF + PF Complemento (integrado, sem distinção)
       if (escola.recebe_pf) {
-        const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPao)
+        // v9.5.7: se escola.pao_fixo === true, SEMPRE usa PADRAO
+        const tipoPaoEfetivo = (escola as any).pao_fixo === true ? 'PADRAO' : tipoPao
+        const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEfetivo)
+          || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')
         if (pfQ) {
           for (const dia of dias) {
             const dataDia = diaDates[dia]

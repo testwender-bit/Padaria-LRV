@@ -1,110 +1,195 @@
-# Fix v9.5.6 — Cabeçalho do cardápio em UMA linha + Secretaria centralizada
+# Fix v9.5.7 — Pão Fixo na UI + Fim do subagrupamento por rota
 
-## O que mudou
+## 1. Configuração "Pão Fixo" restaurada na UI
 
-Ajuste fino do cabeçalho do PDF do cardápio conforme solicitado.
+### Problema
 
-### Antes (v9.5.5)
+> "a configuração de marcar para sempre usar quantidade padrão parece ter sumido."
 
+### Causa
+
+O campo `pao_fixo` foi adicionado ao `schema.prisma` no patch v9.5.4, mas
+nunca foi implementado na UI da página de Configurações nem na lógica das
+APIs de produção/romaneio.
+
+### Fix
+
+- **`src/app/(app)/configuracoes/page.tsx`**:
+  - Adicionado campo `pao_fixo: boolean` à interface `Escola` local.
+  - Adicionado checkbox **"Sempre usar quantidade padrão de Pão Francês"**
+    no formulário de **Criar** e no de **Editar** escola (caixa amarela
+    com explicação).
+  - Ao clicar em Editar, o `pao_fixo` da escola é carregado no formulário.
+  - O `handleRenumerar` também preserva o `pao_fixo` de cada escola.
+
+- **`src/app/api/escolas/route.ts`**:
+  - POST (create): aceita `pao_fixo` (default false).
+  - PUT (update): aceita `pao_fixo`.
+
+## 2. Produção sempre puxa pão das Outras Instituições
+
+### Problema
+
+> "Produção não está puxando o pão francês das outras instituições por que
+> o cardápio escolar não tem pão na regular, mas eu já havia dito que a
+> produção de pão das outras instituições deve sempre usar a quantidade
+> padrão toda semana independente do cardápio escolar."
+
+### Causa
+
+A API de produção fazia:
+```ts
+const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPao)
+if (!pfQ) continue  // ← pula a escola!
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ Cardápio Paulo Freire - 2º semestre de 2026                 │ ← título
-│ Escola: CEI Paulo Freire • Categoria: REGULAR • Fase: ...   │ ← meta (3 linhas)
-│ Semana 1  20/07 — 24/07                                     │ ← semana
-└─────────────────────────────────────────────────────────────┘
+
+Se o `tipo_pao` do cardápio da semana fosse diferente do que a escola
+tinha cadastrado (ex.: semana sem pão regular → `tipo_pao = 'SEMPAO'`),
+a escola era **pulada** — não aparecia na produção.
+
+### Fix
+
+Em `/api/producao/route.ts` (2 lugares) e `/api/romaneio/route.ts` (1 lugar):
+
+```ts
+// v9.5.7: se escola.pao_fixo === true, SEMPRE usa PADRAO
+const tipoPaoEfetivo = (escola as any).pao_fixo === true ? 'PADRAO' : tipoPao
+const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEfetivo)
+  || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')  // fallback
+if (!pfQ) continue
 ```
 
-Cabeçalho em 3 linhas, com metadados Escola/Categoria/Fase.
+Agora, se a escola tem `pao_fixo = true`:
+- Ignora o `tipo_pao` do cardápio da semana.
+- Sempre busca `pf_quantidades` do tipo `PADRAO`.
+- Se mesmo assim não encontrar, cai no fallback (primeiro PADRAO
+  disponível).
+- Se ainda assim não encontrar, pula (não tem PF cadastrado).
 
-### Depois (v9.5.6)
+### Como usar
 
+1. Vá em **Configurações → Escolas**.
+2. Edite uma Outra Instituição (Bombeiros, Ambulância, etc.).
+3. Marque **"Sempre usar quantidade padrão de Pão Francês"**.
+4. Salve.
+5. Na página de Produção, essa instituição sempre aparecerá com a
+   quantidade cadastrada como PADRÃO, mesmo em semanas onde o cardápio
+   escolar não tem pão.
+
+## 3. Fim do subagrupamento por rota na ordenação
+
+### Problema
+
+> "está reconhecendo o número pela 'ordem na rota' mas ao mesmo tempo
+> ele buga pois está subagrupando por rota. Logo se 1 escola que está
+> com tag de busca própria eu sinalizar como 1 ela fica como 1 do sub
+> grupo de buscar não como primeira de todas. Preciso acabar com essa
+> organização por subgrupo."
+
+### Causa
+
+Os `orderBy` do Prisma nas APIs `/api/escolas`, `/api/producao`, e
+`/api/romaneio` tinham `rota: 'asc'` como **primeiro** critério:
+
+```ts
+orderBy: [{ rota: 'asc' }, { ordem_rota: 'asc' }, { nome_curto: 'asc' }]
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ Cardápio Paulo Freire  SECRETARIA MUNICIPAL...   Semana 1   │
-│                       DE EDUCAÇÃO DE LUCAS      20/07—24/07 │
-└─────────────────────────────────────────────────────────────┘
-```
 
-Cabeçalho em **uma linha só**, com:
-- **Esquerda**: título do cardápio (`Cardápio Paulo Freire - 2º semestre de 2026`)
-- **Centro**: `SECRETARIA MUNICIPAL DE EDUCAÇÃO DE LUCAS DO RIO VERDE - MT`
-- **Direita**: Semana + datas (`Semana 1  20/07 — 24/07`)
-- Tudo em **branco**, **uppercase** para a Secretaria, **elegante**
+Isso fazia o banco retornar as escolas **agrupadas por rota primeiro**,
+depois ordenadas por `ordem_rota` dentro de cada rota. Resultado visual:
+- Aroldo 1, 2, 3, 4...
+- Busca Própria 1, 2, 3...
+- José 1, 2, 3...
 
-## Detalhes técnicos
+Em vez da sequência global que o usuário quer: 1, 2, 3, 4...
 
-### Layout
+Também o `handleRenumerar` em `configuracoes/page.tsx` ordenava por
+`rota → nome_curto` ao atribuir os números sequenciais — também
+subagrupava.
 
-- `.sp-header` agora é `flex-direction: row` + `justify-content: space-between`
-  + `flex-wrap: nowrap` + `white-space: nowrap` — **uma linha só**, sem
-  quebra.
-- `.sp-header-brand` (título): `max-width: 45%`, com `overflow: hidden`
-  + `text-overflow: ellipsis` — se o título for muito longo, mostra
-  reticências em vez de quebrar.
-- `.sp-header-meta` (centro): `flex: 1` + `justify-content: center` —
-  ocupa o espaço central e centraliza o texto.
-- `.sp-header-week` (direita): `flex-shrink: 0` + `justify-content: flex-end`.
+### Fix
 
-### Nova classe `.sp-secretaria`
+- **`/api/escolas/route.ts`**: `orderBy: [{ ordem_rota: 'asc' }, { nome_curto: 'asc' }]`
+- **`/api/producao/route.ts`**: idem
+- **`/api/romaneio/route.ts`**: idem (romaneio ainda agrupa por motorista
+  na saída via `.filter(rota)`, mas a ordem DENTRO de cada motorista
+  respeita a sequência global).
+- **`handleRenumerar`** em `configuracoes/page.tsx`: ordena APENAS por
+  `nome_curto` (sem `rota.localeCompare`).
 
-- `font-size: 8pt` (print) / `13px` (screen) — compacto mas legível.
-- `font-weight: 600` — seminegrito para destacar.
-- `color: #fff` — **branco**.
-- `text-transform: uppercase` — tudo maiúsculo para destaque.
-- `letter-spacing: 0.3pt` — espaçamento elegante.
-- `text-align: center` — centralizado no espaço do meio.
-- `white-space: nowrap` — não quebra linha.
+### Resultado
 
-### Substituição do conteúdo
+- **Configurações → Escolas**: lista mostra escolas na sequência 1, 2, 3...
+  independente do motorista.
+- **Produção → PF / PCQ / Lanche**: mesma sequência 1, 2, 3...
+- **Impressão de Produção**: mesma sequência.
+- **Romaneio por motorista**: cada motorista continua levando apenas as
+  escolas da sua rota, mas **dentro** de cada motorista a ordem respeita
+  a sequência global (não mais 1, 2, 3 reiniciando por motorista).
 
-O conteúdo do `.sp-header-meta` (que antes mostrava Escola/Categoria/Fase)
-agora mostra **apenas** o texto fixo da Secretaria:
+### IMPORTANTE: Romaneio não foi alterado na sua lógica
 
-```jsx
-<div className="sp-header-meta">
-  <span className="sp-secretaria">
-    Secretaria Municipal de Educação de Lucas do Rio Verde - MT
-  </span>
-</div>
-```
+Conforme o usuário esclareceu:
+> "isso deve continuar (repetindo apenas muda a ordem que as escolas
+> aparecem uma antes que outra, e não qual escola aparece no romaneio
+> de cada motorista — isso está funcionando corretamente)."
+
+O romaneio continua mostrando apenas as escolas de cada motorista na
+página correspondente. Apenas a **ordem dentro** de cada motorista
+mudou (agora é global, não reinicia).
 
 ## Arquivos incluídos
 
 ```
-src/app/print.css                                             # header uma linha + .sp-secretaria
-src/app/(app)/nutricao/cardapios/[id]/pdf/page.tsx            # substitui meta por .sp-secretaria
+src/app/(app)/configuracoes/page.tsx            # UI pao_fixo + handleRenumerar sem rota
+src/app/(app)/producao/page.tsx                 # (mantém sort sem rota do v9.5.4)
+src/app/api/escolas/route.ts                    # POST/PUT aceitam pao_fixo + orderBy sem rota
+src/app/api/producao/route.ts                   # pao_fixo usa PADRAO + orderBy sem rota
+src/app/api/romaneio/route.ts                   # pao_fixo usa PADRAO + orderBy sem rota
+src/lib/producao-semana-utils.ts                # (mantém sort sem rota do v9.5.4)
 ```
 
 ## Como aplicar
 
 ```bash
 # Na RAIZ do projeto:
-unzip -o patch-cardapio-header-v9.5.6.zip -d .
+unzip -o patch-pao-fixo-ordem-global-v9.5.7.zip -d .
 
 git add -A
-git commit -m "fix(v9.5.6): cabeçalho do cardápio em uma linha + Secretaria centralizada"
+git commit -m "fix(v9.5.7): pão fixo na UI + produção sempre puxa PADRAO + fim do subagrupamento por rota"
 git push
+```
+
+**Nota**: o campo `pao_fixo` já existe no schema (adicionado no patch
+v9.5.4). Se você não rodou `prisma db push` na época, rode agora:
+
+```bash
+npx prisma db push
 ```
 
 ## Verificação
 
-1. Acesse **Nutrição → Cardápios → [um cardápio] → PDF**.
-2. O cabeçalho deve aparecer em **uma linha só**:
-   - Esquerda: título do cardápio (ex.: `Cardápio Paulo Freire - 2º semestre de 2026`)
-   - Centro: `SECRETARIA MUNICIPAL DE EDUCAÇÃO DE LUCAS DO RIO VERDE - MT`
-   - Direita: `Semana 1  20/07 — 24/07`
-3. Tudo em **branco**, legível, elegante.
-4. Na impressão (Ctrl+P → Salvar como PDF), o cabeçalho mantém o
-   mesmo layout de uma linha.
-5. O controle de **Escala** (slider 70-150%) continua funcionando.
-6. A **página em branco final** continua eliminada.
+### Pão Fixo
 
-## Notas
+1. **Configurações → Escolas** → editar uma Outra Instituição (Bombeiros,
+   Ambulância, etc.).
+2. Marque **"Sempre usar quantidade padrão de Pão Francês"** (caixa amarela).
+3. Salve.
+4. Vá para uma semana onde o cardápio escolar **não tenha pão regular**.
+5. **Produção → PF**: a instituição deve aparecer com a quantidade
+   cadastrada como PADRÃO (não zerada).
 
-- A escala de impressão (v9.5.5) e a eliminação da página em branco
-  (v9.5.5) continuam funcionando — apenas o cabeçalho mudou.
-- Se o título do cardápio for muito longo, ele mostra reticências
-  (`...`) em vez de quebrar — mantém a linha única.
-- A Secretaria aparece em **maiúsculas** (`text-transform: uppercase`)
-  para destaque visual, mas o texto no código é em maiúsculas e
-  minúsculas (preserva acentos).
+### Ordenação Global
+
+1. **Configurações → Escolas** → clique em **Renumerar**.
+2. As escolas recebem 1, 2, 3... em ordem alfabética por nome curto
+   (sem agrupar por motorista).
+3. Edite uma escola de Busca Própria e coloque ordem 1.
+4. Salve e recarregue.
+5. Na lista de Configurações, ela deve aparecer como a **primeira de
+   todas**, não como "primeira do subgrupo de Busca Própria".
+6. **Produção → PF**: a escola deve aparecer como a primeira da lista
+   de produção (antes das escolas do Aroldo e do José).
+7. **Romaneio por motorista**: cada motorista continua levando apenas
+   suas escolas, mas a ordem dentro de cada motorista respeita a
+   sequência global (não reinicia em 1).

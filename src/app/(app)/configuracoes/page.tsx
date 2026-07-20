@@ -40,6 +40,10 @@ interface Escola {
   ativo: boolean
   ordem_rota: number
   obs: string | null
+  // v9.5.7: marca escolas que sempre usam a quantidade PADRÃO de pão francês
+  // independente do cardápio da semana (útil para Outras Instituições como
+  // Bombeiros, Ambulância, etc. que recebem PF toda semana).
+  pao_fixo: boolean
   pf_quantidades: {
     id: string
     tipo_pao: string
@@ -194,29 +198,23 @@ export default function ConfiguracoesPage() {
     }
   }
 
-  // v9.5.4: Renumerar automaticamente TODAS as escolas com sequência GLOBAL
-  // (1, 2, 3, 4... independente do motorista/rota).
-  // Ordena por rota → nome_curto só para deixar a numeração estável e
-  // previsível, mas os números em si são globais (1..N) — então quando o
-  // usuário mudar um número, a sequência final respeita apenas o número,
-  // não a rota.
+  // v9.5.7: Renumerar TODAS as escolas com sequência GLOBAL.
+  // Ordena APENAS por nome_curto (alfabético) — sem agrupar por rota.
   async function handleRenumerar() {
     const confirmado = window.confirm(
       'Renumerar TODAS as escolas automaticamente?\n\n' +
       'Cada escola receberá um número SEQUENCIAL GLOBAL (1, 2, 3, 4...) ' +
-      'independente do motorista. A ordem inicial segue rota + nome curto ' +
-      '(alfabético), mas você pode trocar os números livremente depois.\n\n' +
+      'em ordem alfabética por nome curto. Você pode trocar os números ' +
+      'livremente depois.\n\n' +
       'Isso substitui todos os números de Ordem atuais. Deseja continuar?'
     )
     if (!confirmado) return
     try {
       toast.loading('Renumerando escolas...', { id: 'renum' })
-      // Ordena por rota → nome_curto só para atribuir números iniciais estáveis
-      const ordenada = [...escolas].sort((a, b) => {
-        const ra = (a.rota || '').localeCompare(b.rota || '')
-        if (ra !== 0) return ra
-        return (a.nome_curto || '').localeCompare(b.nome_curto || '')
-      })
+      // v9.5.7: ordena APENAS por nome_curto (sem agrupar por rota)
+      const ordenada = [...escolas].sort((a, b) =>
+        (a.nome_curto || '').localeCompare(b.nome_curto || '')
+      )
       const updates = ordenada.map((e, idx) => ({
         id: e.id,
         ordem_rota: idx + 1,
@@ -230,6 +228,8 @@ export default function ConfiguracoesPage() {
         recebe_lanche: e.recebe_lanche,
         ativo: e.ativo,
         obs: e.obs,
+        // v9.5.7: preserva pao_fixo ao renumerar
+        pao_fixo: (e as any).pao_fixo === true,
       }))
       // Envia todas as atualizações em paralelo
       const results = await Promise.all(
@@ -348,6 +348,25 @@ export default function ConfiguracoesPage() {
                   Recebe Lanche
                 </label>
               </div>
+              {/* v9.5.7: Pão fixo — sempre usar quantidade padrão, independente do cardápio da semana */}
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+                <label className="flex items-start gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editEscola.pao_fixo === true}
+                    onChange={(e) => setEditEscola((prev) => ({ ...prev, pao_fixo: e.target.checked }))}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <div className="font-medium text-amber-900">Sempre usar quantidade padrão de Pão Francês</div>
+                    <div className="text-xs text-amber-700 mt-0.5">
+                      Marque para Outras Instituições (Bombeiros, Ambulância, etc.) que recebem PF toda semana,
+                      mesmo quando o cardápio escolar da semana não tem pão. A produção sempre puxará a quantidade
+                      cadastrada como PADRÃO.
+                    </div>
+                  </div>
+                </label>
+              </div>
               <Button onClick={handleCreateEscola} className="w-full bg-[#1A3A5C]">Criar Escola</Button>
             </div>
           </DialogContent>
@@ -406,6 +425,25 @@ export default function ConfiguracoesPage() {
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={editEscola.recebe_lanche !== false} onChange={(e) => setEditEscola((prev) => ({ ...prev, recebe_lanche: e.target.checked }))} />
                   Recebe Lanche
+                </label>
+              </div>
+              {/* v9.5.7: Pão fixo — sempre usar quantidade padrão, independente do cardápio da semana */}
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+                <label className="flex items-start gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editEscola.pao_fixo === true}
+                    onChange={(e) => setEditEscola((prev) => ({ ...prev, pao_fixo: e.target.checked }))}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <div className="font-medium text-amber-900">Sempre usar quantidade padrão de Pão Francês</div>
+                    <div className="text-xs text-amber-700 mt-0.5">
+                      Marque para Outras Instituições (Bombeiros, Ambulância, etc.) que recebem PF toda semana,
+                      mesmo quando o cardápio escolar da semana não tem pão. A produção sempre puxará a quantidade
+                      cadastrada como PADRÃO.
+                    </div>
+                  </div>
                 </label>
               </div>
               <div>
@@ -485,6 +523,8 @@ export default function ConfiguracoesPage() {
                           ativo: escola.ativo,
                           ordem_rota: escola.ordem_rota,
                           obs: escola.obs,
+                          // v9.5.7: carrega pao_fixo para o checkbox
+                          pao_fixo: (escola as any).pao_fixo === true,
                         })
                         setEditEscolaDialogOpen(true)
                       }}

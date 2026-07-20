@@ -9,8 +9,10 @@ export async function GET(request: Request) {
     const escolas = await db.escola.findMany({
       where: incluirInativas ? {} : { ativo: true },
       include: { pf_quantidades: true, pcq_quantidades: true },
-      // v9.5.2: ordem definitiva — rota → ordem_rota → nome_curto (alfabético)
-      orderBy: [{ rota: 'asc' }, { ordem_rota: 'asc' }, { nome_curto: 'asc' }],
+      // v9.5.7: ordem puramente SEQUENCIAL — sem agrupar por rota.
+      // Apenas ordem_rota → nome_curto. Isso garante que a configuração
+      // mostre as escolas na mesma ordem que aparecem na produção.
+      orderBy: [{ ordem_rota: 'asc' }, { nome_curto: 'asc' }],
     })
     return NextResponse.json(escolas)
   } catch (error) {
@@ -38,6 +40,8 @@ export async function POST(request: Request) {
         ativo: body.ativo !== false,
         ordem_rota: body.ordem_rota || 0,
         obs: body.obs,
+        // v9.5.7: pao_fixo — sempre usar quantidade padrão de PF
+        pao_fixo: body.pao_fixo === true,
         // ── Novos campos v6 ──
         segmento: body.segmento || 'REGULAR',
         alunos_parcial: body.alunos_parcial || 0,
@@ -97,6 +101,8 @@ export async function PUT(request: Request) {
         ativo: body.ativo,
         ordem_rota: body.ordem_rota,
         obs: body.obs,
+        // v9.5.7: pao_fixo — sempre usar quantidade padrão de PF
+        pao_fixo: body.pao_fixo,
         // ── Novos campos v6 ──
         segmento: body.segmento,
         alunos_parcial: body.alunos_parcial,
