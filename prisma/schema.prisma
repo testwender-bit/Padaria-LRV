@@ -97,6 +97,9 @@ model Escola {
   alunos_integral Int     @default(0)  // alunos com 2 refeições/dia (integral)
   dia_pao_frances String? // SEG, TER, QUA, QUI, SEX — dia fixo de pão francês (null = não recebe)
   dia_lanche      String? // SEG, TER, QUA, QUI, SEX — dia fixo de lanche especial (null = não recebe)
+  // v9.5.5: escala de impressão (zoom) por cardápio (70-150, default 100)
+  // Permite ao usuário ajustar o zoom da impressão sem usar Microsoft Print to PDF.
+  escala_impressao  Int     @default(100)
   // Indica se a escola mescla alunos regular + integral numa mesma refeição (afeta percapita)
   mescla_parcial_integral Boolean @default(false)
 
@@ -537,6 +540,9 @@ model CardapioNutricional {
   // null = não recebe / não aplicável para este cardápio.
   dia_pao_frances   String?  // SEG | TER | QUA | QUI | SEX | null
   dia_lanche        String?  // SEG | TER | QUA | QUI | SEX | null
+  // v9.5.5: escala de impressão (zoom) por cardápio (70-150, default 100)
+  // Permite ao usuário ajustar o zoom da impressão sem usar Microsoft Print to PDF.
+  escala_impressao  Int     @default(100)
 
   escola            Escola?        @relation(fields: [escola_id], references: [id], onDelete: SetNull)
   nutricionista     Nutricionista  @relation(fields: [nutricionista_id], references: [id])

@@ -50,7 +50,7 @@ export async function GET(
         horarios_refeicoes: {
           include: {
             tipo_refeicao: {
-              select: { id: true, codigo: true, nome: true, horario: true, ordem: true, sub_de_codigo: true },
+              select: { id: true, codigo: true, nome: true, horario: true, ordem: true },
             },
           },
         },
@@ -135,13 +135,8 @@ export async function PATCH(
         fase_escolar: body.fase_escolar !== undefined ? body.fase_escolar : undefined,
         ciclo_semanas: body.ciclo_semanas !== undefined ? body.ciclo_semanas : undefined,
         repetir_ciclo: body.repetir_ciclo !== undefined ? body.repetir_ciclo : undefined,
-        // v8.9: permitir editar semestre e ano
-        semestre: body.semestre !== undefined ? body.semestre : undefined,
-        ano: body.ano !== undefined ? body.ano : undefined,
-        // v8.9: permitir transformar em base (escola_id = null)
-        escola_id: body.escola_id !== undefined ? body.escola_id : undefined,
-        // v8.9: permitir definir/remover cardapio_base_id
-        cardapio_base_id: body.cardapio_base_id !== undefined ? body.cardapio_base_id : undefined,
+        // v9.5.5: escala de impressão (zoom) por cardápio (70-150)
+        escala_impressao: body.escala_impressao !== undefined ? body.escala_impressao : undefined,
         atualizado_em: atualizadoEm,
       },
     })
