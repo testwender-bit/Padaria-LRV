@@ -127,6 +127,54 @@ export async function GET(request: Request) {
       })
     }
 
+    // v9.5.8: PF COMPLEMENTO para entrega de SEGUNDA — produção no DOMINGO (D-1).
+    // O Comp Seg é pão francês complementar (creches), com entrega na segunda,
+    // então a produção é no domingo (mesma regra D-1 do PF regular).
+    for (const escola of escolas) {
+      if (!escola.recebe_pcq) continue
+      const pcqQ = escola.pcq_quantidades[0]
+      if (!pcqQ) continue
+      const qtdComp = pcqQ.pf_comp_segunda as number
+      if (qtdComp <= 0) continue
+
+      const ajusteKey = `${escola.id}_segunda_PF_COMP`
+      let zeradoComp = false
+      let feriadoNomeComp = ''
+      // Check feriado no dia de PRODUÇÃO (domingo)
+      const checkProdComp = produtoZerado(feriadosMap, domingoStr, escola.categoria, 'PF_COMP')
+      if (checkProdComp.zerado) {
+        zeradoComp = true
+        feriadoNomeComp = checkProdComp.feriado
+      }
+      // Check feriado no dia de ENTREGA (segunda)
+      if (!zeradoComp) {
+        const checkEnt = produtoZerado(feriadosMap, segundaStr, escola.categoria, 'PF_COMP')
+        if (checkEnt.zerado) {
+          zeradoComp = true
+          feriadoNomeComp = checkEnt.feriado
+        }
+      }
+
+      const qtd = ajustesMap.has(ajusteKey) ? ajustesMap.get(ajusteKey)! : (zeradoComp ? 0 : qtdComp)
+
+      itensPfDomingo.push({
+        escola_id: escola.id,
+        escola_nome: escola.nome,
+        escola_curto: escola.nome_curto,
+        categoria: escola.categoria,
+        rota: escola.rota,
+        ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
+        busca_propria: escola.busca_propria,
+        produto: 'PF',
+        quantidade: qtd,
+        unidade: 'un',
+        dia_entrega: 'segunda',
+        ajustado: ajustesMap.has(ajusteKey),
+        zerado: zeradoComp,
+        feriado_nome: feriadoNomeComp,
+      })
+    }
+
     diasProducao.push({
       data: domingoStr,
       dia_label: 'Domingo',
@@ -253,54 +301,88 @@ export async function GET(request: Request) {
             })
           }
 
-          // PF Complemento (creches) — integrado ao PF, sem distinção
-          const campoComp = pcqConfig.pf_comp as keyof typeof pcqQ
+          // v9.5.8: PF Complemento (creches) — é PÃO FRANCÊS, segue regra D-1.
+          // Era processado dentro do loop PCQ (seg/qua/sex = dia de entrega),
+          // mas o usuário quer que apareça na produção 1 dia ANTES:
+          //   Comp Seg (entrega seg) → produção DOMINGO
+          //   Comp Qua (entrega qua) → produção TERÇA
+          //   Comp Sex (entrega sex) → produção QUINTA
+          // Agora é processado em um bloco separado abaixo (fora do if PCQ)
+          // para injetar no dia de produção correto.
+        }
+      }
+
+      // v9.5.8: PF COMPLEMENTO — processado separadamente para respeitar D-1.
+      // Para CADA dia de entrega (seg/qua/sex), injeta o PF Complemento no dia
+      // de produção correspondente (dom/ter/qui).
+      // Mapeia dia de entrega → dia de produção (D-1).
+      const pfCompEntregaParaProducao: Record<string, string> = {
+        segunda: 'domingo',
+        quarta: 'terca',
+        sexta: 'quinta',
+      }
+      const pfCompCampos: Record<string, 'pf_comp_segunda' | 'pf_comp_quarta' | 'pf_comp_sexta'> = {
+        segunda: 'pf_comp_segunda',
+        quarta: 'pf_comp_quarta',
+        sexta: 'pf_comp_sexta',
+      }
+      // Para cada dia de ENTREGA (seg/qua/sex) que tem PF Complemento configurado:
+      for (const entregaDia of ['segunda', 'quarta', 'sexta']) {
+        const diaProdKey = pfCompEntregaParaProducao[entregaDia]  // dom/ter/qui
+        // Só processa se o dia de produção corrente (i) bate com diaProdKey
+        if (diaKey !== diaProdKey) continue
+        // Data de entrega para checagem de feriados
+        const entregaIdx = diaTextKeys.indexOf(entregaDia)
+        const dataEntregaComp = entregaIdx >= 0 ? dataISO(addDays(inicio, entregaIdx)) : diaStr
+
+        for (const escola of escolas) {
+          if (!escola.recebe_pcq) continue
+          const pcqQ = escola.pcq_quantidades[0]
+          if (!pcqQ) continue
+          const campoComp = pfCompCampos[entregaDia]
           const qtdComp = pcqQ[campoComp] as number
+          if (qtdComp <= 0) continue
 
-          if (qtdComp > 0) {
-            const ajusteKey = `${escola.id}_${diaKey}_PF_COMP`
-            let zeradoComp = false
-            let feriadoNomeComp = ''
-            const checkProdComp = produtoZerado(feriadosMap, diaStr, escola.categoria, 'PF_COMP')
-            if (checkProdComp.zerado) {
-              zeradoComp = true
-              feriadoNomeComp = checkProdComp.feriado
-            }
-            if (!zeradoComp) {
-              for (const entregaDia of pcqConfig.entregas) {
-                const entregaIdx = diaTextKeys.indexOf(entregaDia)
-                if (entregaIdx >= 0) {
-                  const dataEntregaComp = dataISO(addDays(inicio, entregaIdx))
-                  const checkEnt = produtoZerado(feriadosMap, dataEntregaComp, escola.categoria, 'PF_COMP')
-                  if (checkEnt.zerado) {
-                    zeradoComp = true
-                    feriadoNomeComp = checkEnt.feriado
-                    break
-                  }
-                }
-              }
-            }
-
-            const qtd = ajustesMap.has(ajusteKey) ? ajustesMap.get(ajusteKey)! : (zeradoComp ? 0 : qtdComp)
-
-            // PF_COMP vai para itensPf como PF (sem sinalizar complemento)
-            itensPf.push({
-              escola_id: escola.id,
-              escola_nome: escola.nome,
-              escola_curto: escola.nome_curto,
-              categoria: escola.categoria,
-              rota: escola.rota,
-              ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
-              busca_propria: escola.busca_propria,
-              produto: 'PF',
-              quantidade: qtd,
-              unidade: 'un',
-              dia_entrega: diaKey,
-              ajustado: ajustesMap.has(ajusteKey),
-              zerado: zeradoComp,
-              feriado_nome: feriadoNomeComp,
-            })
+          const ajusteKey = `${escola.id}_${entregaDia}_PF_COMP`
+          let zeradoComp = false
+          let feriadoNomeComp = ''
+          // Check feriado no dia de PRODUÇÃO (D-1)
+          const checkProdComp = produtoZerado(feriadosMap, diaStr, escola.categoria, 'PF_COMP')
+          if (checkProdComp.zerado) {
+            zeradoComp = true
+            feriadoNomeComp = checkProdComp.feriado
           }
+          // Check feriado no dia de ENTREGA
+          if (!zeradoComp) {
+            const checkEnt = produtoZerado(feriadosMap, dataEntregaComp, escola.categoria, 'PF_COMP')
+            if (checkEnt.zerado) {
+              zeradoComp = true
+              feriadoNomeComp = checkEnt.feriado
+            }
+          }
+
+          const qtd = ajustesMap.has(ajusteKey) ? ajustesMap.get(ajusteKey)! : (zeradoComp ? 0 : qtdComp)
+
+          // PF_COMP vai para itensPf como PF (sem sinalizar complemento)
+          // v9.5.8: dia_entrega indica o dia real de entrega (seg/qua/sex),
+          // mas o item é injetado no dia de PRODUÇÃO (dom/ter/qui) — que é
+          // o dia_key corrente deste loop.
+          itensPf.push({
+            escola_id: escola.id,
+            escola_nome: escola.nome,
+            escola_curto: escola.nome_curto,
+            categoria: escola.categoria,
+            rota: escola.rota,
+            ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
+            busca_propria: escola.busca_propria,
+            produto: 'PF',
+            quantidade: qtd,
+            unidade: 'un',
+            dia_entrega: entregaDia,
+            ajustado: ajustesMap.has(ajusteKey),
+            zerado: zeradoComp,
+            feriado_nome: feriadoNomeComp,
+          })
         }
       }
 

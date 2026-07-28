@@ -1,195 +1,130 @@
-# Fix v9.5.7 — Pão Fixo na UI + Fim do subagrupamento por rota
+# Fix v9.5.8 — PF Complemento (Comp Seg/Qua/Sex) agora aparece D-1 na produção
 
-## 1. Configuração "Pão Fixo" restaurada na UI
+## O problema
 
-### Problema
+> "Na configuração 'Quantidades PCQ por Escola' o 'Comp Seg' 'Comp Qua'
+> 'Comp Sex' esse é o pão de complemento, é pão francês, ele está
+> configurado quase correto. O problema é que o dia que coloco ele ali
+> é o dia de entrega e ele está aparecendo da mesma forma no dia de
+> produção. O dia de produção desse pão francês (só do pão francês) na
+> produção deve aparecer 1 dia antes logo esse 'Comp Seg' 'Comp Qua'
+> 'Comp Sex' aparecem nessa data para os motoristas e assim está. Mas
+> para a produção deve aparecer um dia antes. Seguindo a lógica
+> domingo terça e quinta."
 
-> "a configuração de marcar para sempre usar quantidade padrão parece ter sumido."
+## Causa
 
-### Causa
+O PF Complemento (pão francês complementar das creches) era processado
+**dentro do loop do PCQ** (seg/qua/sex = dia de entrega). Ele era
+adicionado a `itensPf` com `dia_entrega = diaKey` (seg/qua/sex) — o mesmo
+dia de produção que o PCQ.
 
-O campo `pao_fixo` foi adicionado ao `schema.prisma` no patch v9.5.4, mas
-nunca foi implementado na UI da página de Configurações nem na lógica das
-APIs de produção/romaneio.
+Mas como o PF Complemento é **pão francês**, deveria seguir a regra
+**D-1** (produzido 1 dia antes da entrega), igual ao PF regular:
+- Entrega segunda → produção **domingo**
+- Entrega quarta → produção **terça**
+- Entrega sexta → produção **quinta**
 
-### Fix
+O romaneio (motoristas) já estava correto, pois mostrava no dia de
+**entrega** (seg/qua/sex).
 
-- **`src/app/(app)/configuracoes/page.tsx`**:
-  - Adicionado campo `pao_fixo: boolean` à interface `Escola` local.
-  - Adicionado checkbox **"Sempre usar quantidade padrão de Pão Francês"**
-    no formulário de **Criar** e no de **Editar** escola (caixa amarela
-    com explicação).
-  - Ao clicar em Editar, o `pao_fixo` da escola é carregado no formulário.
-  - O `handleRenumerar` também preserva o `pao_fixo` de cada escola.
+## Fix
 
-- **`src/app/api/escolas/route.ts`**:
-  - POST (create): aceita `pao_fixo` (default false).
-  - PUT (update): aceita `pao_fixo`.
+Refatorado o processamento do PF Complemento em `/api/producao/route.ts`:
 
-## 2. Produção sempre puxa pão das Outras Instituições
-
-### Problema
-
-> "Produção não está puxando o pão francês das outras instituições por que
-> o cardápio escolar não tem pão na regular, mas eu já havia dito que a
-> produção de pão das outras instituições deve sempre usar a quantidade
-> padrão toda semana independente do cardápio escolar."
-
-### Causa
-
-A API de produção fazia:
-```ts
-const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPao)
-if (!pfQ) continue  // ← pula a escola!
-```
-
-Se o `tipo_pao` do cardápio da semana fosse diferente do que a escola
-tinha cadastrado (ex.: semana sem pão regular → `tipo_pao = 'SEMPAO'`),
-a escola era **pulada** — não aparecia na produção.
-
-### Fix
-
-Em `/api/producao/route.ts` (2 lugares) e `/api/romaneio/route.ts` (1 lugar):
+### Antes
 
 ```ts
-// v9.5.7: se escola.pao_fixo === true, SEMPRE usa PADRAO
-const tipoPaoEfetivo = (escola as any).pao_fixo === true ? 'PADRAO' : tipoPao
-const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEfetivo)
-  || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')  // fallback
-if (!pfQ) continue
+// Dentro do if (diaTexto === 'segunda' || 'quarta' || 'sexta'):
+if (qtdComp > 0) {
+  itensPf.push({ ..., dia_entrega: diaKey })  // seg/qua/sex = dia de produção errado
+}
 ```
 
-Agora, se a escola tem `pao_fixo = true`:
-- Ignora o `tipo_pao` do cardápio da semana.
-- Sempre busca `pf_quantidades` do tipo `PADRAO`.
-- Se mesmo assim não encontrar, cai no fallback (primeiro PADRAO
-  disponível).
-- Se ainda assim não encontrar, pula (não tem PF cadastrado).
+### Depois
 
-### Como usar
+#### PF Complemento com entrega na SEGUNDA → produção DOMINGO
 
-1. Vá em **Configurações → Escolas**.
-2. Edite uma Outra Instituição (Bombeiros, Ambulância, etc.).
-3. Marque **"Sempre usar quantidade padrão de Pão Francês"**.
-4. Salve.
-5. Na página de Produção, essa instituição sempre aparecerá com a
-   quantidade cadastrada como PADRÃO, mesmo em semanas onde o cardápio
-   escolar não tem pão.
+Adicionado um bloco **antes do loop `for i`**, no mesmo lugar onde
+`itensPfDomingo` é construído (linhas 130-176). Para cada escola com
+`pf_comp_segunda > 0`, injeta um item PF em `itensPfDomingo` com
+`dia_entrega: 'segunda'`.
 
-## 3. Fim do subagrupamento por rota na ordenação
+#### PF Complemento com entrega na QUARTA → produção TERÇA
+#### PF Complemento com entrega na SEXTA → produção QUINTA
 
-### Problema
-
-> "está reconhecendo o número pela 'ordem na rota' mas ao mesmo tempo
-> ele buga pois está subagrupando por rota. Logo se 1 escola que está
-> com tag de busca própria eu sinalizar como 1 ela fica como 1 do sub
-> grupo de buscar não como primeira de todas. Preciso acabar com essa
-> organização por subgrupo."
-
-### Causa
-
-Os `orderBy` do Prisma nas APIs `/api/escolas`, `/api/producao`, e
-`/api/romaneio` tinham `rota: 'asc'` como **primeiro** critério:
+Adicionado um bloco **dentro do loop `for i`** (depois do bloco PCQ),
+que mapeia:
 
 ```ts
-orderBy: [{ rota: 'asc' }, { ordem_rota: 'asc' }, { nome_curto: 'asc' }]
+const pfCompEntregaParaProducao = {
+  segunda: 'domingo',  // processado no bloco domingo separado
+  quarta: 'terca',     // i=1
+  sexta: 'quinta',     // i=3
+}
 ```
 
-Isso fazia o banco retornar as escolas **agrupadas por rota primeiro**,
-depois ordenadas por `ordem_rota` dentro de cada rota. Resultado visual:
-- Aroldo 1, 2, 3, 4...
-- Busca Própria 1, 2, 3...
-- José 1, 2, 3...
+Para cada dia de entrega (seg/qua/sex), só processa se `diaKey` (dia de
+produção corrente) bate com `pfCompEntregaParaProducao[entregaDia]`. Assim:
+- Quando o loop chega em `i=1` (terça), processa PF Comp de entrega quarta
+- Quando o loop chega em `i=3` (quinta), processa PF Comp de entrega sexta
 
-Em vez da sequência global que o usuário quer: 1, 2, 3, 4...
+O item é injetado em `itensPf` (do dia de produção correto) com
+`dia_entrega` indicando o dia real de entrega (seg/qua/sex), mas
+**fisicamente** aparece na coluna de produção D-1 (dom/ter/qui).
 
-Também o `handleRenumerar` em `configuracoes/page.tsx` ordenava por
-`rota → nome_curto` ao atribuir os números sequenciais — também
-subagrupava.
+### Romaneio não foi alterado
 
-### Fix
+Conforme o usuário esclareceu, o romaneio (motoristas) já está correto,
+mostrando o PF Complemento no dia de **entrega** (seg/qua/sex). Não foi
+necessário mexer em `/api/romaneio/route.ts`.
 
-- **`/api/escolas/route.ts`**: `orderBy: [{ ordem_rota: 'asc' }, { nome_curto: 'asc' }]`
-- **`/api/producao/route.ts`**: idem
-- **`/api/romaneio/route.ts`**: idem (romaneio ainda agrupa por motorista
-  na saída via `.filter(rota)`, mas a ordem DENTRO de cada motorista
-  respeita a sequência global).
-- **`handleRenumerar`** em `configuracoes/page.tsx`: ordena APENAS por
-  `nome_curto` (sem `rota.localeCompare`).
+## Mapeamento final
 
-### Resultado
-
-- **Configurações → Escolas**: lista mostra escolas na sequência 1, 2, 3...
-  independente do motorista.
-- **Produção → PF / PCQ / Lanche**: mesma sequência 1, 2, 3...
-- **Impressão de Produção**: mesma sequência.
-- **Romaneio por motorista**: cada motorista continua levando apenas as
-  escolas da sua rota, mas **dentro** de cada motorista a ordem respeita
-  a sequência global (não mais 1, 2, 3 reiniciando por motorista).
-
-### IMPORTANTE: Romaneio não foi alterado na sua lógica
-
-Conforme o usuário esclareceu:
-> "isso deve continuar (repetindo apenas muda a ordem que as escolas
-> aparecem uma antes que outra, e não qual escola aparece no romaneio
-> de cada motorista — isso está funcionando corretamente)."
-
-O romaneio continua mostrando apenas as escolas de cada motorista na
-página correspondente. Apenas a **ordem dentro** de cada motorista
-mudou (agora é global, não reinicia).
+| Configuração (entrega) | Dia no Romaneio | Dia na Produção (D-1) |
+|------------------------|----------------|------------------------|
+| Comp Seg               | Segunda        | **Domingo**            |
+| Comp Qua               | Quarta         | **Terça**              |
+| Comp Sex               | Sexta          | **Quinta**             |
 
 ## Arquivos incluídos
 
 ```
-src/app/(app)/configuracoes/page.tsx            # UI pao_fixo + handleRenumerar sem rota
-src/app/(app)/producao/page.tsx                 # (mantém sort sem rota do v9.5.4)
-src/app/api/escolas/route.ts                    # POST/PUT aceitam pao_fixo + orderBy sem rota
-src/app/api/producao/route.ts                   # pao_fixo usa PADRAO + orderBy sem rota
-src/app/api/romaneio/route.ts                   # pao_fixo usa PADRAO + orderBy sem rota
-src/lib/producao-semana-utils.ts                # (mantém sort sem rota do v9.5.4)
+src/app/api/producao/route.ts    # PF Complemento injetado no dia D-1 (dom/ter/qui)
 ```
 
 ## Como aplicar
 
 ```bash
 # Na RAIZ do projeto:
-unzip -o patch-pao-fixo-ordem-global-v9.5.7.zip -d .
+unzip -o patch-pf-comp-d1-v9.5.8.zip -d .
 
 git add -A
-git commit -m "fix(v9.5.7): pão fixo na UI + produção sempre puxa PADRAO + fim do subagrupamento por rota"
+git commit -m "fix(v9.5.8): PF Complemento (Comp Seg/Qua/Sex) aparece D-1 na produção"
 git push
-```
-
-**Nota**: o campo `pao_fixo` já existe no schema (adicionado no patch
-v9.5.4). Se você não rodou `prisma db push` na época, rode agora:
-
-```bash
-npx prisma db push
 ```
 
 ## Verificação
 
-### Pão Fixo
-
-1. **Configurações → Escolas** → editar uma Outra Instituição (Bombeiros,
-   Ambulância, etc.).
-2. Marque **"Sempre usar quantidade padrão de Pão Francês"** (caixa amarela).
+1. Vá em **Configurações → PCQ → Editar uma creche**.
+2. Configure `Comp Seg = 30`, `Comp Qua = 30`, `Comp Sex = 30` (por exemplo).
 3. Salve.
-4. Vá para uma semana onde o cardápio escolar **não tenha pão regular**.
-5. **Produção → PF**: a instituição deve aparecer com a quantidade
-   cadastrada como PADRÃO (não zerada).
+4. Vá para a página de **Produção → PF**:
+   - A creche deve aparecer com PF na coluna **Domingo** (correspondente
+     ao Comp Seg).
+   - A creche deve aparecer com PF na coluna **Terça** (correspondente
+     ao Comp Qua).
+   - A creche deve aparecer com PF na coluna **Quinta** (correspondente
+     ao Comp Sex).
+5. Vá para o **Romaneio por motorista**:
+   - A creche deve aparecer com PF nos dias de **entrega** (Segunda,
+     Quarta, Sexta) — como já estava antes.
+6. A quantidade total de PF na produção deve bater com a soma de
+   Comp Seg + Comp Qua + Comp Sex (somando com o PF regular).
 
-### Ordenação Global
+## Nota técnica
 
-1. **Configurações → Escolas** → clique em **Renumerar**.
-2. As escolas recebem 1, 2, 3... em ordem alfabética por nome curto
-   (sem agrupar por motorista).
-3. Edite uma escola de Busca Própria e coloque ordem 1.
-4. Salve e recarregue.
-5. Na lista de Configurações, ela deve aparecer como a **primeira de
-   todas**, não como "primeira do subgrupo de Busca Própria".
-6. **Produção → PF**: a escola deve aparecer como a primeira da lista
-   de produção (antes das escolas do Aroldo e do José).
-7. **Romaneio por motorista**: cada motorista continua levando apenas
-   suas escolas, mas a ordem dentro de cada motorista respeita a
-   sequência global (não reinicia em 1).
+A checagem de feriados continua dupla: verifica o dia de **produção**
+(D-1) E o dia de **entrega**. Se qualquer um dos dois for feriado
+aplicável à categoria da escola, o PF Complemento é zerado
+(com o nome do feriado aparecendo no item).
