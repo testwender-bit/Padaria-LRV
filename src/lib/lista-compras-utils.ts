@@ -754,4 +754,6 @@ export interface ListaComprasResultado {
     kg: number
   }>
   itens: ItemListaComprasConsolidado[]
+  // v9.6: aviso opcional quando não encontra cardápio com semanas no período
+  aviso?: string
 }

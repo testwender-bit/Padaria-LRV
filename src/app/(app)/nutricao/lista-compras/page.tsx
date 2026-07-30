@@ -528,14 +528,14 @@ export default function ListaComprasPage() {
       {resultado && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
           {/* v9.6: Aviso quando não encontrou cardápio */}
-          {(resultado as any).aviso && (
+          {resultado.aviso && (
             <Card className="border-amber-300 bg-amber-50">
               <CardContent className="p-4">
                 <div className="flex items-start gap-2 text-sm text-amber-900">
                   <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                   <div>
                     <div className="font-semibold mb-1">Aviso</div>
-                    <div className="text-xs">{(resultado as any).aviso}</div>
+                    <div className="text-xs">{resultado.aviso}</div>
                   </div>
                 </div>
               </CardContent>
