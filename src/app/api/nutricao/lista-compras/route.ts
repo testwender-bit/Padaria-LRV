@@ -84,6 +84,32 @@ function paraDiaSemana(d: Date, alvo: number): Date {
   return result
 }
 
+// v9.6: Calcula a data real (YYYY-MM-DD) de um dia_semana ("segunda".."sexta")
+// baseado na data_inicio da semana (que é sempre uma segunda-feira).
+// Retorna null se data_inicio for inválida ou dia_semana for desconhecido.
+function dataRealDoDia(dataInicioSemana: string, diaSemana: string): string | null {
+  if (!dataInicioSemana || !diaSemana) return null
+  const base = new Date(dataInicioSemana + 'T12:00:00')
+  if (isNaN(base.getTime())) return null
+  const offsets: Record<string, number> = {
+    segunda: 0,
+    terca: 1,
+    quarta: 2,
+    quinta: 3,
+    sexta: 4,
+  }
+  const offset = offsets[diaSemana]
+  if (offset === undefined) return null
+  const dataReal = addDays(base, offset)
+  return toISO(dataReal)
+}
+
+// v9.6: Verifica se uma data (YYYY-MM-DD) está dentro do intervalo [inicio, fim] (inclusive).
+// Compara como string (funciona para ISO YYYY-MM-DD).
+function dataNoIntervalo(data: string, inicio: string, fim: string): boolean {
+  return data >= inicio && data <= fim
+}
+
 // Calcula período do pedido semanal conforme categoria da escola
 function calcularPeriodoPedido(categoria: string, refDate: Date): { inicio: Date; fim: Date; descricao: string } {
   const isInterior = (categoria || '').toUpperCase() === 'INTERIOR'
@@ -260,6 +286,12 @@ async function handlePrevisao(
       })
 
       for (const dia of semana.dias) {
+        // v9.6: FILTRAR AO NÍVEL DE DIA — só processa dias cuja data real
+        // cai dentro do período solicitado [dataInicioStr, dataFimStr].
+        const dataRealDia = dataRealDoDia(semana.data_inicio, dia.dia_semana)
+        if (!dataRealDia) continue
+        if (!dataNoIntervalo(dataRealDia, dataInicioStr, dataFimStr)) continue
+
         for (const item of dia.itens) {
           const isPrincipal = isRefeicaoPrincipal(item.tipo_refeicao.codigo)
 
@@ -447,63 +479,56 @@ async function handlePedido(escolaId: string, dataReferencia: Date) {
   }
 
   const periodo = calcularPeriodoPedido(escola.categoria, dataReferencia)
-  // O pedido cobre 7 dias a partir de terça (regular) ou quarta (interior).
-  // Como o cardápio só tem seg-sex, o pedido cobre 5 dias úteis distribuídos
-  // em até 2 semanas do cardápio.
-  // Estratégia: buscar CardapioSemanaNutri cujo período se sobrepõe ao do pedido.
   const dataInicioStr = toISO(periodo.inicio)
   const dataFimStr = toISO(periodo.fim)
 
-  // Buscar cardápio da escola (próprio ou base da categoria)
+  // v9.6: Busca AMPLA de cardápios com semanas sobrepostes ao período.
+  // Estratégia: buscar TODOS os cardápios (próprios da escola + bases da
+  // categoria + qualquer base) que tenham pelo menos uma semana com
+  // data_inicio <= dataFim AND data_fim >= dataInicio. Depois filtra ao
+  // nível de DIA para garantir que só conta itens cuja data real cai
+  // dentro do período do pedido.
   const catEscola = (escola.categoria || '').toUpperCase()
+
+  // Filtros de sobreposição de semanas (reutilizável)
+  const sobreposicaoSemanas = {
+    AND: [
+      { data_inicio: { lte: dataFimStr } },
+      { data_fim: { gte: dataInicioStr } },
+    ],
+  }
+
+  // 1. Cardápio próprio da escola (qualquer status — pode estar em RASCUNHO)
   let cardapio = await db.cardapioNutricional.findFirst({
-    where: { escola_id: escola.id, status: 'APROVADO' },
-    include: {
-      semanas: {
-        where: {
-          AND: [
-            { data_inicio: { lte: dataFimStr } },
-            { data_fim: { gte: dataInicioStr } },
-          ],
-        },
-        include: semanasInclude,
-      },
-    },
+    where: { escola_id: escola.id },
+    include: { semanas: { where: sobreposicaoSemanas, include: semanasInclude } },
+    orderBy: { atualizado_em: 'desc' },
   })
-  if (!cardapio) {
-    // Fallback: cardápio base da categoria
-    cardapio = await db.cardapioNutricional.findFirst({
-      where: { escola_id: null, categoria_escola: catEscola, status: 'APROVADO' },
-      include: {
-        semanas: {
-          where: {
-            AND: [
-              { data_inicio: { lte: dataFimStr } },
-              { data_fim: { gte: dataInicioStr } },
-            ],
-          },
-          include: semanasInclude,
-        },
-      },
+
+  // 2. Se não encontrou ou não tem semanas sobrepostes, tenta cardápio base da categoria
+  if (!cardapio || cardapio.semanas.length === 0) {
+    const baseCat = await db.cardapioNutricional.findFirst({
+      where: { escola_id: null, categoria_escola: catEscola },
+      include: { semanas: { where: sobreposicaoSemanas, include: semanasInclude } },
+      orderBy: { atualizado_em: 'desc' },
     })
+    if (baseCat && baseCat.semanas.length > 0) {
+      cardapio = baseCat
+    }
   }
-  if (!cardapio) {
-    // Último fallback: qualquer cardápio base
-    cardapio = await db.cardapioNutricional.findFirst({
-      where: { escola_id: null, status: 'APROVADO' },
-      include: {
-        semanas: {
-          where: {
-            AND: [
-              { data_inicio: { lte: dataFimStr } },
-              { data_fim: { gte: dataInicioStr } },
-            ],
-          },
-          include: semanasInclude,
-        },
-      },
+
+  // 3. Último fallback: qualquer cardápio base com semanas no período
+  if (!cardapio || cardapio.semanas.length === 0) {
+    const qualquerBase = await db.cardapioNutricional.findFirst({
+      where: { escola_id: null },
+      include: { semanas: { where: sobreposicaoSemanas, include: semanasInclude } },
+      orderBy: { atualizado_em: 'desc' },
     })
+    if (qualquerBase && qualquerBase.semanas.length > 0) {
+      cardapio = qualquerBase
+    }
   }
+
   if (!cardapio || cardapio.semanas.length === 0) {
     return NextResponse.json({
       modo: 'PEDIDO',
@@ -526,12 +551,14 @@ async function handlePedido(escolaId: string, dataReferencia: Date) {
       totais: { total_escolas: 1, total_alunos_parcial: escola.alunos_parcial || 0, total_alunos_integral: escola.alunos_integral || 0, total_itens: 0, total_kg: 0 },
       por_categoria: [],
       itens: [],
+      // v9.6: aviso para a UI saber que não encontrou cardápio
+      aviso: `Nenhum cardápio com semanas no período ${dataInicioStr.split('-').reverse().join('/')} a ${dataFimStr.split('-').reverse().join('/')}. Verifique se o cardápio tem data_inicio/data_fim configurados nas semanas.`,
     } satisfies ListaComprasResultado)
   }
 
   const faseEscolar = cardapio.fase_escolar as FaseEscolar
 
-  // Acumulador (mesma estrutura do modo previsão, mas só 1 escola)
+  // Acumulador
   const acumulador = new Map<string, {
     alimento_id: string
     nome_original: string
@@ -539,8 +566,20 @@ async function handlePedido(escolaId: string, dataReferencia: Date) {
     qtd_total_gramas: number
   }>()
 
+  // v9.6: FILTRAR AO NÍVEL DE DIA.
+  // Para cada semana, para cada dia, calcular a data real do dia
+  // (baseado em semana.data_inicio + offset do dia_semana) e SÓ processar
+  // o dia se a data real cair dentro de [dataInicioStr, dataFimStr].
+  let diasProcessados = 0
   for (const semana of cardapio.semanas) {
     for (const dia of semana.dias) {
+      // Calcula a data real deste dia
+      const dataRealDia = dataRealDoDia(semana.data_inicio, dia.dia_semana)
+      if (!dataRealDia) continue  // data_inicio inválida ou dia desconhecido
+      // SÓ processa se a data real do dia estiver dentro do período do pedido
+      if (!dataNoIntervalo(dataRealDia, dataInicioStr, dataFimStr)) continue
+
+      diasProcessados++
       for (const item of dia.itens) {
         const isPrincipal = isRefeicaoPrincipal(item.tipo_refeicao.codigo)
 

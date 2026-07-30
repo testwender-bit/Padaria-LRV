@@ -435,8 +435,10 @@ const MAPA_VARIACOES: Record<string, string> = {
   'macarrao parafuso': 'Macarrão parafuso (500g)',
   'macarrao penne': 'Macarrão penne (pct 500gr)',
   'macarrao': 'Macarrão espaguete (500g)',  // alias genérico
+  'macarrao trigo': 'Macarrão espaguete (500g)',  // TACO: "Macarrão, Trigo, Cru"
   'milho verde': 'Milho verde (1,7kg)',
   'milho': 'Milho verde (1,7kg)',  // alias
+  'flocos de milho': 'Flocão de milho (pacote 500gr)',  // TACO: "Flocos de Milho (cuscuz)"
   'oleo de soja': 'Óleo de soja (900ml)',
   'oleo': 'Óleo de soja (900ml)',  // alias
   'pao sem gluten': 'Pão sem glúten',
@@ -489,6 +491,44 @@ const MAPA_VARIACOES: Record<string, string> = {
   'quimica melhorador': 'Química melhorador (5kg)',
   'melhorador de farinha': 'Química melhorador (5kg)',
   'sal amoniaco': 'Sal Amoníaco (kg)',
+
+  // ── v9.6: Padrões TACO específicos que faltavam ──
+  // Farinha de trigo (TACO: "Farinha, de Trigo") — não estava na lista canônica
+  // original, mas é muito comum. Adicionada como item de Padaria/Confeitaria.
+  'farinha de trigo': 'Farinha Pura (25kg)',
+  'farinha trigo': 'Farinha Pura (25kg)',
+
+  // Margarina genérica (TACO: "Margarina" sem qualificador)
+  'margarina': 'Margarina balde (15kg)',  // alias genérico → vai para balde (atacado)
+
+  // Coco (TACO: "Coco, Cru") → mapeia para Coco ralado
+  'coco': 'Coco ralado (Kg)',
+
+  // Vinagre tinto (TACO: "Vinagre Tinto")
+  'vinagre tinto': 'Vinagre branco (750ml)',  // alias — mesmo item na lista de compras
+
+  // Extrato de tomate — typo no mapa original tinha parêntese extra
+  'extrato de tomate 1 7kg': 'Extrato de tomate 1,7kg',
+  'extrato de tomate 1,7kg': 'Extrato de tomate 1,7kg',
+
+  // Água — não é um item de compra (não aparece na lista canônica).
+  // Mapeamos para uma string que será filtrada ou aparece em OUTROS.
+  'agua': 'Água',  // será exibida em OUTROS (não está na LISTA_CANONICA)
+
+  // Carne bovina acem (TACO: "Carne, Bovina, Acem, sem Gordura, Cru")
+  // Após limpar: "carne bovina" → match por substring com "carne bovina de 2"
+  // Mas para ser mais específico, mapeamos acem para "Carne bovina de 2ª em cubo"
+  'carne bovina acem': 'Carne bovina de 2ª em cubo',
+  'acem': 'Carne bovina de 2ª em cubo',
+
+  // Leite de vaca integral (TACO: "Leite, de Vaca, Integral")
+  // Após limpar descritores "de vaca" → "leite integral" → já mapeado
+
+  // Ovo de galinha (TACO: "Ovo, de Galinha, Cru")
+  // Após limpar "de galinha" e "cru" → "ovo" → match por substring com "ovos de galinha"
+  // Mas "ovo" tem length 3 (< 4), então não pega no substring match.
+  // Adicionamos explicitamente:
+  'ovo de galinha': 'Ovos de galinha (dz)',
 }
 
 // ── Helpers de normalização ────────────────────────────────────
@@ -502,13 +542,25 @@ function semAcentos(s: string): string {
     .trim()
 }
 
-// Remove qualificadores de preparo (cozido, cru, picado, etc.)
-function semQualificadores(s: string): string {
-  // Lista de qualificadores que aparecem em nomes de ingredientes mas
-  // não devem diferenciar na lista de compras.
-  // Ex: "Mandioca descascada" → "Mandioca"; "Cenoura ralada" → "Cenoura"
-  const qualificadores = [
-    'cozido', 'cozida', 'cru', 'crus', 'crua',
+// v9.6: Limpa profundamente o nome do ingrediente.
+// 1. Substitui vírgulas por espaços (TACO usa "Abobrinha, Verde, Crua")
+// 2. Remove descritores de preparo (cozido, cru, picado, ralado, etc.)
+// 3. Remove descritores de variedade TACO (verde, crespa, fuji, pera,
+//    tipo 1, branca, cristal, acem, sem gordura, com sal, etc.)
+// 4. Remove parênteses e seu conteúdo
+// 5. Colapsa espaços múltiplos
+function limparNomeTaco(s: string): string {
+  let r = s.toLowerCase()
+  // 1. Vírgulas → espaços
+  r = r.replace(/,/g, ' ')
+  // 2. Parênteses e conteúdo → remove
+  r = r.replace(/\([^)]*\)/g, ' ')
+  // 3. Remove descritores de preparo E variedade TACO
+  //    Lista ampliada baseada nos nomes reais do banco TACO
+  const descritores = [
+    // Preparo
+    'cozido', 'cozida', 'cozidos', 'cozidas',
+    'cru', 'crus', 'crua', 'cruas',
     'picado', 'picada', 'picados', 'picadas',
     'ralado', 'ralada', 'ralados', 'raladas',
     'cortado', 'cortada', 'cortados', 'cortadas',
@@ -517,27 +569,47 @@ function semQualificadores(s: string): string {
     'seco', 'seca', 'secos', 'secas',
     'inteiro', 'inteira', 'inteiros', 'inteiras',
     'maduro', 'madura', 'maduros', 'maduras',
+    'em cubos', 'em isca', 'em tiras', 'em rodelas', 'em pedacos', 'em pedaços',
+    'sem gordura', 'com sal', 'sem sal',
+    // Variedade / tipo (TACO descriptors)
     'verde', 'verdes',
-    'cortado em cubos', 'em cubos', 'em isca', 'em tiras',
-    'em rodelas', 'em pedaços', 'em pedacos',
+    'crespa', 'crespo',
+    'fuji', 'pera', 'gala', 'argentina',
+    'tipo 1', 'tipo 2', 'tipo a', 'tipo b',
+    'branca', 'branco',
+    'cristal',
+    'acem', 'acém',
+    'moido', 'moída', 'moidos', 'moídas',
+    'sem osso', 'com osso',
+    'bovina', 'bovino',
+    'suina', 'suíno', 'suíno',
+    'de vaca', 'de galinha',
+    // Outros descritores comuns
+    'natural', 'industrializado', 'industrializada',
+    'comum', 'especial',
+    'extrativa',
+    'organico', 'organica', 'orgânico', 'orgânica',
   ]
-  let result = s.toLowerCase()
-  for (const q of qualificadores) {
-    // Remove o qualificador seguido de espaço ou no final
-    result = result.replace(new RegExp(`\\s+${q}\\b`, 'g'), '')
-    result = result.replace(new RegExp(`\\s+${q}$`, 'g'), '')
+  for (const d of descritores) {
+    // Remove o descritor como palavra completa (\b)
+    r = r.replace(new RegExp(`\\b${d}\\b`, 'g'), ' ')
   }
-  return result.trim()
+  // 4. Colapsa espaços múltiplos
+  r = r.replace(/\s+/g, ' ').trim()
+  return r
 }
 
 /**
  * Normaliza o nome de um ingrediente para o nome canônico da lista de compras.
  *
- * Algoritmo:
+ * Algoritmo v9.6:
  * 1. Remove acentos e converte para lowercase
- * 2. Remove qualificadores de preparo (cozido, picado, etc.)
- * 3. Procura no MAPA_VARIACOES
- * 4. Se não encontrar, retorna o nome sem acentos (preserva info do alimento)
+ * 2. Limpa profundamente (vírgulas, parênteses, descritores TACO)
+ * 3. Procura no MAPA_VARIACOES (match exato)
+ * 4. Se não encontrar, tenta MATCH POR SUBSTRING: para cada chave do mapa,
+ *    verifica se o nome limpo CONTÉM a chave. Isso pega casos como
+ *    "carne bovina acem moido" → contém "carne bovina" → match.
+ * 5. Se ainda não encontrar, retorna o nome limpo em title case (vai para OUTROS)
  *
  * @param nome Nome original do ingrediente (do banco Alimento.nome)
  * @returns Nome canônico (como aparece em LISTA_CANONICA) ou nome limpo
@@ -545,12 +617,25 @@ function semQualificadores(s: string): string {
 export function normalizarNomeIngrediente(nome: string): string {
   if (!nome) return ''
   const semAcentosLower = semAcentos(nome)
-  const semQualif = semQualificadores(semAcentosLower)
-  // Tenta variações: com e sem qualificadores
-  if (MAPA_VARIACOES[semQualif]) return MAPA_VARIACOES[semQualif]
+  const limpo = limparNomeTaco(semAcentosLower)
+
+  // 1. Match exato no mapa
+  if (MAPA_VARIACOES[limpo]) return MAPA_VARIACOES[limpo]
   if (MAPA_VARIACOES[semAcentosLower]) return MAPA_VARIACOES[semAcentosLower]
-  // Não encontrado — retorna nome limpo (sem acentos, com primeiras letras maiúsculas)
-  return titleCase(semAcentosLower)
+
+  // 2. Match por substring — para cada chave do mapa, verifica se o nome
+  //    limpo CONTÉM a chave. Prioriza chaves mais longas (mais específicas).
+  const chavesOrdenadas = Object.keys(MAPA_VARIACOES)
+    .filter((k) => k.length >= 4)  // ignora chaves muito curtas (ex: "ovo")
+    .sort((a, b) => b.length - a.length)  // mais longas primeiro
+  for (const chave of chavesOrdenadas) {
+    if (limpo.includes(chave)) {
+      return MAPA_VARIACOES[chave]
+    }
+  }
+
+  // 3. Não encontrado — retorna nome limpo em title case (vai para OUTROS)
+  return titleCase(limpo)
 }
 
 function titleCase(s: string): string {

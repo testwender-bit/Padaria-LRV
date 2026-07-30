@@ -1,254 +1,192 @@
-# Lista de Compras v2.0 — Reestruturação Completa
+# Fix v9.6 — Lista de Compras: 3 bugs corrigidos
 
-## Visão geral
+## Bug 1: Semana errada sendo puxada (mexerica de 21/08 no período 11-17/08)
 
-Reescrevi completamente a página **Nutrição → Lista de Compras** para
-atender aos dois fluxos solicitados:
+### Problema
 
-### Modo 1: PREVISÃO DE REDE
+> "ele detectou mexerica mas no cardapio mexerica está no dia 21/08 sendo
+> que está selecionado Período 11/08/2026 → 17/08/2026"
 
-> "para prever quanto e quais alimentos vou precisar para cobrir x tempo
-> em toda a rede... o fluxo seria escolher quais escolas se é 1 2 3 ou 24
-> e talvez escolher no calendário de que dia a que dia, então a lista de
-> compra me dá quais alimentos e quantidade preciso para esse x tempo."
+### Causa
 
-**Como usar:**
-1. Selecione o modo **"Previsão de Rede"**.
-2. Escolha o período (data início + data fim) via calendário.
-3. Selecione as escolas (use os botões rápidos: Todas, por Motorista, por
-   Categoria, ou marque individualmente).
-4. Clique em **Gerar Lista de Previsão**.
+A API filtrava ao nível de **SEMANA** (data_inicio/data_fim da semana),
+não de **DIA**. Quando o período do pedido é Ter 11/08 → Seg 17/08:
 
-O sistema busca todos os cardápios que têm semanas cujo período se
-sobrepõe ao solicitado, agrega os ingredientes × alunos das escolas
-selecionadas e retorna a lista consolidada.
+- Semana 1: data_inicio 10/08 (Seg) → data_fim 14/08 (Sex) → incluída
+  (correto: Ter 11, Qua 12, Qui 13, Sex 14)
+- Semana 2: data_inicio 17/08 (Seg) → data_fim 21/08 (Sex) → **também
+  incluída** porque 17/08 ≤ 17/08 e 21/08 ≥ 11/08 (sobreposição)
 
-### Modo 2: PEDIDO SEMANAL
+Mas a semana 2 cobre Seg 17/08 → Sex 21/08, e o pedido só vai até Seg
+17/08. Então itens de Ter 18/08 → Sex 21/08 (como mexerica de 21/08)
+eram **erroneamente incluídos**.
 
-> "para fazer os pedidos semanais das unidades uma vez que o cardápio já
-> tem os itens seria fácil o sistema entregar quais itens são necessário
-> para x escola para essa semana... aqui tem uma particularidade, apesar
-> do cardápio tratar como semana o pedido semanal das escolas devem
-> cobrir de terça de uma semana até segunda da outra semana. Com exceção
-> das escolas do interior (rural) que os pedidos devem cobrir de quarta
-> até terça da outra semana."
+### Fix
 
-**Como usar:**
-1. Selecione o modo **"Pedido Semanal"**.
-2. Selecione UMA escola no dropdown.
-3. Escolha uma data de referência (qualquer dia da semana desejada).
-4. Clique em **Gerar Pedido Semanal**.
+Adicionada função `dataRealDoDia(dataInicioSemana, diaSemana)` que
+calcula a data real (YYYY-MM-DD) de cada dia baseado no `data_inicio`
+da semana (sempre segunda-feira) + offset do dia (segunda=0, terca=1,
+etc.).
 
-O sistema calcula automaticamente o período:
-- **Escolas URBANAS** (REGULAR, INTEGRAL, BIFASICA, CRECHE): **Terça da
-  semana atual → Segunda da semana seguinte** (7 dias).
-- **Escolas do INTERIOR** (categoria=INTERIOR): **Quarta da semana atual
-  → Terça da semana seguinte** (7 dias).
+Agora, para cada dia de cada semana, a API:
+1. Calcula a data real do dia
+2. Verifica se está dentro de `[dataInicioPedido, dataFimPedido]`
+3. **SÓ processa o dia se a data real estiver dentro do período**
 
-A página mostra um aviso amarelo/azul explicando qual regra foi aplicada
-com base na categoria da escola selecionada.
+Resultado: mexerica de 21/08 (Sex da semana 2) não é mais incluída,
+porque 21/08 > 17/08 (fim do pedido).
 
-## Normalização de nomes de ingredientes
+Aplicado em **ambos os modos** (PREVISAO e PEDIDO).
 
-Implementei um módulo `lista-compras-utils.ts` que:
+## Bug 2: Algumas escolas não puxam cardápio
 
-1. **Define uma LISTA_CANONICA** com ~190 ingredientes na ordem EXATA
-   que você forneceu, agrupados em 10 categorias:
-   - HORTIFRUTI (legumes e verduras)
-   - FRUTAS
-   - POLPAS
-   - LATICINIOS
-   - CARNES_PROTEINAS
-   - BEBIDAS_LACTEAS (inclui leite integral, pão de forma integral)
-   - PADARIA
-   - MERCEARIA_SECA
-   - ESPECIARIAS (condimentos)
-   - PADARIA_CONFEITARIA (atacado)
+### Problema
 
-2. **Mapeia variações para nomes canônicos**: ~250 variações mapeadas.
-   Por exemplo:
-   - `"Mandioca descascada"`, `"Mandioca"`, `"Aipim"`, `"Macaxeira"` →
-     `"Mandioca descascada"`
-   - `"Cenoura ralada"`, `"Cenoura picada"`, `"Cenoura"` → `"Cenoura"`
-   - `"Carne moída"`, `"Patinho moído"` → `"Carne bovina moída"`
-   - `"Maisena"` → `"Amido de milho"`
-   - `"PTS"` → `"Proteína de soja (kg)"`
-   - `"Colorau"`, `"Colorífero"` → `"Condimento: Colorau (pct 500gr)"`
-   - `"Açafrão"`, `"Cúrcuma"` → `"Condimento: Açafrão (30g)"`
-   - etc.
+> "algumas escolas não estão puxando cardapio"
 
-3. **Algoritmo de normalização**:
-   - Remove acentos e converte para lowercase
-   - Remove qualificadores de preparo (cozido, cru, picado, ralado,
-     descascado, fresco, seco, inteiro, maduro, em cubos, em isca, etc.)
-   - Procura no mapa de variações
-   - Se não encontrar, retorna o nome limpo (title case) — vai para a
-     categoria "OUTROS" no final da lista
+### Causa
 
-4. **Consolidação por nome canônico**: se dois alimentos do banco
-   mapeiam para o mesmo nome canônico (ex: "Mandioca" e
-   "Mandioca descascada"), as quantidades são SOMADAS e aparece como
-   um único item na lista.
+A busca de cardápio tinha dois problemas:
+1. Filtrava por `status: 'APROVADO'` — se o cardápio estava em
+   `RASCUNHO`, era ignorado mesmo tendo semanas válidas.
+2. `findFirst` retornava o primeiro cardápio que matche o `where` (ex:
+   `escola_id = X`), mas o `include.semanas.where` filtrava as semanas
+   DENTRO do cardápio. Se o cardápio existia mas não tinha semanas no
+   período, retornava com `semanas: []` — e o código tratava como
+   "não encontrou".
 
-5. **Ordenação**: itens aparecem na ordem exata da LISTA_CANONICA.
-   Itens não mapeados vão para o final (categoria "OUTROS") em ordem
-   alfabética.
+### Fix
 
-## Visualização
+- **Removido o filtro `status: 'APROVADO'`** — agora busca qualquer
+  cardápio (aprovado ou rascunho).
+- **Lógica de fallback melhorada**: se o primeiro `findFirst` retorna
+  um cardápio mas com `semanas.length === 0`, tenta o próximo fallback
+  (base da categoria → qualquer base) em vez de parar.
+- **Ordenação por `atualizado_em: 'desc'`** — pega o cardápio mais
+  recentemente atualizado.
+- **Aviso na resposta**: se nenhum cardápio com semanas no período for
+  encontrado, a API retorna um campo `aviso` com mensagem explicativa.
+  A UI exibe esse aviso em um card amarelo.
 
-A lista é exibida **agrupada por categoria**, cada categoria em um card
-separado com:
-- Título da categoria + badge com nº de itens e total em kg
-- Tabela com colunas: Item, Qtd (kg), Qtd (g), Unidade de Compra, e
-  (no modo Previsão) número de escolas que usam o item
-- Se o nome canônico for diferente do nome original do banco, mostra o
-  original em itálico abaixo
+## Bug 3: 41 ingredientes em "Outros" (normalizador não reconhecia TACO)
 
-**Filtros disponíveis:**
-- Busca por texto (procura no nome canônico)
-- Filtro por categoria específica
+### Problema
 
-**Exportações:**
-- **CSV** (com BOM UTF-8 — abre direto no Excel)
-- **XLSX** com 3-4 abas: Itens Consolidados, Resumo por Categoria, Por
-  Escola (somente Previsão), Escolas
+> 41 itens na categoria "Outros" com nomes como:
+> - "Abobrinha, Verde"
+> - "Acucar, Cristal"
+> - "Alface, Crespa, Crua"
+> - "Arroz, Tipo 1, Cru"
+> - "Banana, Nanica, Crua"
+> - "Carne, Bovina, Acem, Moido, Cozido"
 
-**Salvar snapshot**: salva a lista atual no banco (tabela ListaCompras)
-para consulta posterior.
+### Causa
+
+O normalizador anterior (`semQualificadores`):
+1. **Não removia vírgulas** — "Abobrinha, Verde, Crua" continuava com
+   vírgulas → não batia com a chave do mapa "abobrinha verde".
+2. **Não removia descritores de variedade TACO** — "Verde", "Crespa",
+   "Tipo 1", "Fuji", "Pera", "Acem", "Cristal", "Branca" etc. não
+   estavam na lista de qualificadores.
+3. **Não fazia match por substring** — se o nome limpo não batia
+   exatamente com uma chave do mapa, ia direto para "OUTROS".
+
+### Fix
+
+Reescrito completamente o normalizador:
+
+#### Nova função `limparNomeTaco(s)`:
+1. **Substitui vírgulas por espaços** — "Abobrinha, Verde, Crua" →
+   "abobrinha  verde  crua"
+2. **Remove parênteses e conteúdo** — "Extrato de tomate (1,7kg)" →
+   "extrato de tomate"
+3. **Remove ~60 descritores** (preparo + variedade TACO):
+   - Preparo: cozido, cru, picado, ralado, descascado, fresco, seco,
+     inteiro, maduro, em cubos, em isca, em tiras, em rodelas
+   - Variedade: verde, crespa, fuji, pera, gala, tipo 1, branca,
+     cristal, acem, moido, sem osso, com osso, bovina, suina, de vaca,
+     de galinha, sem gordura, com sal, natural, organico
+4. **Colapsa espaços múltiplos** → "abobrinha verde"
+
+#### Novo algoritmo `normalizarNomeIngrediente(nome)`:
+1. Remove acentos → lowercase
+2. Limpa profundamente (vírgulas, parênteses, descritores)
+3. **Match exato** no MAPA_VARIACOES
+4. **Match por SUBSTRING** (NOVO): para cada chave do mapa (ordenada
+   por length decrescente — mais específica primeiro), verifica se o
+   nome limpo CONTÉM a chave. Ex: "carne bovina acem moido" contém
+   "carne bovina" → match.
+5. Se não encontrar, retorna nome limpo em title case → vai para OUTROS
+
+#### Novas entradas no MAPA_VARIACOES:
+- `farinha de trigo` → `Farinha Pura (25kg)` (TACO: "Farinha, de Trigo")
+- `margarina` → `Margarina balde (15kg)` (genérico)
+- `coco` → `Coco ralado (Kg)` (TACO: "Coco, Cru")
+- `vinagre tinto` → `Vinagre branco (750ml)` (alias)
+- `extrato de tomate 1,7kg` → corrigido (typo anterior tinha `)`)
+- `flocos de milho` → `Flocão de milho (pacote 500gr)` (TACO: "Flocos de Milho (cuscuz)")
+- `macarrao trigo` → `Macarrão espaguete (500g)` (TACO: "Macarrão, Trigo, Cru")
+- `carne bovina acem` → `Carne bovina de 2ª em cubo`
+- `ovo de galinha` → `Ovos de galinha (dz)` (TACO: "Ovo, de Galinha, Cru")
+- `agua` → `Água` (não está na lista canônica, vai para OUTROS — mas
+  com nome limpo em vez de "Agua, " com vírgula)
+
+### Resultado esperado
+
+Com essas mudanças, a maioria dos 41 itens de "Outros" deve ser
+reconhecida e movida para suas categorias corretas. Apenas ingredientes
+verdadeiramente novos (que não têm correspondente na lista canônica)
+continuarão em "Outros".
 
 ## Arquivos incluídos
 
 ```
-src/lib/lista-compras-utils.ts                              # NOVO: normalização + categorias + ordem
-src/app/api/nutricao/lista-compras/route.ts                 # REESCRITO: suporte a modo=PREVISAO/PEDIDO + legado
-src/app/(app)/nutricao/lista-compras/page.tsx               # REESCRITO: 2 modos (Previsão/Pedido)
+src/lib/lista-compras-utils.ts                              # normalizador reescrito + novas entradas
+src/app/api/nutricao/lista-compras/route.ts                 # filtro ao nível de DIA + fallback melhorado
+src/app/(app)/nutricao/lista-compras/page.tsx               # exibe aviso quando não há cardápio
 ```
 
 ## Como aplicar
 
 ```bash
 # Na RAIZ do projeto:
-unzip -o patch-lista-compras-v2.zip -d .
+unzip -o patch-lista-compras-v2-fix-v9.6.zip -d .
 
 git add -A
-git commit -m "feat: reestruturação completa da Lista de Compras (modo Previsão + modo Pedido semanal)"
+git commit -m "fix(v9.6): lista de compras - filtrar dias por data real + normalizador TACO + fallback cardápio"
 git push
 ```
 
-**Nenhuma migration necessária** — o schema Prisma não foi alterado.
-Todos os campos usados já existem (CardapioSemanaNutri.data_inicio/
-data_fim, Escola.categoria, etc.).
-
 ## Verificação
 
-### Modo Previsão de Rede
+### Bug 1 (semana errada)
 
-1. Acesse **Nutrição → Lista de Compras**.
-2. Selecione **"Previsão de Rede"**.
-3. Escolha um período (ex.: 01/08/2026 a 31/08/2026 — um mês inteiro).
-4. Clique em **"Todas"** para selecionar todas as escolas.
-5. Clique em **Gerar Lista de Previsão**.
-6. A lista deve aparecer:
-   - KPIs no topo (modo, escolas, itens, total kg, período)
-   - Resumo por categoria (cards com nº itens e kg)
-   - Lista detalhada agrupada por categoria, na ORDEM que você definiu
-   - Ingredientes com nomes consolidados (ex: "Mandioca descascada"
-     mesmo se o banco tem "Mandioca", "Aipim", etc.)
-7. Clique em **CSV** ou **XLSX** para exportar.
+1. Acesse **Nutrição → Lista de Compras → Pedido Semanal**.
+2. Selecione uma escola que tenha cardápio com semanas consecutivas.
+3. Escolha uma data de referência que faça o período cobrir parcialmente
+   duas semanas (ex.: Ter 11/08 → Seg 17/08).
+4. Gere o pedido.
+5. **Itens de depois de 17/08 NÃO devem aparecer** (ex.: mexerica de
+   21/08 deve sumir).
 
-### Modo Pedido Semanal
+### Bug 2 (escolas sem cardápio)
 
-1. Selecione **"Pedido Semanal"**.
-2. Escolha uma escola urbana (ex.: "EMEF Érico Veríssimo" — categoria
-   INTEGRAL).
-3. Escolha uma data de referência (ex.: 20/08/2026 — quarta).
-4. Aparecerá um aviso azul: "Escola REGULAR/URBANA — pedido cobre de
-   TERÇA da semana atual até SEGUNDA da semana seguinte".
-5. Clique em **Gerar Pedido Semanal**.
-6. A lista deve aparecer com o período calculado automaticamente
-   (Terça 18/08 a Segunda 24/08, no exemplo).
+1. Selecione uma escola que antes não puxava cardápio.
+2. Gere o pedido.
+3. Se ainda não houver cardápio com semanas no período, aparecerá um
+   **card amarelo com aviso** explicando o que houve.
+4. Se a escola tem cardápio em RASCUNHO, agora ele é usado (antes era
+   ignorado).
 
-### Teste de escola do Interior
+### Bug 3 (ingredientes em Outros)
 
-1. Selecione uma escola com categoria INTERIOR (ex.: EMEIF Fredolino
-   Vieira Barros).
-2. Escolha a mesma data (20/08/2026).
-3. Aparecerá um aviso amarelo: "Escola do INTERIOR — pedido cobre de
-   QUARTA da semana atual até TERÇA da semana seguinte".
-4. O período será Quarta 19/08 a Terça 25/08.
-
-## Notas técnicas
-
-### Como o período do pedido é calculado
-
-```ts
-function calcularPeriodoPedido(categoria, refDate) {
-  const isInterior = categoria.toUpperCase() === 'INTERIOR'
-  if (isInterior) {
-    // Quarta da semana atual → terça da semana seguinte (7 dias)
-    const inicio = paraDiaSemana(refDate, 3)  // 3 = quarta
-    const fim = addDays(inicio, 6)
-  } else {
-    // Terça da semana atual → segunda da semana seguinte (7 dias)
-    const inicio = paraDiaSemana(refDate, 2)  // 2 = terça
-    const fim = addDays(inicio, 6)
-  }
-}
-```
-
-`paraDiaSemana(d, alvo)` ajusta a data para o dia da semana alvo
-(0=domingo, 1=segunda, ..., 6=sábado) na mesma semana.
-
-### Como os cardápios são selecionados
-
-Para cada escola-alvo (no modo Previsão) ou a escola selecionada (no
-modo Pedido), o sistema busca o cardápio na seguinte ordem:
-
-1. **Cardápio próprio da escola** (`CardapioNutricional.escola_id = escola.id`)
-2. **Cardápio base da categoria** (`escola_id = null AND categoria_escola = escola.categoria`)
-3. **Qualquer cardápio base** (`escola_id = null`)
-
-Dentro do cardápio, busca as semanas cujo período
-(`data_inicio` a `data_fim`) se sobrepõe ao período solicitado
-(modo Previsão) ou ao período calculado do pedido (modo Pedido).
-
-### Compatibilidade com a página antiga
-
-A API mantém o **modo legado**: se `modo` for omitido, aceita os
-parâmetros antigos (`cardapio_id`, `semanas`, `escolas_ids`) e retorna
-o formato antigo (sem normalização). Isso garante que outras páginas
-que possam estar usando a API antiga não quebrem.
-
-### Ingredientes não mapeados
-
-Se um ingrediente do banco não for reconhecido na LISTA_CANONICA, ele
-aparece numa categoria **"Outros (não mapeados)"** no final da lista,
-com o nome limpo (sem acentos). Para mapeá-lo, edite
-`src/lib/lista-compras-utils.ts` e adicione uma entrada no
-`MAPA_VARIACOES`:
-
-```ts
-'novo ingrediente': 'Nome Canônico',
-```
-
-E adicione o `Nome Canônico` na `LISTA_CANONICA` com a categoria e
-unidade apropriadas.
-
-## Limitações conhecidas
-
-1. **Unidade de compra**: por padrão, todas as quantidades são
-   convertidas para kg (gramas / 1000). Itens como "Manteiga (500g)"
-   têm a unidade canônica `unid`, mas a conversão ainda usa kg como
-   aproximação. Refinamentos podem ser feitos adicionando fatores de
-   conversão específicos no futuro.
-
-2. **Cardápios RASCUNHO**: o modo Pedido só considera cardápios com
-   `status = 'APROVADO'`. Cardápios em rascunho são ignorados. O modo
-   Previsão considera todos os cardápios (aprovados ou não) que tenham
-   semanas no período.
-
-3. **Snapshot depende de cardapio_id**: o modelo `ListaCompras` exige
-   `cardapio_id` (não-nulo). No modo Previsão, pode haver múltiplos
-   cardápios; o snapshot usa o primeiro da lista. Isso é uma limitação
-   do schema atual — para suportar múltiplos cardápios por snapshot,
-   seria necessário alterar o schema.
+1. Gere um pedido ou previsão.
+2. A categoria "Outros" deve ter **muito menos itens** (antes 41, agora
+   deve ser ~5-10 — apenas os que realmente não têm correspondente na
+   lista canônica).
+3. Itens como "Abobrinha, Verde, Crua" agora devem aparecer como
+   "Abobrinha Verde" em HORTIFRUTI.
+4. "Carne, Bovina, Acem, Moido, Cozido" agora deve aparecer como
+   "Carne bovina moída" em CARNES_PROTEINAS.
+5. "Farinha, de Trigo" agora deve aparecer como "Farinha Pura (25kg)"
+   em PADARIA_CONFEITARIA.
