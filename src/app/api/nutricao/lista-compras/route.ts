@@ -10,6 +10,7 @@ import {
   obterCategoria,
   obterUnidade,
   ordenarItens,
+  deveIgnorarIngrediente,
   CATEGORIAS_LISTA,
   CATEGORIA_LABELS,
   type CategoriaLista,
@@ -405,7 +406,7 @@ async function handlePrevisao(
         })),
       }
     })
-  )
+  ).filter((item) => !deveIgnorarIngrediente(item.nome_canonico))  // v9.6.2: remove água, pães da padaria, etc.
 
   // Resumo por categoria
   const porCategoriaMap = new Map<string, { itens: number; kg: number }>()
@@ -655,7 +656,7 @@ async function handlePedido(escolaId: string, dataReferencia: Date) {
         }],
       }
     })
-  )
+  ).filter((item) => !deveIgnorarIngrediente(item.nome_canonico))  // v9.6.2: remove água, pães da padaria, etc.
 
   const porCategoriaMap = new Map<string, { itens: number; kg: number }>()
   for (const item of itens) {

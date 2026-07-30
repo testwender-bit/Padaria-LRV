@@ -529,6 +529,101 @@ const MAPA_VARIACOES: Record<string, string> = {
   // Mas "ovo" tem length 3 (< 4), então não pega no substring match.
   // Adicionamos explicitamente:
   'ovo de galinha': 'Ovos de galinha (dz)',
+
+  // ── v9.6.2: Mapeamentos adicionais para padrões TACO restantes ──
+
+  // "Carne" (genérico) → Carne bovina de 2ª em cubo (padrão do usuário)
+  'carne': 'Carne bovina de 2ª em cubo',
+
+  // "Carne de Carneiro" → Carne de Ovino (TACO pode usar "Carneiro")
+  'carne de carneiro': 'Carne de Ovino',
+  'carneiro': 'Carne de Ovino',
+
+  // "Ervilha Enlatada Drenada" → manter como Ervilha verde congelada (mesmo produto)
+  'ervilha enlatada': 'Ervilha verde congelada',
+  'ervilha enlatada drenada': 'Ervilha verde congelada',
+
+  // "Extrato de tomate 1,7kg)" com parêntese extra → Extrato de tomate 1,7kg
+  // (já mapeado acima, mas reafirmado para variações TACO)
+  // 'extrato de tomate 1 7kg' já existe acima
+
+  // "Frango Coxa sem Pele" → Coxa e sobrecoxa
+  'frango coxa': 'Coxa e sobrecoxa',
+  'frango coxa sem pele': 'Coxa e sobrecoxa',
+  'coxa sem pele': 'Coxa e sobrecoxa',
+
+  // "Frango Peito com Pele" → Filé de peito de frango
+  'frango peito': 'Filé de peito de frango',
+  'frango peito com pele': 'Filé de peito de frango',
+  'peito com pele': 'Filé de peito de frango',
+
+  // "Ovo Mexido" → Ovos de galinha (dz)
+  'ovo mexido': 'Ovos de galinha (dz)',
+
+  // "Proteina Texturizada de Soja" → Proteína de soja (kg)
+  'proteina texturizada de soja': 'Proteína de soja (kg)',
+  'proteina texturizada': 'Proteína de soja (kg)',
+  // 'pts' já existe acima
+
+  // "Trigo para Quibe" → Farinha para kibe (500g)
+  'trigo para quibe': 'Farinha para kibe (500g)',
+  'trigo kibe': 'Farinha para kibe (500g)',
+
+  // "Uva Italia" → Uva vermelha
+  'uva italia': 'Uva vermelha',
+  // 'uva' já existe acima
+}
+
+// ── v9.6.2: Itens a IGNORAR (não aparecer na lista de compras) ──
+// Estes ingredientes são filtrados completamente da lista porque não são
+// itens de compra (ex: água da torneira) ou são pães produzidos pela
+// própria padaria (não comprados).
+//
+// A função deveIgnorarIngrediente(nome) retorna true se o ingrediente
+// (após normalização) deve ser removido da lista.
+export const ITENS_IGNORAR: string[] = [
+  'Água',                  // água da torneira — não é item de compra
+  'Pão Trigo Francês',     // produzido pela padaria — não comprado
+  'Pão Trigo Sovado',      // produzido pela padaria — não comprado
+  'Pão Francês',           // produzido pela padaria
+  'Pão Sovado',            // produzido pela padaria
+]
+
+// Variações de nomes que devem ser ignoradas (normalizadas, lowercase, sem acentos)
+const ITENS_IGNORAR_NORMALIZADOS: Set<string> = new Set(
+  ITENS_IGNORAR.map((n) =>
+    n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+  )
+)
+
+/**
+ * v9.6.2: Verifica se um ingrediente deve ser IGNORADO da lista de compras.
+ * Usa o nome canônico (após normalização) para verificar.
+ *
+ * Itens ignorados:
+ * - Água (não é item de compra)
+ * - Pão Francês / Pão Sovado (produzidos pela padaria, não comprados)
+ *
+ * @param nomeCanonico Nome já normalizado (saída de normalizarNomeIngrediente)
+ * @returns true se deve ser ignorado (removido da lista)
+ */
+export function deveIgnorarIngrediente(nomeCanonico: string): boolean {
+  if (!nomeCanonico) return false
+  const normalizado = nomeCanonico
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+  // Verifica match exato
+  if (ITENS_IGNORAR_NORMALIZADOS.has(normalizado)) return true
+  // Verifica se contém "pao trigo" ou "pao frances" ou "pao sovado"
+  // (cobertura para variações como "Pao Trigo Frances Especial")
+  if (normalizado.includes('pao trigo frances')) return true
+  if (normalizado.includes('pao trigo sovado')) return true
+  if (normalizado === 'pao frances') return true
+  if (normalizado === 'pao sovado') return true
+  if (normalizado === 'agua') return true
+  return false
 }
 
 // ── Helpers de normalização ────────────────────────────────────
