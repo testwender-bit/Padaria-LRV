@@ -1,130 +1,254 @@
-# Fix v9.5.8 — PF Complemento (Comp Seg/Qua/Sex) agora aparece D-1 na produção
+# Lista de Compras v2.0 — Reestruturação Completa
 
-## O problema
+## Visão geral
 
-> "Na configuração 'Quantidades PCQ por Escola' o 'Comp Seg' 'Comp Qua'
-> 'Comp Sex' esse é o pão de complemento, é pão francês, ele está
-> configurado quase correto. O problema é que o dia que coloco ele ali
-> é o dia de entrega e ele está aparecendo da mesma forma no dia de
-> produção. O dia de produção desse pão francês (só do pão francês) na
-> produção deve aparecer 1 dia antes logo esse 'Comp Seg' 'Comp Qua'
-> 'Comp Sex' aparecem nessa data para os motoristas e assim está. Mas
-> para a produção deve aparecer um dia antes. Seguindo a lógica
-> domingo terça e quinta."
+Reescrevi completamente a página **Nutrição → Lista de Compras** para
+atender aos dois fluxos solicitados:
 
-## Causa
+### Modo 1: PREVISÃO DE REDE
 
-O PF Complemento (pão francês complementar das creches) era processado
-**dentro do loop do PCQ** (seg/qua/sex = dia de entrega). Ele era
-adicionado a `itensPf` com `dia_entrega = diaKey` (seg/qua/sex) — o mesmo
-dia de produção que o PCQ.
+> "para prever quanto e quais alimentos vou precisar para cobrir x tempo
+> em toda a rede... o fluxo seria escolher quais escolas se é 1 2 3 ou 24
+> e talvez escolher no calendário de que dia a que dia, então a lista de
+> compra me dá quais alimentos e quantidade preciso para esse x tempo."
 
-Mas como o PF Complemento é **pão francês**, deveria seguir a regra
-**D-1** (produzido 1 dia antes da entrega), igual ao PF regular:
-- Entrega segunda → produção **domingo**
-- Entrega quarta → produção **terça**
-- Entrega sexta → produção **quinta**
+**Como usar:**
+1. Selecione o modo **"Previsão de Rede"**.
+2. Escolha o período (data início + data fim) via calendário.
+3. Selecione as escolas (use os botões rápidos: Todas, por Motorista, por
+   Categoria, ou marque individualmente).
+4. Clique em **Gerar Lista de Previsão**.
 
-O romaneio (motoristas) já estava correto, pois mostrava no dia de
-**entrega** (seg/qua/sex).
+O sistema busca todos os cardápios que têm semanas cujo período se
+sobrepõe ao solicitado, agrega os ingredientes × alunos das escolas
+selecionadas e retorna a lista consolidada.
 
-## Fix
+### Modo 2: PEDIDO SEMANAL
 
-Refatorado o processamento do PF Complemento em `/api/producao/route.ts`:
+> "para fazer os pedidos semanais das unidades uma vez que o cardápio já
+> tem os itens seria fácil o sistema entregar quais itens são necessário
+> para x escola para essa semana... aqui tem uma particularidade, apesar
+> do cardápio tratar como semana o pedido semanal das escolas devem
+> cobrir de terça de uma semana até segunda da outra semana. Com exceção
+> das escolas do interior (rural) que os pedidos devem cobrir de quarta
+> até terça da outra semana."
 
-### Antes
+**Como usar:**
+1. Selecione o modo **"Pedido Semanal"**.
+2. Selecione UMA escola no dropdown.
+3. Escolha uma data de referência (qualquer dia da semana desejada).
+4. Clique em **Gerar Pedido Semanal**.
 
-```ts
-// Dentro do if (diaTexto === 'segunda' || 'quarta' || 'sexta'):
-if (qtdComp > 0) {
-  itensPf.push({ ..., dia_entrega: diaKey })  // seg/qua/sex = dia de produção errado
-}
-```
+O sistema calcula automaticamente o período:
+- **Escolas URBANAS** (REGULAR, INTEGRAL, BIFASICA, CRECHE): **Terça da
+  semana atual → Segunda da semana seguinte** (7 dias).
+- **Escolas do INTERIOR** (categoria=INTERIOR): **Quarta da semana atual
+  → Terça da semana seguinte** (7 dias).
 
-### Depois
+A página mostra um aviso amarelo/azul explicando qual regra foi aplicada
+com base na categoria da escola selecionada.
 
-#### PF Complemento com entrega na SEGUNDA → produção DOMINGO
+## Normalização de nomes de ingredientes
 
-Adicionado um bloco **antes do loop `for i`**, no mesmo lugar onde
-`itensPfDomingo` é construído (linhas 130-176). Para cada escola com
-`pf_comp_segunda > 0`, injeta um item PF em `itensPfDomingo` com
-`dia_entrega: 'segunda'`.
+Implementei um módulo `lista-compras-utils.ts` que:
 
-#### PF Complemento com entrega na QUARTA → produção TERÇA
-#### PF Complemento com entrega na SEXTA → produção QUINTA
+1. **Define uma LISTA_CANONICA** com ~190 ingredientes na ordem EXATA
+   que você forneceu, agrupados em 10 categorias:
+   - HORTIFRUTI (legumes e verduras)
+   - FRUTAS
+   - POLPAS
+   - LATICINIOS
+   - CARNES_PROTEINAS
+   - BEBIDAS_LACTEAS (inclui leite integral, pão de forma integral)
+   - PADARIA
+   - MERCEARIA_SECA
+   - ESPECIARIAS (condimentos)
+   - PADARIA_CONFEITARIA (atacado)
 
-Adicionado um bloco **dentro do loop `for i`** (depois do bloco PCQ),
-que mapeia:
+2. **Mapeia variações para nomes canônicos**: ~250 variações mapeadas.
+   Por exemplo:
+   - `"Mandioca descascada"`, `"Mandioca"`, `"Aipim"`, `"Macaxeira"` →
+     `"Mandioca descascada"`
+   - `"Cenoura ralada"`, `"Cenoura picada"`, `"Cenoura"` → `"Cenoura"`
+   - `"Carne moída"`, `"Patinho moído"` → `"Carne bovina moída"`
+   - `"Maisena"` → `"Amido de milho"`
+   - `"PTS"` → `"Proteína de soja (kg)"`
+   - `"Colorau"`, `"Colorífero"` → `"Condimento: Colorau (pct 500gr)"`
+   - `"Açafrão"`, `"Cúrcuma"` → `"Condimento: Açafrão (30g)"`
+   - etc.
 
-```ts
-const pfCompEntregaParaProducao = {
-  segunda: 'domingo',  // processado no bloco domingo separado
-  quarta: 'terca',     // i=1
-  sexta: 'quinta',     // i=3
-}
-```
+3. **Algoritmo de normalização**:
+   - Remove acentos e converte para lowercase
+   - Remove qualificadores de preparo (cozido, cru, picado, ralado,
+     descascado, fresco, seco, inteiro, maduro, em cubos, em isca, etc.)
+   - Procura no mapa de variações
+   - Se não encontrar, retorna o nome limpo (title case) — vai para a
+     categoria "OUTROS" no final da lista
 
-Para cada dia de entrega (seg/qua/sex), só processa se `diaKey` (dia de
-produção corrente) bate com `pfCompEntregaParaProducao[entregaDia]`. Assim:
-- Quando o loop chega em `i=1` (terça), processa PF Comp de entrega quarta
-- Quando o loop chega em `i=3` (quinta), processa PF Comp de entrega sexta
+4. **Consolidação por nome canônico**: se dois alimentos do banco
+   mapeiam para o mesmo nome canônico (ex: "Mandioca" e
+   "Mandioca descascada"), as quantidades são SOMADAS e aparece como
+   um único item na lista.
 
-O item é injetado em `itensPf` (do dia de produção correto) com
-`dia_entrega` indicando o dia real de entrega (seg/qua/sex), mas
-**fisicamente** aparece na coluna de produção D-1 (dom/ter/qui).
+5. **Ordenação**: itens aparecem na ordem exata da LISTA_CANONICA.
+   Itens não mapeados vão para o final (categoria "OUTROS") em ordem
+   alfabética.
 
-### Romaneio não foi alterado
+## Visualização
 
-Conforme o usuário esclareceu, o romaneio (motoristas) já está correto,
-mostrando o PF Complemento no dia de **entrega** (seg/qua/sex). Não foi
-necessário mexer em `/api/romaneio/route.ts`.
+A lista é exibida **agrupada por categoria**, cada categoria em um card
+separado com:
+- Título da categoria + badge com nº de itens e total em kg
+- Tabela com colunas: Item, Qtd (kg), Qtd (g), Unidade de Compra, e
+  (no modo Previsão) número de escolas que usam o item
+- Se o nome canônico for diferente do nome original do banco, mostra o
+  original em itálico abaixo
 
-## Mapeamento final
+**Filtros disponíveis:**
+- Busca por texto (procura no nome canônico)
+- Filtro por categoria específica
 
-| Configuração (entrega) | Dia no Romaneio | Dia na Produção (D-1) |
-|------------------------|----------------|------------------------|
-| Comp Seg               | Segunda        | **Domingo**            |
-| Comp Qua               | Quarta         | **Terça**              |
-| Comp Sex               | Sexta          | **Quinta**             |
+**Exportações:**
+- **CSV** (com BOM UTF-8 — abre direto no Excel)
+- **XLSX** com 3-4 abas: Itens Consolidados, Resumo por Categoria, Por
+  Escola (somente Previsão), Escolas
+
+**Salvar snapshot**: salva a lista atual no banco (tabela ListaCompras)
+para consulta posterior.
 
 ## Arquivos incluídos
 
 ```
-src/app/api/producao/route.ts    # PF Complemento injetado no dia D-1 (dom/ter/qui)
+src/lib/lista-compras-utils.ts                              # NOVO: normalização + categorias + ordem
+src/app/api/nutricao/lista-compras/route.ts                 # REESCRITO: suporte a modo=PREVISAO/PEDIDO + legado
+src/app/(app)/nutricao/lista-compras/page.tsx               # REESCRITO: 2 modos (Previsão/Pedido)
 ```
 
 ## Como aplicar
 
 ```bash
 # Na RAIZ do projeto:
-unzip -o patch-pf-comp-d1-v9.5.8.zip -d .
+unzip -o patch-lista-compras-v2.zip -d .
 
 git add -A
-git commit -m "fix(v9.5.8): PF Complemento (Comp Seg/Qua/Sex) aparece D-1 na produção"
+git commit -m "feat: reestruturação completa da Lista de Compras (modo Previsão + modo Pedido semanal)"
 git push
 ```
 
+**Nenhuma migration necessária** — o schema Prisma não foi alterado.
+Todos os campos usados já existem (CardapioSemanaNutri.data_inicio/
+data_fim, Escola.categoria, etc.).
+
 ## Verificação
 
-1. Vá em **Configurações → PCQ → Editar uma creche**.
-2. Configure `Comp Seg = 30`, `Comp Qua = 30`, `Comp Sex = 30` (por exemplo).
-3. Salve.
-4. Vá para a página de **Produção → PF**:
-   - A creche deve aparecer com PF na coluna **Domingo** (correspondente
-     ao Comp Seg).
-   - A creche deve aparecer com PF na coluna **Terça** (correspondente
-     ao Comp Qua).
-   - A creche deve aparecer com PF na coluna **Quinta** (correspondente
-     ao Comp Sex).
-5. Vá para o **Romaneio por motorista**:
-   - A creche deve aparecer com PF nos dias de **entrega** (Segunda,
-     Quarta, Sexta) — como já estava antes.
-6. A quantidade total de PF na produção deve bater com a soma de
-   Comp Seg + Comp Qua + Comp Sex (somando com o PF regular).
+### Modo Previsão de Rede
 
-## Nota técnica
+1. Acesse **Nutrição → Lista de Compras**.
+2. Selecione **"Previsão de Rede"**.
+3. Escolha um período (ex.: 01/08/2026 a 31/08/2026 — um mês inteiro).
+4. Clique em **"Todas"** para selecionar todas as escolas.
+5. Clique em **Gerar Lista de Previsão**.
+6. A lista deve aparecer:
+   - KPIs no topo (modo, escolas, itens, total kg, período)
+   - Resumo por categoria (cards com nº itens e kg)
+   - Lista detalhada agrupada por categoria, na ORDEM que você definiu
+   - Ingredientes com nomes consolidados (ex: "Mandioca descascada"
+     mesmo se o banco tem "Mandioca", "Aipim", etc.)
+7. Clique em **CSV** ou **XLSX** para exportar.
 
-A checagem de feriados continua dupla: verifica o dia de **produção**
-(D-1) E o dia de **entrega**. Se qualquer um dos dois for feriado
-aplicável à categoria da escola, o PF Complemento é zerado
-(com o nome do feriado aparecendo no item).
+### Modo Pedido Semanal
+
+1. Selecione **"Pedido Semanal"**.
+2. Escolha uma escola urbana (ex.: "EMEF Érico Veríssimo" — categoria
+   INTEGRAL).
+3. Escolha uma data de referência (ex.: 20/08/2026 — quarta).
+4. Aparecerá um aviso azul: "Escola REGULAR/URBANA — pedido cobre de
+   TERÇA da semana atual até SEGUNDA da semana seguinte".
+5. Clique em **Gerar Pedido Semanal**.
+6. A lista deve aparecer com o período calculado automaticamente
+   (Terça 18/08 a Segunda 24/08, no exemplo).
+
+### Teste de escola do Interior
+
+1. Selecione uma escola com categoria INTERIOR (ex.: EMEIF Fredolino
+   Vieira Barros).
+2. Escolha a mesma data (20/08/2026).
+3. Aparecerá um aviso amarelo: "Escola do INTERIOR — pedido cobre de
+   QUARTA da semana atual até TERÇA da semana seguinte".
+4. O período será Quarta 19/08 a Terça 25/08.
+
+## Notas técnicas
+
+### Como o período do pedido é calculado
+
+```ts
+function calcularPeriodoPedido(categoria, refDate) {
+  const isInterior = categoria.toUpperCase() === 'INTERIOR'
+  if (isInterior) {
+    // Quarta da semana atual → terça da semana seguinte (7 dias)
+    const inicio = paraDiaSemana(refDate, 3)  // 3 = quarta
+    const fim = addDays(inicio, 6)
+  } else {
+    // Terça da semana atual → segunda da semana seguinte (7 dias)
+    const inicio = paraDiaSemana(refDate, 2)  // 2 = terça
+    const fim = addDays(inicio, 6)
+  }
+}
+```
+
+`paraDiaSemana(d, alvo)` ajusta a data para o dia da semana alvo
+(0=domingo, 1=segunda, ..., 6=sábado) na mesma semana.
+
+### Como os cardápios são selecionados
+
+Para cada escola-alvo (no modo Previsão) ou a escola selecionada (no
+modo Pedido), o sistema busca o cardápio na seguinte ordem:
+
+1. **Cardápio próprio da escola** (`CardapioNutricional.escola_id = escola.id`)
+2. **Cardápio base da categoria** (`escola_id = null AND categoria_escola = escola.categoria`)
+3. **Qualquer cardápio base** (`escola_id = null`)
+
+Dentro do cardápio, busca as semanas cujo período
+(`data_inicio` a `data_fim`) se sobrepõe ao período solicitado
+(modo Previsão) ou ao período calculado do pedido (modo Pedido).
+
+### Compatibilidade com a página antiga
+
+A API mantém o **modo legado**: se `modo` for omitido, aceita os
+parâmetros antigos (`cardapio_id`, `semanas`, `escolas_ids`) e retorna
+o formato antigo (sem normalização). Isso garante que outras páginas
+que possam estar usando a API antiga não quebrem.
+
+### Ingredientes não mapeados
+
+Se um ingrediente do banco não for reconhecido na LISTA_CANONICA, ele
+aparece numa categoria **"Outros (não mapeados)"** no final da lista,
+com o nome limpo (sem acentos). Para mapeá-lo, edite
+`src/lib/lista-compras-utils.ts` e adicione uma entrada no
+`MAPA_VARIACOES`:
+
+```ts
+'novo ingrediente': 'Nome Canônico',
+```
+
+E adicione o `Nome Canônico` na `LISTA_CANONICA` com a categoria e
+unidade apropriadas.
+
+## Limitações conhecidas
+
+1. **Unidade de compra**: por padrão, todas as quantidades são
+   convertidas para kg (gramas / 1000). Itens como "Manteiga (500g)"
+   têm a unidade canônica `unid`, mas a conversão ainda usa kg como
+   aproximação. Refinamentos podem ser feitos adicionando fatores de
+   conversão específicos no futuro.
+
+2. **Cardápios RASCUNHO**: o modo Pedido só considera cardápios com
+   `status = 'APROVADO'`. Cardápios em rascunho são ignorados. O modo
+   Previsão considera todos os cardápios (aprovados ou não) que tenham
+   semanas no período.
+
+3. **Snapshot depende de cardapio_id**: o modelo `ListaCompras` exige
+   `cardapio_id` (não-nulo). No modo Previsão, pode haver múltiplos
+   cardápios; o snapshot usa o primeiro da lista. Isso é uma limitação
+   do schema atual — para suportar múltiplos cardápios por snapshot,
+   seria necessário alterar o schema.
