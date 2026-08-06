@@ -89,6 +89,8 @@ model Escola {
   recebe_lanche Boolean  @default(true)
   ativo         Boolean  @default(true)
   ordem_rota    Int      @default(0)
+  // v9.6.3: ordenação específica para PCQ (pão de cachorro quente) na produção
+  ordem_pcq      Int      @default(0)
   obs           String?
 
   // ── NOVOS CAMPOS: lista de compras / cardápio ──

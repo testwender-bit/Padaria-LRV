@@ -255,6 +255,18 @@ export default function ProducaoPage() {
     return (a.nome_curto || '').localeCompare(b.nome_curto || '')
   }
 
+  // v9.6.3: ordenação ESPECÍFICA para PCQ (pão de cachorro quente).
+  // Usa o campo ordem_pcq (separado de ordem_rota) para permitir que o
+  // usuário defina uma ordem diferente apenas para PCQ nos documentos
+  // impressos de produção. Se ordem_pcq for 0 para ambas, cai no desempate
+  // alfabético por nome_curto.
+  function sortEscolasPCQ(a: any, b: any) {
+    const oa = a.ordem_pcq ?? 0
+    const ob = b.ordem_pcq ?? 0
+    if (oa !== ob) return oa - ob
+    return (a.nome_curto || '').localeCompare(b.nome_curto || '')
+  }
+
   const escolasPF = consolidado.escolas.filter(e => e.total_pf > 0).sort(sortEscolas)
   // v9.5.4: "Produção Extra" = apenas rota OUTROS (instituições avulsas:
   // Bombeiros, Ambulância, etc.). INTERIOR (Fredolino, São Cristóvão) é
@@ -262,8 +274,9 @@ export default function ProducaoPage() {
   const escolasRegularesPF = escolasPF.filter(e => (e.rota || '').toUpperCase() !== 'OUTROS')
   const escolasOutrasPF = escolasPF.filter(e => (e.rota || '').toUpperCase() === 'OUTROS')
 
-  // Agrupa escolas PCQ e Lanche (mesma ordenação)
-  const escolasPCQ = consolidado.escolas.filter(e => e.total_pcq > 0).sort(sortEscolas)
+  // v9.6.3: PCQ agora usa ordenação ESPECÍFICA (ordem_pcq), separada do PF.
+  // Lanche continua usando ordem_rota (não foi solicitada ordem específica).
+  const escolasPCQ = consolidado.escolas.filter(e => e.total_pcq > 0).sort(sortEscolasPCQ)
   const escolasLanche = consolidado.escolas.filter(e => e.total_lanche > 0).sort(sortEscolas)
 
   // Datas para o romaneio (entrega: segunda-sexta)

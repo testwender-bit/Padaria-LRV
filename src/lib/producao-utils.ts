@@ -36,7 +36,8 @@ export interface ItemProducao {
   escola_curto: string
   categoria: string
   rota: string
-  ordem_rota: number  // v9.5.2: OBRIGATÓRIO — usado para ordenação definitiva
+  ordem_rota: number  // v9.5.2: OBRIGATÓRIO — usado para ordenação do PF
+  ordem_pcq: number  // v9.6.3: ordenação ESPECÍFICA para PCQ (pão de cachorro quente)
   busca_propria: boolean
   produto: 'PF' | 'PCQ' | 'LANCHE' | 'PF_COMP'
   quantidade: number

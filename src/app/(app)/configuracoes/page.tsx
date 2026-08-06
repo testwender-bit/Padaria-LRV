@@ -39,6 +39,8 @@ interface Escola {
   recebe_lanche: boolean
   ativo: boolean
   ordem_rota: number
+  // v9.6.3: ordenação específica para PCQ (pão de cachorro quente) na produção
+  ordem_pcq: number
   obs: string | null
   // v9.5.7: marca escolas que sempre usam a quantidade PADRÃO de pão francês
   // independente do cardápio da semana (útil para Outras Instituições como
@@ -230,6 +232,8 @@ export default function ConfiguracoesPage() {
         obs: e.obs,
         // v9.5.7: preserva pao_fixo ao renumerar
         pao_fixo: (e as any).pao_fixo === true,
+        // v9.6.3: preserva ordem_pcq ao renumerar (renumerar só mexe em ordem_rota)
+        ordem_pcq: (e as any).ordem_pcq ?? 0,
       }))
       // Envia todas as atualizações em paralelo
       const results = await Promise.all(
@@ -334,6 +338,11 @@ export default function ConfiguracoesPage() {
                 <Label>Ordem na Rota</Label>
                 <Input type="number" value={editEscola.ordem_rota || 0} onChange={(e) => setEditEscola((prev) => ({ ...prev, ordem_rota: parseInt(e.target.value) || 0 }))} />
               </div>
+              <div>
+                <Label>Ordem PCQ <span className="text-xs text-muted-foreground">(pão de cachorro quente)</span></Label>
+                <Input type="number" value={editEscola.ordem_pcq || 0} onChange={(e) => setEditEscola((prev) => ({ ...prev, ordem_pcq: parseInt(e.target.value) || 0 }))} />
+                <p className="text-[10px] text-muted-foreground mt-1">Ordenação específica para PCQ na produção/impressão (separada da ordem de rota do PF)</p>
+              </div>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={editEscola.recebe_pf !== false} onChange={(e) => setEditEscola((prev) => ({ ...prev, recebe_pf: e.target.checked }))} />
@@ -412,6 +421,11 @@ export default function ConfiguracoesPage() {
               <div>
                 <Label>Ordem na Rota</Label>
                 <Input type="number" value={editEscola.ordem_rota || 0} onChange={(e) => setEditEscola((prev) => ({ ...prev, ordem_rota: parseInt(e.target.value) || 0 }))} />
+              </div>
+              <div>
+                <Label>Ordem PCQ <span className="text-xs text-muted-foreground">(pão de cachorro quente)</span></Label>
+                <Input type="number" value={editEscola.ordem_pcq || 0} onChange={(e) => setEditEscola((prev) => ({ ...prev, ordem_pcq: parseInt(e.target.value) || 0 }))} />
+                <p className="text-[10px] text-muted-foreground mt-1">Ordenação específica para PCQ na produção/impressão (separada da ordem de rota do PF)</p>
               </div>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 text-sm">
@@ -522,6 +536,8 @@ export default function ConfiguracoesPage() {
                           recebe_lanche: escola.recebe_lanche,
                           ativo: escola.ativo,
                           ordem_rota: escola.ordem_rota,
+                          // v9.6.3: carrega ordem_pcq para o input
+                          ordem_pcq: (escola as any).ordem_pcq ?? 0,
                           obs: escola.obs,
                           // v9.5.7: carrega pao_fixo para o checkbox
                           pao_fixo: (escola as any).pao_fixo === true,

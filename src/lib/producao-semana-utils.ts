@@ -12,7 +12,8 @@ export interface EscolaConsolidada {
   nome_curto: string
   rota: string
   ordem: number
-  ordem_rota: number  // v9.5: para ordenação correta
+  ordem_rota: number  // v9.5: para ordenação correta (PF)
+  ordem_pcq: number  // v9.6.3: ordenação ESPECÍFICA para PCQ
   pf: Record<DiaProducao, number>
   pcq: Record<DiaProducao, number>
   lanche: Record<DiaProducao, number>
@@ -63,6 +64,8 @@ export function consolidarProducaoSemana(
         // v9.5.2: ordem_rota agora é campo obrigatório em ItemProducao.
         // Fallback 0 só para segurança (não deve acontecer).
         ordem_rota: typeof item.ordem_rota === 'number' ? item.ordem_rota : 0,
+        // v9.6.3: ordem_pcq — ordenação específica para PCQ
+        ordem_pcq: typeof (item as any).ordem_pcq === 'number' ? (item as any).ordem_pcq : 0,
         pf: diasVazios(),
         pcq: diasVazios(),
         lanche: diasVazios(),

@@ -39,6 +39,8 @@ export async function POST(request: Request) {
         recebe_lanche: body.recebe_lanche !== false,
         ativo: body.ativo !== false,
         ordem_rota: body.ordem_rota || 0,
+        // v9.6.3: ordem_pcq — ordenação específica para PCQ na produção
+        ordem_pcq: body.ordem_pcq || 0,
         obs: body.obs,
         // v9.5.7: pao_fixo — sempre usar quantidade padrão de PF
         pao_fixo: body.pao_fixo === true,
@@ -100,6 +102,8 @@ export async function PUT(request: Request) {
         recebe_lanche: body.recebe_lanche,
         ativo: body.ativo,
         ordem_rota: body.ordem_rota,
+        // v9.6.3: ordem_pcq — ordenação específica para PCQ na produção
+        ordem_pcq: body.ordem_pcq,
         obs: body.obs,
         // v9.5.7: pao_fixo — sempre usar quantidade padrão de PF
         pao_fixo: body.pao_fixo,

@@ -1,109 +1,151 @@
-# Fix v9.6.2 — Mapeamentos TACO finais + itens a IGNORAR
+# Fix v9.6.3 — Ordenação específica para PCQ (Pão de Cachorro Quente)
 
 ## O que mudou
 
-Com base nos 13 ingredientes restantes em "Outros" que você reportou,
-mapeei todos e adicionei a capacidade de **IGNORAR** itens que não são
-de compra (água) ou são produzidos pela padaria (pães).
+Adicionei um campo **`ordem_pcq`** separado de `ordem_rota` para permitir
+que você defina uma ordem **específica** para o PCQ na produção e nos
+documentos impressos — independente da ordem do Pão Francês.
 
-## Mapeamentos adicionados
+### Antes
 
-| Nome TACO (limpo) | Mapeado para | Ação |
-|---|---|---|
-| Água | — | **IGNORAR** (não é item de compra) |
-| Carne (genérico) | Carne bovina de 2ª em cubo | mapeado |
-| Carne de Carneiro | Carne de Ovino | mapeado |
-| Ervilha Enlatada Drenada | Ervilha verde congelada | mapeado (mesmo produto) |
-| Extrato de tomate 1,7kg) | Extrato de tomate 1,7kg | mapeado (typo corrigido) |
-| Frango Coxa sem Pele | Coxa e sobrecoxa | mapeado |
-| Frango Peito com Pele | Filé de peito de frango | mapeado |
-| Ovo Mexido | Ovos de galinha (dz) | mapeado |
-| Pao Trigo Frances | — | **IGNORAR** (produzido pela padaria) |
-| Pao Trigo Sovado | — | **IGNORAR** (produzido pela padaria) |
-| Proteina Texturizada de Soja | Proteína de soja (kg) | mapeado |
-| Trigo para Quibe | Farinha para kibe (500g) | mapeado |
-| Uva Italia | Uva vermelha | mapeado |
+- Tudo (PF, PCQ, Lanche) usava `ordem_rota` para ordenação
+- Não era possível ter uma ordem diferente só para PCQ
 
-## Novo recurso: itens a IGNORAR
+### Depois
 
-Adicionei a constante `ITENS_IGNORAR` e a função `deveIgnorarIngrediente()`
-em `lista-compras-utils.ts`. A API agora chama `.filter(item => !deveIgnorarIngrediente(item.nome_canonico))`
-na construção final dos itens, removendo completamente:
+- **PF** continua usando `ordem_rota` (inalterado)
+- **PCQ** agora usa `ordem_pcq` (campo novo, separado)
+- **Lanche** continua usando `ordem_rota` (inalterado)
 
-- **Água** — água da torneira, não é item de compra
-- **Pão Trigo Francês** — produzido pela própria padaria
-- **Pão Trigo Sovado** — produzido pela própria padaria
-- **Pão Francês** — produzido pela própria padaria
-- **Pão Sovado** — produzido pela própria padaria
+## Como usar
 
-A função verifica tanto match exato quanto match por substring
-(`pao trigo frances`, `pao trigo sovado`, etc.), cobrindo variações
-como "Pao Trigo Frances Especial".
+### 1. Aplicar o patch
 
-## Confirmação de ordem
+```bash
+# Na RAIZ do projeto:
+unzip -o patch-ordem-pcq-v9.6.3.zip -d .
 
-A ordem da LISTA_CANONICA foi confirmada — está exatamente como você
-listou (Hortifruti → Frutas → Polpas → Laticínios → Carnes → Bebidas
-Lácteas → Mercearia Seca → Especiarias → Padaria/Confeitaria). Nenhuma
-alteração na ordem foi necessária.
+# Adicionar o campo ordem_pcq ao schema (preserva Postgres):
+bash add-ordem-pcq.sh
+
+# Criar a coluna no banco:
+npx prisma db push
+
+# Commit e push:
+git add -A
+git commit -m "feat(v9.6.3): ordem específica para PCQ na produção"
+git push
+```
+
+### 2. Configurar a ordem PCQ por escola
+
+1. Acesse **Configurações → Escolas**.
+2. Edite uma escola.
+3. No formulário, agora há **dois campos de ordem**:
+   - **Ordem na Rota** (para Pão Francês) — como antes
+   - **Ordem PCQ** (para Pão de Cachorro Quente) — **NOVO**
+4. Defina o número de ordem PCQ para cada escola.
+5. Salve.
+
+### 3. Ver na produção
+
+1. Acesse **Produção** (visão semana).
+2. Na tabela de **PCQ — PÃO DE CACHORRO QUENTE**, as escolas agora
+   aparecem na ordem definida por `ordem_pcq`.
+3. A tabela de **PÃO FRANCÊS** continua usando `ordem_rota` (inalterada).
+4. Na **impressão** (Ctrl+P), o documento de PCQ também segue `ordem_pcq`.
+
+## Detalhes técnicos
+
+### Novo campo no schema
+
+```prisma
+model Escola {
+  ...
+  ordem_rota    Int      @default(0)   // ordenação do PF
+  ordem_pcq     Int      @default(0)   // v9.6.3: ordenação do PCQ
+  ...
+}
+```
+
+### Propagação na API de produção
+
+A API `/api/producao` agora passa `ordem_pcq` em todos os 6 lugares onde
+monta `ItemProducao`:
+
+```ts
+itensPfDomingo.push({
+  ...
+  ordem_rota: escola.ordem_rota ?? 0,
+  ordem_pcq: escola.ordem_pcq ?? 0,  // v9.6.3
+  ...
+})
+```
+
+### Consolidação
+
+A função `consolidarProducaoSemana` agora preenche `ordem_pcq` no
+`EscolaConsolidada`:
+
+```ts
+ordem_pcq: typeof item.ordem_pcq === 'number' ? item.ordem_pcq : 0,
+```
+
+### Ordenação na página de produção
+
+Nova função `sortEscolasPCQ` (separada de `sortEscolas`):
+
+```ts
+function sortEscolasPCQ(a, b) {
+  const oa = a.ordem_pcq ?? 0
+  const ob = b.ordem_pcq ?? 0
+  if (oa !== ob) return oa - ob
+  return (a.nome_curto || '').localeCompare(b.nome_curto || '')
+}
+
+const escolasPCQ = consolidado.escolas
+  .filter(e => e.total_pcq > 0)
+  .sort(sortEscolasPCQ)  // v9.6.3: usa ordem_pcq
+```
+
+### Configurações
+
+- Interface `Escola` local agora tem `ordem_pcq: number`.
+- Formulário de **Criar** e **Editar** escola tem o input "Ordem PCQ".
+- Ao editar, o `ordem_pcq` da escola é carregado no formulário.
+- O botão **Renumerar** (que só renumera `ordem_rota`) agora preserva
+  o `ordem_pcq` existente de cada escola.
 
 ## Arquivos incluídos
 
 ```
-src/lib/lista-compras-utils.ts                              # novos mapeamentos + ITENS_IGNORAR + deveIgnorarIngrediente
-src/app/api/nutricao/lista-compras/route.ts                 # filtro deveIgnorarIngrediente nos modos PREVISAO e PEDIDO
-```
-
-## Como aplicar
-
-```bash
-# Na RAIZ do projeto:
-unzip -o patch-lista-compras-mapeamentos-v9.6.2.zip -d .
-
-git add -A
-git commit -m "fix(v9.6.2): mapeamentos TACO finais + ignora água e pães da padaria"
-git push
+add-ordem-pcq.sh                                              # script que adiciona APENAS o campo (preserva Postgres)
+src/lib/producao-utils.ts                                     # ItemProducao.ordem_pcq
+src/lib/producao-semana-utils.ts                              # EscolaConsolidada.ordem_pcq + preenche
+src/app/api/escolas/route.ts                                  # POST/PUT aceitam ordem_pcq
+src/app/api/producao/route.ts                                 # 6× ordem_pcq: escola.ordem_pcq
+src/app/(app)/configuracoes/page.tsx                          # input "Ordem PCQ" + carrega/preserva
+src/app/(app)/producao/page.tsx                               # sortEscolasPCQ + escolasPCQ usa
 ```
 
 ## Verificação
 
-1. Acesse **Nutrição → Lista de Compras → Pedido Semanal**.
-2. Gere um pedido.
-3. **Água** não deve mais aparecer (antes eram 20.493 kg em "Outros").
-4. **Pão Trigo Francês** e **Pão Trigo Sovado** não devem aparecer.
-5. Os outros 10 ingredientes devem aparecer em suas categorias corretas:
-   - "Carne" → Carnes e Proteínas como "Carne bovina de 2ª em cubo"
-   - "Carne de Carneiro" → Carnes e Proteínas como "Carne de Ovino"
-   - "Ervilha Enlatada Drenada" → Hortifruti como "Ervilha verde congelada"
-   - "Extrato de tomate 1,7kg)" → Mercearia Seca como "Extrato de tomate 1,7kg"
-   - "Frango Coxa sem Pele" → Carnes como "Coxa e sobrecoxa"
-   - "Frango Peito com Pele" → Carnes como "Filé de peito de frango"
-   - "Ovo Mexido" → Carnes como "Ovos de galinha (dz)"
-   - "Proteina Texturizada de Soja" → Mercearia como "Proteína de soja (kg)"
-   - "Trigo para Quibe" → Mercearia como "Farinha para kibe (500g)"
-   - "Uva Italia" → Frutas como "Uva vermelha"
-6. A categoria "Outros" deve estar **vazia** ou com muito poucos itens
-   (apenas ingredientes verdadeiramente novos sem correspondente).
+1. **Configurações → Escolas** → editar uma escola → deve aparecer o
+   campo **"Ordem PCQ (pão de cachorro quente)"** abaixo de "Ordem na Rota".
+2. Defina ordens PCQ diferentes para algumas escolas (ex.: escola A = 1,
+   escola B = 2, escola C = 3).
+3. Salve.
+4. **Produção → PCQ**: as escolas devem aparecer na ordem definida por
+   `ordem_pcq` — NÃO necessariamente a mesma ordem do PF.
+5. **Imprimir (Ctrl+P)**: o documento de PCQ segue a mesma ordem `ordem_pcq`.
+6. **PF** continua na ordem `ordem_rota` (inalterada).
 
-## Nota técnica
+## Notas
 
-Se no futuro aparecer um novo ingrediente que deve ser ignorado, basta
-adicionar o nome canônico à constante `ITENS_IGNORAR` em
-`lista-compras-utils.ts`:
-
-```ts
-export const ITENS_IGNORAR: string[] = [
-  'Água',
-  'Pão Trigo Francês',
-  'Pão Trigo Sovado',
-  // adicionar aqui:
-  'Novo Item Para Ignorar',
-]
-```
-
-E se aparecer um ingrediente que deve ser mapeado para um item existente,
-adicionar a variação no `MAPA_VARIACOES`:
-
-```ts
-'nova variacao taco': 'Nome Canônico Existente',
-```
+- Se `ordem_pcq` for 0 para todas as escolas, a ordenação cai no
+  desempate alfabético por `nome_curto` (mesmo comportamento do PF
+  quando todas têm `ordem_rota = 0`).
+- O **Lanche** continua usando `ordem_rota` — se no futuro precisar de
+  ordem específica para Lanche também, o mesmo padrão pode ser aplicado.
+- O **Romaneio** não foi alterado — continua agrupado por motorista e
+  ordenado por `ordem_rota` dentro de cada motorista.

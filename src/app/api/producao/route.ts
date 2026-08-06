@@ -116,6 +116,7 @@ export async function GET(request: Request) {
         categoria: escola.categoria,
         rota: escola.rota,
         ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
+        ordem_pcq: (escola as any).ordem_pcq ?? 0,  // v9.6.3
         busca_propria: escola.busca_propria,
         produto: 'PF',
         quantidade: qtd,
@@ -164,6 +165,7 @@ export async function GET(request: Request) {
         categoria: escola.categoria,
         rota: escola.rota,
         ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
+        ordem_pcq: (escola as any).ordem_pcq ?? 0,  // v9.6.3
         busca_propria: escola.busca_propria,
         produto: 'PF',
         quantidade: qtd,
@@ -229,6 +231,7 @@ export async function GET(request: Request) {
             categoria: escola.categoria,
             rota: escola.rota,
             ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
+        ordem_pcq: (escola as any).ordem_pcq ?? 0,  // v9.6.3
             busca_propria: escola.busca_propria,
             produto: 'PF',
             quantidade: qtd,
@@ -290,6 +293,7 @@ export async function GET(request: Request) {
               categoria: escola.categoria,
               rota: escola.rota,
               ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
+        ordem_pcq: (escola as any).ordem_pcq ?? 0,  // v9.6.3
               busca_propria: escola.busca_propria,
               produto: 'PCQ',
               quantidade: qtd,
@@ -374,6 +378,7 @@ export async function GET(request: Request) {
             categoria: escola.categoria,
             rota: escola.rota,
             ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
+        ordem_pcq: (escola as any).ordem_pcq ?? 0,  // v9.6.3
             busca_propria: escola.busca_propria,
             produto: 'PF',
             quantidade: qtd,
@@ -408,6 +413,7 @@ export async function GET(request: Request) {
           categoria: escola.categoria,
           rota: escola.rota,
           ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
+        ordem_pcq: (escola as any).ordem_pcq ?? 0,  // v9.6.3
           busca_propria: escola.busca_propria,
           produto: 'LANCHE',
           quantidade: qtd,
