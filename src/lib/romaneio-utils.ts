@@ -9,7 +9,8 @@ export interface EscolaRomaneio {
   nome: string
   nome_curto: string
   rota?: string
-  ordem_rota?: number  // v9.5.2: para ordenação dentro da rota
+  ordem_rota?: number  // v9.5.2: para ordenação dentro da rota (PF)
+  ordem_pcq?: number   // v9.6.5: ordenação específica para PCQ no romaneio
   pf: Record<DiaSemana, number>
   pcq: Record<DiaSemana, number>
   lanche: Record<DiaSemana, number>

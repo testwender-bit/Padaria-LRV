@@ -163,7 +163,12 @@ export default function RomaneioPage() {
                         <th className="print-col-total">TOTAL</th>
                       </tr></thead>
                       <tbody>
-                        {romaneio.escolas.filter((e) => e.total_pcq > 0).map((escola) => (
+                        {romaneio.escolas.filter((e) => e.total_pcq > 0).sort((a, b) => {
+                          const oa = a.ordem_pcq ?? 0
+                          const ob = b.ordem_pcq ?? 0
+                          if (oa !== ob) return oa - ob
+                          return (a.nome_curto || '').localeCompare(b.nome_curto || '')
+                        }).map((escola) => (
                           <tr key={escola.id}>
                             <td className="print-col-escola">{escola.nome_curto}</td>
                             {DIAS_SEMANA.map((d) => (<td key={d} className="print-col-dia">{escola.pcq[d] > 0 ? escola.pcq[d] : '—'}</td>))}
@@ -318,7 +323,12 @@ function RomaneioRotaCard({ romaneio, lancheRegular }: { romaneio: RomaneioMotor
                   <th className="text-right p-2 text-xs font-medium text-muted-foreground bg-orange-50">Total</th>
                 </tr></thead>
                 <tbody>
-                  {romaneio.escolas.filter((e) => e.total_pcq > 0).map((escola) => (
+                  {romaneio.escolas.filter((e) => e.total_pcq > 0).sort((a, b) => {
+                          const oa = a.ordem_pcq ?? 0
+                          const ob = b.ordem_pcq ?? 0
+                          if (oa !== ob) return oa - ob
+                          return (a.nome_curto || '').localeCompare(b.nome_curto || '')
+                        }).map((escola) => (
                     <tr key={escola.id} className="border-b border-muted/30 hover:bg-muted/20">
                       <td className="p-2 font-medium text-sm">{escola.nome_curto}</td>
                       {DIAS_SEMANA.map((d) => (<td key={d} className="p-2 text-center font-mono text-sm">{escola.pcq[d] || ''}</td>))}

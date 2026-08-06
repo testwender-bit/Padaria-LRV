@@ -171,6 +171,7 @@ export async function GET(request: Request) {
         nome_curto: escola.nome_curto,
         rota: escola.rota,
         ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
+        ordem_pcq: (escola as any).ordem_pcq ?? 0,  // v9.6.5
         pf,
         pcq,
         lanche,
