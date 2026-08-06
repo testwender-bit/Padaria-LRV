@@ -531,7 +531,9 @@ export default function ProducaoPage() {
             na rota OUTROS, junto com as demais. */}
 
         {/* ==================== ROMANEIO POR MOTORISTA ==================== */}
-        {romaneios.map((romaneio) => (
+        {/* v9.6.6: Não imprimir romaneio da rota BUSCA_PROPRIA — essas escolas
+            não têm motorista (retiram no balcão). A página não deve ser impressa. */}
+        {romaneios.filter((r) => r.rota !== 'BUSCA_PROPRIA').map((romaneio) => (
           <div key={romaneio.rota}>
             {/* PF Romaneio */}
             {romaneio.total_pf > 0 && (
@@ -648,7 +650,12 @@ export default function ProducaoPage() {
                         <th className="print-col-total">TOTAL</th>
                       </tr></thead>
                       <tbody>
-                        {romaneio.escolas.filter((e) => e.total_pcq > 0).map((escola) => (
+                        {romaneio.escolas.filter((e) => e.total_pcq > 0).sort((a, b) => {
+                          const oa = (a as any).ordem_pcq ?? 0
+                          const ob = (b as any).ordem_pcq ?? 0
+                          if (oa !== ob) return oa - ob
+                          return (a.nome_curto || '').localeCompare(b.nome_curto || '')
+                        }).map((escola) => (
                           <tr key={escola.id}>
                             <td className="print-col-escola">{escola.nome_curto}</td>
                             {DIAS_SEMANA.map((d) => (<td key={d} className="print-col-dia">{escola.pcq[d] > 0 ? escola.pcq[d] : '—'}</td>))}

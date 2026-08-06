@@ -1,169 +1,78 @@
-# Fix v9.6.4 — Override manual de alérgenos + corrige falso positivo de cuscuz
+# Fix v9.6.6 — PCQ do romaneio na produção respeita ordem_pcq + remove Busca Própria
 
-## O que mudou
+## O que estava acontecendo
 
-1. **Corrigido falso positivo**: "Flocos de milho (cuscuz)" não é mais
-   marcado como Trigo/Glúten
-2. **Override manual**: agora você pode marcar/desmarcar alérgenos
-   manualmente em cada preparação, quando a detecção automática erra
+1. **PCQ não respeitava `ordem_pcq` na impressão da produção**: quando a
+   produção é impressa, ela inclui o romaneio por motorista (PF + PCQ +
+   Lanche). A tabela de PCQ dentro do romaneio usava a ordem padrão
+   (ordem_rota), não a ordem_pcq específica.
 
-## Bug 1: Cuscuz marcado como Trigo (falso positivo)
+2. **Página "ROTA BUSCA PRÓPRIA" era impressa**: escolas com rota
+   BUSCA_PROPRIA (que retiram no balcão, sem motorista) tinham uma
+   página de romaneio impressa — desnecessário.
 
-### Causa
+## O que foi corrigido
 
-A lista `PADROES_TRIGO` em `alergenos-utils.ts` continha `'cuscuz'` e
-`'cuscuz paulista'`. Como a detecção usa `nome.includes(palavra)`, qualquer
-ingrediente com "cuscuz" no nome (ex.: "Flocos de milho (cuscuz)") era
-marcado como Trigo.
+### 1. PCQ do romaneio respeita `ordem_pcq`
 
-Mas **cuscuz de milho NÃO tem trigo/glúten** — é feito de flocos de milho.
-O cuscuz paulista pode levar farinha de milho com trigo, mas a detecção
-automática gera mais falsos positivos do que verdadeiros.
+Na página de produção, a tabela de PCQ dentro de cada romaneio de
+motorista agora faz `.sort()` por `ordem_pcq` antes de renderizar:
 
-### Fix
-
-Removidos `'cuscuz'`, `'cuscuz paulista'` e `'cuscoz'` (typo) da lista de
-padrões de Trigo. Agora o cuscuz não é mais detectado automaticamente como
-Trigo — se uma preparação de cuscuz realmente tiver trigo (ex.: cuscuz
-paulista com farinha mista), o nutricionista pode marcar manualmente.
-
-## Bug 2: Override manual de alérgenos
-
-### Novos campos no schema
-
-Adicionados ao model `Preparacao`:
-
-```prisma
-alergenos_bloqueados  String  @default("[]")  // JSON: siglas REMOVIDAS da detecção
-alergenos_forcados    String  @default("[]")  // JSON: siglas ADICIONADAS à detecção
+```tsx
+{romaneio.escolas.filter((e) => e.total_pcq > 0).sort((a, b) => {
+  const oa = (a as any).ordem_pcq ?? 0
+  const ob = (b as any).ordem_pcq ?? 0
+  if (oa !== ob) return oa - ob
+  return (a.nome_curto || '').localeCompare(b.nome_curto || '')
+}).map((escola) => ...)}
 ```
 
-### Nova função
+A API de romaneio já passa `ordem_pcq` (corrigido no v9.6.5), então
+o campo está disponível. Agora a tabela de PCQ no romaneio segue a
+mesma ordem que a tabela de PCQ na produção.
 
-`detectarAlergenosPreparacaoComOverride(ingredientes, bloqueados, forcados)`:
+### 2. Página "BUSCA PRÓPRIA" removida da impressão
 
-```
-Resultado = (detecção automática ∪ alergenos_forcados) − alergenos_bloqueados
-```
+O `romaneios.map()` agora filtra a rota BUSCA_PROPRIA antes de iterar:
 
-- **alergenos_bloqueados**: siglas que o usuário DESMARCOU (removidas da
-  detecção automática — ex.: desmarcar "T" de um cuscuz de milho que foi
-  falsamente detectado).
-- **alergenos_forcados**: siglas que o usuário MARCOU manualmente
-  (adicionadas além da detecção automática — ex.: um ingrediente que a
-  detecção não pegou mas que o nutricionista sabe conter alérgeno).
-
-### UI na página de Preparações
-
-Ao criar/editar uma preparação, agora há uma seção **"Identificação de
-Alérgenos"** no rodapé do formulário com:
-
-- **Badges dos alérgenos atuais** (resultado final após override)
-- **Coluna "Desmarcar"** (amarela): lista os alérgenos detectados
-  automaticamente com checkbox. Marcar = remover da lista (bloquear).
-- **Coluna "Marcar manualmente"** (azul): lista os 4 alérgenos com
-  checkbox. Marcar = adicionar à lista (forçar).
-
-A detecção é **ao vivo** — conforme você adiciona/remove ingredientes,
-os alérgenos detectados se atualizam, e os overrides (bloqueados/forçados)
-são preservados.
-
-### Propagação
-
-A função `detectarAlergenosPreparacaoComOverride` agora é usada em:
-- **API `/api/nutricao/preparacoes`** (GET — filtro por alérgenos)
-- **Página de Cardápio** (filtro "sem alérgenos" ao adicionar preparação)
-- **Página de Cardápio** (badges exibidos na lista de preparações)
-- **PDF do Cardápio** (badges no documento impresso)
-
-A função `detectarAlergenosPreparacao` original foi mantida para
-compatibilidade, mas as chamadas acima agora usam a versão com override.
-
-## Como usar
-
-### Aplicar o patch
-
-```bash
-# Cria branch para teste
-git checkout -b fix/alergenos-manual-v9.6.4
-
-# Extrai o patch
-unzip -o alergenos-manual-v964.zip -d .
-
-# Adiciona APENAS os campos ao schema (preserva Postgres)
-bash add-alergenos-manual.sh
-
-# Gera o Prisma Client (IMPORTANTE!)
-npx prisma generate
-
-# Cria as colunas no banco
-npx prisma db push
-
-# Commit e push
-git add -A
-git commit -m "feat(v9.6.4): override manual de alergenos + corrige falso positivo de cuscuz"
-git push -u origin fix/alergenos-manual-v9.6.4
+```tsx
+{romaneios.filter((r) => r.rota !== 'BUSCA_PROPRIA').map((romaneio) => ...)}
 ```
 
-### Desmarcar um alérgeno incorreto
-
-1. Acesse **Nutrição → Preparações**.
-2. Edite a preparação que tem o alérgeno errado (ex.: cuscuz marcado
-   como Trigo).
-3. Role até a seção **"Identificação de Alérgenos"**.
-4. Na coluna **"Desmarcar"**, marque o checkbox do alérgeno que foi
-   detectado incorretamente (ex.: "T — Trigo / Glúten").
-   - O nome fica com **tachado** e o badge some da lista "Alérgenos atuais".
-5. Salve.
-6. Agora essa preparação não mostra mais o alérgeno T em nenhum lugar
-   (cardápio, PDF, filtro).
-
-### Marcar um alérgeno manualmente
-
-1. Edite a preparação.
-2. Na coluna **"Marcar manualmente"**, marque o checkbox do alérgeno
-   que você sabe estar presente mas não foi detectado automaticamente.
-3. Salve.
-4. O alérgeno aparece em todos os lugares (cardápio, PDF, filtro).
+Resultado: apenas os romaneios de **Motorista José** e **Motorista Aroldo**
+são impressos. As escolas de Busca Própria continuam aparecendo na tabela
+de Produção (PF, PCQ, Lanche) normalmente — apenas o romaneio separado
+delas não é impresso.
 
 ## Arquivos incluídos
 
 ```
-add-alergenos-manual.sh                                         # script que adiciona os campos (preserva Postgres)
-src/lib/alergenos-utils.ts                                      # remove cuscuz + nova função detectarAlergenosPreparacaoComOverride
-src/app/api/nutricao/preparacoes/route.ts                       # GET usa override no filtro
-src/app/api/nutricao/preparacoes/[id]/route.ts                  # PUT aceita alergenos_bloqueados/forcados
-src/app/(app)/nutricao/preparacoes/page.tsx                     # UI de override no formulário
-src/app/(app)/nutricao/cardapios/[id]/page.tsx                  # usa override no filtro e badges
-src/app/(app)/nutricao/cardapios/[id]/pdf/page.tsx              # usa override nos badges do PDF
+src/app/(app)/producao/page.tsx       # PCQ do romaneio ordena por ordem_pcq + filtra BUSCA_PROPRIA
+src/app/api/romaneio/route.ts         # passa ordem_pcq (do v9.6.5 — incluído para garantir)
+src/lib/romaneio-utils.ts             # EscolaRomaneio.ordem_pcq (do v9.6.5 — incluído para garantir)
 ```
+
+## Como aplicar
+
+```bash
+git checkout -b fix/prod-pcq-busca
+
+unzip -o prod-pcq-busca-v966.zip -d .
+
+git add -A
+git commit -m "fix(v9.6.6): PCQ do romaneio respeita ordem_pcq + remove página Busca Própria"
+git push -u origin fix/prod-pcq-busca
+```
+
+Sem migração de banco — todos os campos já existem.
 
 ## Verificação
 
-1. **Falso positivo corrigido**:
-   - Edite uma preparação que tem "Flocos de milho (cuscuz)" como
-     ingrediente.
-   - A seção "Alérgenos atuais" NÃO deve mostrar "T — Trigo / Glúten"
-     (antes mostrava).
-
-2. **Desmarcar alérgeno**:
-   - Edite uma preparação que tem Leite detectado.
-   - Marque o checkbox "L — Leite" na coluna "Desmarcar".
-   - O badge "L" some da lista "Alérgenos atuais".
-   - Salve.
-   - No cardápio e no PDF, essa preparação não mostra mais o alérgeno L.
-
-3. **Marcar alérgeno manualmente**:
-   - Edite uma preparação sem alérgenos detectados.
-   - Marque "S — Soja" na coluna "Marcar manualmente".
-   - O badge "S" aparece na lista "Alérgenos atuais".
-   - Salve.
-   - No cardápio e no PDF, essa preparação mostra o alérgeno S.
-
-## Notas
-
-- Os overrides são **por preparação** (não por ingrediente).
-- Os overrides são **persistidos no banco** — sobrevivem entre sessões.
-- Se você mudar os ingredientes, a detecção automática recalcula, mas os
-  overrides (bloqueados/forçados) são preservados.
-- O botão "Renumerar" não afeta os alérgenos.
+1. Acesse **Produção** e clique em **Imprimir** (Ctrl+P).
+2. Na seção de **romaneio por motorista**, a tabela de PCQ deve seguir
+   a ordem `ordem_pcq` (mesma ordem da tabela de PCQ na produção).
+3. **Não deve aparecer** nenhuma página com "ROTA BUSCA PRÓPRIA" —
+   apenas Motorista José e Motorista Aroldo.
+4. As escolas de Busca Própria continuam aparecendo nas tabelas de
+   Produção (PF, PCQ, Lanche) — apenas o romaneio separado delas foi
+   removido.
