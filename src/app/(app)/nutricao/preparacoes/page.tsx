@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 import { calcularNutrientesPreparacao, FASES_ESCOLARES, calcularPercapitaPorFase, type FaseEscolar } from '@/lib/nutricao-utils'
 import { PREPARACAO_CATEGORIAS, getCategoriaInfo, getCategoriaCor, isCategoriaEspecial, type PreparacaoCategoria } from '@/lib/preparacao-categorias'
 import { normalizeText } from '@/lib/busca-utils'
+import { detectarAlergenosPreparacao, ALERGENOS_LIST, type AlergenoSigla } from '@/lib/alergenos-utils'
 
 interface Alimento {
   id: string
@@ -89,6 +90,9 @@ interface FormState {
   modo_preparo: string
   categoria: PreparacaoCategoria  // v8
   ingredientes: IngredienteForm[]
+  // v9.6.4: override manual de alérgenos
+  alergenos_bloqueados: string[]  // siglas removidas da detecção automática
+  alergenos_forcados: string[]    // siglas adicionadas além da detecção automática
 }
 
 const emptyForm: FormState = {
@@ -97,6 +101,8 @@ const emptyForm: FormState = {
   modo_preparo: '',
   categoria: 'PREPARACAO',
   ingredientes: [],
+  alergenos_bloqueados: [],
+  alergenos_forcados: [],
 }
 
 const container = {
@@ -237,6 +243,11 @@ function PreparacoesPage() {
 
   function openEditDialog(prep: Preparacao) {
     setEditingId(prep.id)
+    // v9.6.4: parsear alergenos_bloqueados/forcados do JSON string do banco
+    let bloqueados: string[] = []
+    let forcados: string[] = []
+    try { bloqueados = JSON.parse((prep as any).alergenos_bloqueados || '[]') } catch {}
+    try { forcados = JSON.parse((prep as any).alergenos_forcados || '[]') } catch {}
     setForm({
       nome: prep.nome,
       descricao: prep.descricao || '',
@@ -252,6 +263,8 @@ function PreparacoesPage() {
           auto_calculado: pc.auto_calculado,
         })),
       })),
+      alergenos_bloqueados: bloqueados,
+      alergenos_forcados: forcados,
     })
     setIngSearches({})
     setIngPopoverOpen({})
@@ -366,6 +379,9 @@ function PreparacoesPage() {
         descricao: form.descricao || null,
         modo_preparo: form.modo_preparo || null,
         categoria: form.categoria,  // v8
+        // v9.6.4: override manual de alergenos
+        alergenos_bloqueados: form.alergenos_bloqueados,
+        alergenos_forcados: form.alergenos_forcados,
         ingredientes: form.ingredientes.map((ing) => ({
           alimento_id: ing.alimento_id,
           quantidade_gramas: ing.quantidade_gramas,
@@ -982,6 +998,126 @@ function PreparacoesPage() {
                 })()}
               </div>
             )}
+          </div>
+
+          {/* v9.6.4: Seção de Alérgenos com Override Manual */}
+          <div className="px-6 py-4 border-t bg-amber-50/30">
+            <Label className="text-sm font-semibold mb-2 block">Identificação de Alérgenos</Label>
+            {(() => {
+              // Calcula alérgenos detectados automaticamente (com base nos ingredientes atuais do form)
+              const alergenosAuto = detectarAlergenosPreparacao(
+                form.ingredientes
+                  .filter((ing) => ing.alimento_id)
+                  .map((ing) => {
+                    const alimento = alimentos.find((a) => a.id === ing.alimento_id)
+                    return { nome: alimento?.nome || '', grupo: alimento?.grupo || '' }
+                  })
+              )
+              // Alérgenos finais = (auto ∪ forcados) − bloqueados
+              const setFinal = new Set<AlergenoSigla>(alergenosAuto)
+              for (const a of form.alergenos_forcados as AlergenoSigla[]) setFinal.add(a)
+              for (const a of form.alergenos_bloqueados as AlergenoSigla[]) setFinal.delete(a)
+              const alergenosFinais = Array.from(setFinal)
+
+              return (
+                <div className="space-y-3">
+                  {/* Alérgenos detectados (badge final) */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-muted-foreground">Alérgenos atuais:</span>
+                    {alergenosFinais.length === 0 ? (
+                      <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50">Nenhum</Badge>
+                    ) : (
+                      ALERGENOS_LIST.filter((a) => alergenosFinais.includes(a.sigla)).map((a) => (
+                        <Badge key={a.sigla} className="text-white" style={{ backgroundColor: a.cor }}>
+                          {a.sigla} — {a.nome}
+                        </Badge>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Controles de override */}
+                  <div className="text-xs text-muted-foreground">
+                    A detecção é automática com base nos ingredientes. Se um alérgeno foi identificado
+                    incorretamente (ex.: &quot;cuscuz de milho&quot; marcado como Trigo), você pode
+                    <strong> desmarcá-lo </strong> abaixo. Se um alérgeno não foi detectado mas está
+                    presente, você pode <strong>marcá-lo manualmente</strong>.
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Desmarcar (bloquear) alérgenos detectados automaticamente */}
+                    <div className="p-3 rounded border border-amber-200 bg-amber-50/50">
+                      <div className="text-xs font-semibold text-amber-900 mb-2">
+                        Desmarcar ( remover detecção automática )
+                      </div>
+                      <div className="space-y-1">
+                        {ALERGENOS_LIST.map((a) => {
+                          const detectado = alergenosAuto.includes(a.sigla)
+                          const bloqueado = (form.alergenos_bloqueados as string[]).includes(a.sigla)
+                          if (!detectado && !bloqueado) return null  // só mostra se foi detectado ou já está bloqueado
+                          return (
+                            <label key={a.sigla} className="flex items-center gap-2 text-xs cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={bloqueado}
+                                disabled={!detectado && !bloqueado}
+                                onChange={(e) => {
+                                  const bloq = form.alergenos_bloqueados as string[]
+                                  if (e.target.checked) {
+                                    setForm({ ...form, alergenos_bloqueados: [...bloq, a.sigla] })
+                                  } else {
+                                    setForm({ ...form, alergenos_bloqueados: bloq.filter((s) => s !== a.sigla) })
+                                  }
+                                }}
+                              />
+                              <span className={bloqueado ? 'line-through text-muted-foreground' : ''}>
+                                {a.sigla} — {a.nome}
+                              </span>
+                              {!detectado && !bloqueado && (
+                                <span className="text-muted-foreground italic">(não detectado)</span>
+                              )}
+                            </label>
+                          )
+                        })}
+                        {alergenosAuto.length === 0 && (
+                          <div className="text-xs text-muted-foreground italic">Nenhum alérgeno detectado automaticamente.</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Marcar (forçar) alérgenos manualmente */}
+                    <div className="p-3 rounded border border-blue-200 bg-blue-50/50">
+                      <div className="text-xs font-semibold text-blue-900 mb-2">
+                        Marcar manualmente ( adicionar além da detecção )
+                      </div>
+                      <div className="space-y-1">
+                        {ALERGENOS_LIST.map((a) => {
+                          const forçado = (form.alergenos_forcados as string[]).includes(a.sigla)
+                          return (
+                            <label key={a.sigla} className="flex items-center gap-2 text-xs cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={forçado}
+                                onChange={(e) => {
+                                  const forc = form.alergenos_forcados as string[]
+                                  if (e.target.checked) {
+                                    setForm({ ...form, alergenos_forcados: [...forc, a.sigla] })
+                                  } else {
+                                    setForm({ ...form, alergenos_forcados: forc.filter((s) => s !== a.sigla) })
+                                  }
+                                }}
+                              />
+                              <span className={forçado ? 'font-semibold text-blue-700' : ''}>
+                                {a.sigla} — {a.nome}
+                              </span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
 
           <div className="flex justify-end gap-2 px-6 py-3 border-t flex-shrink-0 bg-gray-50/50">

@@ -78,25 +78,6 @@ const PADROES_LEITE = [
   'bolo de queijo', 'empadao de queijo', 'empadão de queijo',
 ]
 
-// ── Exceções: alimentos que contêm a palavra "manteiga"/"leite"/"queijo"
-//    mas NÃO são alérgenos (são nomes de plantas / variedades) ──
-// Importante: testar com nome normalizado (lowercase, sem acentos, sem pontuação).
-// Se o nome do alimento bate com algum destes padrões, NÃO marcamos 'L'.
-//
-// Os nomes TACO costumam ter vírgulas e estado físico
-// (ex.: "Couve, manteiga, crua"). Por isso, a comparação é feita sobre o nome
-// normalizado removendo vírgulas e espaços extras, e cada exceção é testada
-// como substring nesse nome limpo.
-const EXCECOES_LEITE = [
-  // Verduras cuja variedade se chama "manteiga" (não contêm leite)
-  // Exemplos TACO: "Couve, manteiga, crua" → normalizado: "couve manteiga crua"
-  'couve manteiga',
-  // Outras variedades de plantas com nome "manteiga":
-  'ervilha manteiga',
-  // "Banana maçã" / "Banana prata" etc não entram aqui, mas se algum dia
-  // houver "banana manteiga" como variedade, adicionar aqui.
-]
-
 const PADROES_OVO = [
   // Ovos diretos
   'ovo cozido', 'ovo frito', 'ovo mexido', 'ovo poch',
@@ -123,7 +104,10 @@ const PADROES_TRIGO = [
   // Massas
   'macarrao', 'macarrão', 'macarronete', 'espaguete', 'talharim', 'talharim',
   'lasanha', 'lasanha', 'ravioli', 'nhoque', 'nhoque',
-  'cuscuz', 'cuscuz paulista',
+  // v9.6.4: REMOVIDO 'cuscuz' e 'cuscuz paulista' — cuscuz de milho NÃO tem trigo.
+  // Falsos positivos em "Flocos de milho (cuscuz)" etc. O cuscuz paulista
+  // pode levar farinha de milho com trigo, mas a detecção automática
+  // gera mais falsos positivos do que verdadeiros. Melhor marcar manualmente.
   // Pães
   'pao ', 'pão ', 'pao.', 'pão.', 'pao,', 'pão,', 'pao;', 'pão;',
   'paozinho', 'pãozinho', 'pao frances', 'pão francês',
@@ -133,7 +117,7 @@ const PADROES_TRIGO = [
   'bolo de fuba', 'bolo de fubá', 'bolo de milho', 'bolo de laranja',
   'bolo simples', 'bolo de cenoura', 'massa de bolo',
   // Outros
-  'cuscoz', 'seitan', 'gluten', 'glúten',
+  'seitan', 'gluten', 'glúten',
   'cevada', 'centeio', 'aveia', // por contaminação cruzada / presença
   // Preparações que tipicamente usam farinha de trigo
   'panqueca', 'crepe', 'pizza', 'empada', 'empadao', 'empadão',
@@ -185,20 +169,7 @@ export function detectarAlergenosAlimento(alimento: AlimentoBasco): AlergenoSigl
   if (!nome && !grupo) return []
 
   // ── LEITE ──
-  // Primeiro verifica exceções (couve manteiga etc — não são alérgenos).
-  // Importante: nomes TACO costumam ter vírgulas e estado físico
-  // (ex.: "Couve, manteiga, crua"). Normalizamos removendo vírgulas e
-  // espaços extras para que 'couve manteiga' case com "couve, manteiga, crua".
-  const nomeSemPontuacao = nome
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // remove acentos
-    .replace(/[,\-.]/g, ' ')         // vírgulas, pontos e hífens viram espaço
-    .replace(/\s+/g, ' ')            // colapsa espaços múltiplos
-    .trim()
-  const ehExcecaoLeite = EXCECOES_LEITE.some((p) => nomeSemPontuacao.includes(p))
-  if (ehExcecaoLeite) {
-    // Não marca como leite — é uma variedade de planta com "manteiga" no nome
-  } else if (grupo === 'leite e derivados') {
+  if (grupo === 'leite e derivados') {
     encontrado.add('L')
   } else {
     for (const p of PADROES_LEITE) {
@@ -272,4 +243,38 @@ export function detectarAlergenosPreparacao(
   // Ordenar pela ordem canônica: L, O, T, S
   const ordem: AlergenoSigla[] = ['L', 'O', 'T', 'S']
   return ordem.filter((s) => encontrado.has(s))
+}
+
+/**
+ * v9.6.4: Detecta alérgenos de uma preparação COM override manual.
+ *
+ * Permite que o nutricionista marque/desmarque alérgenos manualmente:
+ * - `alergenos_bloqueados`: siglas que o usuário DESMARCOU (removidas da
+ *   detecção automática — ex.: desmarcar "T" de um cuscuz de milho que
+ *   foi falsamente detectado).
+ * - `alergenos_forcados`: siglas que o usuário MARCOU manualmente (adicionadas
+ *   além da detecção automática — ex.: um ingrediente que a detecção não
+ *   pegou mas que o nutricionista sabe conter alérgeno).
+ *
+ * Resultado final = (detecção automática ∪ alergenos_forcados) − alergenos_bloqueados
+ *
+ * @param ingredientes Lista de ingredientes da preparação
+ * @param alergenos_bloqueados Array de siglas para REMOVER (override negativo)
+ * @param alergenos_forcados Array de siglas para ADICIONAR (override positivo)
+ * @returns Array ordenado: L, O, T, S
+ */
+export function detectarAlergenosPreparacaoComOverride(
+  ingredientes: AlimentoBasco[],
+  alergenos_bloqueados: AlergenoSigla[] = [],
+  alergenos_forcados: AlergenoSigla[] = [],
+): AlergenoSigla[] {
+  // 1. Detecção automática
+  const detectados = new Set<AlergenoSigla>(detectarAlergenosPreparacao(ingredientes))
+  // 2. Adicionar forçados (override positivo)
+  for (const a of alergenos_forcados) detectados.add(a)
+  // 3. Remover bloqueados (override negativo)
+  for (const a of alergenos_bloqueados) detectados.delete(a)
+  // 4. Ordenar pela ordem canônica: L, O, T, S
+  const ordem: AlergenoSigla[] = ['L', 'O', 'T', 'S']
+  return ordem.filter((s) => detectados.has(s))
 }

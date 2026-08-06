@@ -1,151 +1,169 @@
-# Fix v9.6.3 — Ordenação específica para PCQ (Pão de Cachorro Quente)
+# Fix v9.6.4 — Override manual de alérgenos + corrige falso positivo de cuscuz
 
 ## O que mudou
 
-Adicionei um campo **`ordem_pcq`** separado de `ordem_rota` para permitir
-que você defina uma ordem **específica** para o PCQ na produção e nos
-documentos impressos — independente da ordem do Pão Francês.
+1. **Corrigido falso positivo**: "Flocos de milho (cuscuz)" não é mais
+   marcado como Trigo/Glúten
+2. **Override manual**: agora você pode marcar/desmarcar alérgenos
+   manualmente em cada preparação, quando a detecção automática erra
 
-### Antes
+## Bug 1: Cuscuz marcado como Trigo (falso positivo)
 
-- Tudo (PF, PCQ, Lanche) usava `ordem_rota` para ordenação
-- Não era possível ter uma ordem diferente só para PCQ
+### Causa
 
-### Depois
+A lista `PADROES_TRIGO` em `alergenos-utils.ts` continha `'cuscuz'` e
+`'cuscuz paulista'`. Como a detecção usa `nome.includes(palavra)`, qualquer
+ingrediente com "cuscuz" no nome (ex.: "Flocos de milho (cuscuz)") era
+marcado como Trigo.
 
-- **PF** continua usando `ordem_rota` (inalterado)
-- **PCQ** agora usa `ordem_pcq` (campo novo, separado)
-- **Lanche** continua usando `ordem_rota` (inalterado)
+Mas **cuscuz de milho NÃO tem trigo/glúten** — é feito de flocos de milho.
+O cuscuz paulista pode levar farinha de milho com trigo, mas a detecção
+automática gera mais falsos positivos do que verdadeiros.
+
+### Fix
+
+Removidos `'cuscuz'`, `'cuscuz paulista'` e `'cuscoz'` (typo) da lista de
+padrões de Trigo. Agora o cuscuz não é mais detectado automaticamente como
+Trigo — se uma preparação de cuscuz realmente tiver trigo (ex.: cuscuz
+paulista com farinha mista), o nutricionista pode marcar manualmente.
+
+## Bug 2: Override manual de alérgenos
+
+### Novos campos no schema
+
+Adicionados ao model `Preparacao`:
+
+```prisma
+alergenos_bloqueados  String  @default("[]")  // JSON: siglas REMOVIDAS da detecção
+alergenos_forcados    String  @default("[]")  // JSON: siglas ADICIONADAS à detecção
+```
+
+### Nova função
+
+`detectarAlergenosPreparacaoComOverride(ingredientes, bloqueados, forcados)`:
+
+```
+Resultado = (detecção automática ∪ alergenos_forcados) − alergenos_bloqueados
+```
+
+- **alergenos_bloqueados**: siglas que o usuário DESMARCOU (removidas da
+  detecção automática — ex.: desmarcar "T" de um cuscuz de milho que foi
+  falsamente detectado).
+- **alergenos_forcados**: siglas que o usuário MARCOU manualmente
+  (adicionadas além da detecção automática — ex.: um ingrediente que a
+  detecção não pegou mas que o nutricionista sabe conter alérgeno).
+
+### UI na página de Preparações
+
+Ao criar/editar uma preparação, agora há uma seção **"Identificação de
+Alérgenos"** no rodapé do formulário com:
+
+- **Badges dos alérgenos atuais** (resultado final após override)
+- **Coluna "Desmarcar"** (amarela): lista os alérgenos detectados
+  automaticamente com checkbox. Marcar = remover da lista (bloquear).
+- **Coluna "Marcar manualmente"** (azul): lista os 4 alérgenos com
+  checkbox. Marcar = adicionar à lista (forçar).
+
+A detecção é **ao vivo** — conforme você adiciona/remove ingredientes,
+os alérgenos detectados se atualizam, e os overrides (bloqueados/forçados)
+são preservados.
+
+### Propagação
+
+A função `detectarAlergenosPreparacaoComOverride` agora é usada em:
+- **API `/api/nutricao/preparacoes`** (GET — filtro por alérgenos)
+- **Página de Cardápio** (filtro "sem alérgenos" ao adicionar preparação)
+- **Página de Cardápio** (badges exibidos na lista de preparações)
+- **PDF do Cardápio** (badges no documento impresso)
+
+A função `detectarAlergenosPreparacao` original foi mantida para
+compatibilidade, mas as chamadas acima agora usam a versão com override.
 
 ## Como usar
 
-### 1. Aplicar o patch
+### Aplicar o patch
 
 ```bash
-# Na RAIZ do projeto:
-unzip -o patch-ordem-pcq-v9.6.3.zip -d .
+# Cria branch para teste
+git checkout -b fix/alergenos-manual-v9.6.4
 
-# Adicionar o campo ordem_pcq ao schema (preserva Postgres):
-bash add-ordem-pcq.sh
+# Extrai o patch
+unzip -o alergenos-manual-v964.zip -d .
 
-# Criar a coluna no banco:
+# Adiciona APENAS os campos ao schema (preserva Postgres)
+bash add-alergenos-manual.sh
+
+# Gera o Prisma Client (IMPORTANTE!)
+npx prisma generate
+
+# Cria as colunas no banco
 npx prisma db push
 
-# Commit e push:
+# Commit e push
 git add -A
-git commit -m "feat(v9.6.3): ordem específica para PCQ na produção"
-git push
+git commit -m "feat(v9.6.4): override manual de alergenos + corrige falso positivo de cuscuz"
+git push -u origin fix/alergenos-manual-v9.6.4
 ```
 
-### 2. Configurar a ordem PCQ por escola
+### Desmarcar um alérgeno incorreto
 
-1. Acesse **Configurações → Escolas**.
-2. Edite uma escola.
-3. No formulário, agora há **dois campos de ordem**:
-   - **Ordem na Rota** (para Pão Francês) — como antes
-   - **Ordem PCQ** (para Pão de Cachorro Quente) — **NOVO**
-4. Defina o número de ordem PCQ para cada escola.
+1. Acesse **Nutrição → Preparações**.
+2. Edite a preparação que tem o alérgeno errado (ex.: cuscuz marcado
+   como Trigo).
+3. Role até a seção **"Identificação de Alérgenos"**.
+4. Na coluna **"Desmarcar"**, marque o checkbox do alérgeno que foi
+   detectado incorretamente (ex.: "T — Trigo / Glúten").
+   - O nome fica com **tachado** e o badge some da lista "Alérgenos atuais".
 5. Salve.
+6. Agora essa preparação não mostra mais o alérgeno T em nenhum lugar
+   (cardápio, PDF, filtro).
 
-### 3. Ver na produção
+### Marcar um alérgeno manualmente
 
-1. Acesse **Produção** (visão semana).
-2. Na tabela de **PCQ — PÃO DE CACHORRO QUENTE**, as escolas agora
-   aparecem na ordem definida por `ordem_pcq`.
-3. A tabela de **PÃO FRANCÊS** continua usando `ordem_rota` (inalterada).
-4. Na **impressão** (Ctrl+P), o documento de PCQ também segue `ordem_pcq`.
-
-## Detalhes técnicos
-
-### Novo campo no schema
-
-```prisma
-model Escola {
-  ...
-  ordem_rota    Int      @default(0)   // ordenação do PF
-  ordem_pcq     Int      @default(0)   // v9.6.3: ordenação do PCQ
-  ...
-}
-```
-
-### Propagação na API de produção
-
-A API `/api/producao` agora passa `ordem_pcq` em todos os 6 lugares onde
-monta `ItemProducao`:
-
-```ts
-itensPfDomingo.push({
-  ...
-  ordem_rota: escola.ordem_rota ?? 0,
-  ordem_pcq: escola.ordem_pcq ?? 0,  // v9.6.3
-  ...
-})
-```
-
-### Consolidação
-
-A função `consolidarProducaoSemana` agora preenche `ordem_pcq` no
-`EscolaConsolidada`:
-
-```ts
-ordem_pcq: typeof item.ordem_pcq === 'number' ? item.ordem_pcq : 0,
-```
-
-### Ordenação na página de produção
-
-Nova função `sortEscolasPCQ` (separada de `sortEscolas`):
-
-```ts
-function sortEscolasPCQ(a, b) {
-  const oa = a.ordem_pcq ?? 0
-  const ob = b.ordem_pcq ?? 0
-  if (oa !== ob) return oa - ob
-  return (a.nome_curto || '').localeCompare(b.nome_curto || '')
-}
-
-const escolasPCQ = consolidado.escolas
-  .filter(e => e.total_pcq > 0)
-  .sort(sortEscolasPCQ)  // v9.6.3: usa ordem_pcq
-```
-
-### Configurações
-
-- Interface `Escola` local agora tem `ordem_pcq: number`.
-- Formulário de **Criar** e **Editar** escola tem o input "Ordem PCQ".
-- Ao editar, o `ordem_pcq` da escola é carregado no formulário.
-- O botão **Renumerar** (que só renumera `ordem_rota`) agora preserva
-  o `ordem_pcq` existente de cada escola.
+1. Edite a preparação.
+2. Na coluna **"Marcar manualmente"**, marque o checkbox do alérgeno
+   que você sabe estar presente mas não foi detectado automaticamente.
+3. Salve.
+4. O alérgeno aparece em todos os lugares (cardápio, PDF, filtro).
 
 ## Arquivos incluídos
 
 ```
-add-ordem-pcq.sh                                              # script que adiciona APENAS o campo (preserva Postgres)
-src/lib/producao-utils.ts                                     # ItemProducao.ordem_pcq
-src/lib/producao-semana-utils.ts                              # EscolaConsolidada.ordem_pcq + preenche
-src/app/api/escolas/route.ts                                  # POST/PUT aceitam ordem_pcq
-src/app/api/producao/route.ts                                 # 6× ordem_pcq: escola.ordem_pcq
-src/app/(app)/configuracoes/page.tsx                          # input "Ordem PCQ" + carrega/preserva
-src/app/(app)/producao/page.tsx                               # sortEscolasPCQ + escolasPCQ usa
+add-alergenos-manual.sh                                         # script que adiciona os campos (preserva Postgres)
+src/lib/alergenos-utils.ts                                      # remove cuscuz + nova função detectarAlergenosPreparacaoComOverride
+src/app/api/nutricao/preparacoes/route.ts                       # GET usa override no filtro
+src/app/api/nutricao/preparacoes/[id]/route.ts                  # PUT aceita alergenos_bloqueados/forcados
+src/app/(app)/nutricao/preparacoes/page.tsx                     # UI de override no formulário
+src/app/(app)/nutricao/cardapios/[id]/page.tsx                  # usa override no filtro e badges
+src/app/(app)/nutricao/cardapios/[id]/pdf/page.tsx              # usa override nos badges do PDF
 ```
 
 ## Verificação
 
-1. **Configurações → Escolas** → editar uma escola → deve aparecer o
-   campo **"Ordem PCQ (pão de cachorro quente)"** abaixo de "Ordem na Rota".
-2. Defina ordens PCQ diferentes para algumas escolas (ex.: escola A = 1,
-   escola B = 2, escola C = 3).
-3. Salve.
-4. **Produção → PCQ**: as escolas devem aparecer na ordem definida por
-   `ordem_pcq` — NÃO necessariamente a mesma ordem do PF.
-5. **Imprimir (Ctrl+P)**: o documento de PCQ segue a mesma ordem `ordem_pcq`.
-6. **PF** continua na ordem `ordem_rota` (inalterada).
+1. **Falso positivo corrigido**:
+   - Edite uma preparação que tem "Flocos de milho (cuscuz)" como
+     ingrediente.
+   - A seção "Alérgenos atuais" NÃO deve mostrar "T — Trigo / Glúten"
+     (antes mostrava).
+
+2. **Desmarcar alérgeno**:
+   - Edite uma preparação que tem Leite detectado.
+   - Marque o checkbox "L — Leite" na coluna "Desmarcar".
+   - O badge "L" some da lista "Alérgenos atuais".
+   - Salve.
+   - No cardápio e no PDF, essa preparação não mostra mais o alérgeno L.
+
+3. **Marcar alérgeno manualmente**:
+   - Edite uma preparação sem alérgenos detectados.
+   - Marque "S — Soja" na coluna "Marcar manualmente".
+   - O badge "S" aparece na lista "Alérgenos atuais".
+   - Salve.
+   - No cardápio e no PDF, essa preparação mostra o alérgeno S.
 
 ## Notas
 
-- Se `ordem_pcq` for 0 para todas as escolas, a ordenação cai no
-  desempate alfabético por `nome_curto` (mesmo comportamento do PF
-  quando todas têm `ordem_rota = 0`).
-- O **Lanche** continua usando `ordem_rota` — se no futuro precisar de
-  ordem específica para Lanche também, o mesmo padrão pode ser aplicado.
-- O **Romaneio** não foi alterado — continua agrupado por motorista e
-  ordenado por `ordem_rota` dentro de cada motorista.
+- Os overrides são **por preparação** (não por ingrediente).
+- Os overrides são **persistidos no banco** — sobrevivem entre sessões.
+- Se você mudar os ingredientes, a detecção automática recalcula, mas os
+  overrides (bloqueados/forçados) são preservados.
+- O botão "Renumerar" não afeta os alérgenos.

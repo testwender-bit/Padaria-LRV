@@ -43,6 +43,9 @@ export async function PUT(
             modo_preparo: body.modo_preparo !== undefined ? body.modo_preparo : undefined,
             // v8: categoria (default PREPARACAO)
             categoria: body.categoria !== undefined ? body.categoria : undefined,
+            // v9.6.4: override manual de alergenos
+            ...(body.alergenos_bloqueados !== undefined ? { alergenos_bloqueados: JSON.stringify(body.alergenos_bloqueados) } : {}),
+            ...(body.alergenos_forcados !== undefined ? { alergenos_forcados: JSON.stringify(body.alergenos_forcados) } : {}),
           },
         })
 
@@ -121,6 +124,9 @@ export async function PUT(
         modo_preparo: body.modo_preparo !== undefined ? body.modo_preparo : undefined,
         // v8: categoria (default PREPARACAO)
         categoria: body.categoria !== undefined ? body.categoria : undefined,
+        // v9.6.4: override manual de alergenos
+        ...(body.alergenos_bloqueados !== undefined ? { alergenos_bloqueados: JSON.stringify(body.alergenos_bloqueados) } : {}),
+        ...(body.alergenos_forcados !== undefined ? { alergenos_forcados: JSON.stringify(body.alergenos_forcados) } : {}),
       },
       include: {
         ingredientes: {

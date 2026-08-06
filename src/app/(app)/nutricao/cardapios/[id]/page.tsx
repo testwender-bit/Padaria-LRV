@@ -17,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check, Repeat, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, ArrowDownUp, ArrowLeftRight, ExternalLink
+  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -32,9 +32,20 @@ import {
   type NutrienteDia,
   type ResumoNutricionalSemana,
   type FaseEscolar,
-  limparNomeIngrediente,
 } from '@/lib/nutricao-utils'
-import { detectarAlergenosPreparacao, ALERGENOS_LIST } from '@/lib/alergenos-utils'
+import { detectarAlergenosPreparacao, detectarAlergenosPreparacaoComOverride, ALERGENOS_LIST, type AlergenoSigla } from '@/lib/alergenos-utils'
+
+// v9.6.4: helper para parsear JSON string de alergenos (vindo do banco)
+function parseAlergenosArrayLocal(jsonStr: unknown): AlergenoSigla[] {
+  if (!jsonStr || typeof jsonStr !== 'string') return []
+  try {
+    const arr = JSON.parse(jsonStr)
+    if (!Array.isArray(arr)) return []
+    return arr.filter((s): s is AlergenoSigla => ['L', 'O', 'T', 'S'].includes(s))
+  } catch {
+    return []
+  }
+}
 import { normalizeText } from '@/lib/busca-utils'
 import { sortItensByRefeicao } from '@/lib/ordenacao-preparacoes'
 import { PreparacaoFormDialog, type PreparacaoLite } from '@/components/preparacao-form-dialog'
@@ -48,7 +59,6 @@ interface TipoRefeicao {
   nome: string
   horario: string
   ordem: number
-  sub_de_codigo?: string | null  // v8.13: se preenchido, este slot é sub de outro
 }
 
 interface Alimento {
@@ -210,7 +220,6 @@ function getFaseColor(fase: string) {
 function formatDate(dateStr: string) {
   if (!dateStr) return '—'
   const d = new Date(dateStr + 'T12:00:00')
-  if (isNaN(d.getTime())) return '—'  // v8.8: data inválida
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
 }
 
@@ -258,9 +267,6 @@ export default function CardapioEditorPage() {
   const [addTipoRefeicaoId, setAddTipoRefeicaoId] = useState<string | null>(null)
   const [addPrepSearch, setAddPrepSearch] = useState('')
   const [addSelectedPrepIds, setAddSelectedPrepIds] = useState<Set<string>>(new Set())
-  // v8.8: rastreia quais preparações JÁ ESTAVAM no slot quando o dialog abriu
-  // (para saber quais remover se o usuário desmarcar)
-  const [addInitialPrepIds, setAddInitialPrepIds] = useState<Set<string>>(new Set())
   const [adding, setAdding] = useState(false)
   // v8: editar/criar/clonar preparação dentro do dialog de adicionar
   const [editingPrepInDialog, setEditingPrepInDialog] = useState<string | null>(null)  // id da prep sendo editada, null = nova
@@ -300,10 +306,6 @@ export default function CardapioEditorPage() {
   const [mobileDayView, setMobileDayView] = useState<string>('segunda')
   // Porções com edição inline em andamento (item_id)
   const [editingPorcoesId, setEditingPorcoesId] = useState<string | null>(null)
-  // v6.4: Modo "Trocar dia" — usuário clica num dia (origem), depois em outro (destino)
-  // e o sistema troca TODOS os itens entre os dois dias (lanche, almoço, hidratação, etc).
-  // Valor: dia_semana de origem ('segunda', 'terca', etc.) ou null se modo desativado.
-  const [diaTrocaOrigem, setDiaTrocaOrigem] = useState<string | null>(null)
   // Versão mobile (sidebar sempre colapsável)
   const [isMobile, setIsMobile] = useState(false)
   // v8: feriados para mostrar badge no editor
@@ -312,19 +314,6 @@ export default function CardapioEditorPage() {
   const [horarioDialogOpen, setHorarioDialogOpen] = useState(false)
   const [horarioEditando, setHorarioEditando] = useState<{ tipoRefeicaoId: string; nome: string; horarioDefault: string; horarioAtual: string } | null>(null)
   const [horarioInput, setHorarioInput] = useState('')
-  // v8.16: dialog "Localizar e Substituir" preparação
-  const [localizarSubstituirOpen, setLocalizarSubstituirOpen] = useState(false)
-  const [localizarBusca, setLocalizarBusca] = useState('')
-  const [localizarResultados, setLocalizarResultados] = useState<Array<{
-    preparacao_id: string
-    preparacao_nome: string
-    categoria: string | null
-    ocorrencias: Array<{ item_id: string; semana_num: number; dia_semana: string; tipo_refeicao_codigo: string; tipo_refeicao_nome: string }>
-  }>>([])
-  const [localizarBuscando, setLocalizarBuscando] = useState(false)
-  const [localizarPrepSelecionada, setLocalizarPrepSelecionada] = useState<string | null>(null)
-  const [localizarSubstituta, setLocalizarSubstituta] = useState('')
-  const [localizarSubstituindo, setLocalizarSubstituindo] = useState(false)
   const [salvandoHorario, setSalvandoHorario] = useState(false)
 
   const loadData = useCallback(async () => {
@@ -442,13 +431,7 @@ export default function CardapioEditorPage() {
     return sortItensByRefeicao(itensDoSlot, tiposRefeicao)
   }
 
-  // v9.0: Reordenar item dentro do slot (up/down) — OTIMISTICO (sem refresh)
-  // REGRA NOVA:
-  //   - Pega a ordem VISUAL atual do slot (aplica sortItensByRefeicao só para descobrir a ordem visual)
-  //   - Atribui ordens sequenciais (1,2,3...) a TODOS os itens baseado na ordem visual
-  //   - Troca as ordens dos 2 itens (atual e vizinho)
-  //   - Resultado: TODOS os itens ficam com ordem>0 (LOCK MANUAL ativa)
-  //   - Próximas renderizações: sortItensByRefeicao respeita ordem manual (não reordena)
+  // v8: Reordenar item dentro do slot (up/down) — OTIMISTICO (sem refresh)
   async function handleReordenarItem(itemId: string, direcao: 'up' | 'down') {
     if (!cardapio || !semanaAtual) return
 
@@ -459,7 +442,6 @@ export default function CardapioEditorPage() {
 
       // Encontra todos os itens do mesmo slot (mesma refeição)
       const itensDoSlot = dia.itens.filter(i => i.tipo_refeicao_id === itemAtual.tipo_refeicao_id)
-      // Aplica sort para descobrir ordem VISUAL atual (respeitando LOCK MANUAL se houver)
       const sortedSlot = sortItensByRefeicao(itensDoSlot, tiposRefeicao)
       const idxAtual = sortedSlot.findIndex(i => i.id === itemId)
       if (idxAtual === -1) continue
@@ -469,14 +451,20 @@ export default function CardapioEditorPage() {
 
       const itemTroca = sortedSlot[idxTroca]
 
-      // v9.0: SEMPRE atribui ordens sequenciais (1,2,3...) baseado na ordem visual
-      // Isso ativa o LOCK MANUAL — próximos renders vão respeitar essas ordens
+      // Se todos têm ordem 0, atribui ordens sequenciais a TODOS antes de trocar
+      const todosZero = sortedSlot.every(i => (i.ordem ?? 0) === 0)
       const ordensMap: Record<string, number> = {}
-      sortedSlot.forEach((item, idx) => {
-        ordensMap[item.id] = idx + 1
-      })
+      if (todosZero) {
+        sortedSlot.forEach((item, idx) => {
+          ordensMap[item.id] = idx + 1
+        })
+      } else {
+        sortedSlot.forEach((item) => {
+          ordensMap[item.id] = item.ordem ?? 0
+        })
+      }
 
-      // Troca as ordens dos dois itens (atual e vizinho)
+      // Troca as ordens dos dois itens
       const temp = ordensMap[itemId]
       ordensMap[itemId] = ordensMap[itemTroca.id]
       ordensMap[itemTroca.id] = temp
@@ -501,151 +489,17 @@ export default function CardapioEditorPage() {
         }
       })
 
-      // Envia as NOVAS ordens para a API (envia todas para garantir consistência)
+      // Envia para a API (sem esperar para não travar a UI)
       try {
         await fetch(`/api/nutricao/cardapios/${cardapioId}/reordenar-item`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            item_id: itemId,
-            direcao,
-            ordens_completas: Object.entries(ordensMap).map(([id, ordem]) => ({ item_id: id, ordem })),
-          }),
+          body: JSON.stringify({ item_id: itemId, direcao }),
         })
       } catch {
         toast.error('Erro ao salvar ordem')
       }
       return
-    }
-  }
-
-  // ─── v6: Reordenar TODA a SEMANA (todos os slots de todos os dias) ───
-  // Botão "Reordenar" no header da semana — reseta ordens manuais e
-  // reaplica a ordenação automática baseada em perfil + categoria do banco.
-  async function handleReordenarSemana(semanaNumero: number) {
-    if (!cardapio || !semanaAtual) return
-
-    // Atualização otimista: aplica ordem 0 em todos os itens da semana localmente
-    setCardapio(prev => {
-      if (!prev) return prev
-      return {
-        ...prev,
-        semanas: prev.semanas.map(s => {
-          if (s.numero !== semanaNumero) return s
-          return {
-            ...s,
-            dias: s.dias.map(d => ({
-              ...d,
-              itens: d.itens.map(i => ({ ...i, ordem: 0 })),
-            })),
-          }
-        }),
-      }
-    })
-
-    try {
-      const resp = await fetch(`/api/nutricao/cardapios/${cardapioId}/reordenar-semana`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          semana_numero: semanaNumero,
-        }),
-      })
-
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}))
-        throw new Error(err.error || `HTTP ${resp.status}`)
-      }
-
-      const data = await resp.json()
-      toast.success(`Semana reordenada (${data.slots_reordenados} slots, ${data.itens_reordenados} itens)`)
-
-      // Recarrega o cardápio para refletir as ordens persistidas
-      await recarregarCardapio()
-    } catch (e) {
-      toast.error('Erro ao reordenar semana: ' + (e instanceof Error ? e.message : ''))
-      await recarregarCardapio()
-    }
-  }
-
-  // Recarrega o cardápio do servidor (preserva semana selecionada)
-  async function recarregarCardapio() {
-    if (!cardapioId) return
-    try {
-      const resp = await fetch(`/api/nutricao/cardapios/${cardapioId}`)
-      if (resp.ok) {
-        const data = await resp.json()
-        setCardapio(data)
-      }
-    } catch {
-      // silencioso
-    }
-  }
-
-  // ─── v6.4: Trocar dia inteiro (todas as refeições) ───
-  // Modo de 2 cliques: clica no botão "Trocar dia" da origem, depois clica no dia destino.
-  // O sistema troca TODOS os itens entre os dois dias (lanche, almoço, hidratação, etc).
-  async function handleTrocarDia(diaDestino: string, semanaNumero: number) {
-    if (!cardapio || !semanaAtual || !diaTrocaOrigem) return
-
-    if (diaTrocaOrigem === diaDestino) {
-      // Clicou no mesmo dia — cancela modo
-      setDiaTrocaOrigem(null)
-      toast.info('Troca cancelada')
-      return
-    }
-
-    const diaOrigem = diaTrocaOrigem
-
-    // Atualização otimista: troca os itens dos dias localmente
-    setCardapio(prev => {
-      if (!prev) return prev
-      return {
-        ...prev,
-        semanas: prev.semanas.map(s => {
-          if (s.numero !== semanaNumero) return s
-          const diaA = s.dias.find(d => d.dia_semana === diaOrigem)
-          const diaB = s.dias.find(d => d.dia_semana === diaDestino)
-          if (!diaA || !diaB) return s
-          return {
-            ...s,
-            dias: s.dias.map(d => {
-              if (d.dia_semana === diaOrigem) return { ...diaB }
-              if (d.dia_semana === diaDestino) return { ...diaA }
-              return d
-            }),
-          }
-        }),
-      }
-    })
-
-    // Desativa modo troca imediatamente
-    setDiaTrocaOrigem(null)
-
-    try {
-      const resp = await fetch(`/api/nutricao/cardapios/${cardapioId}/trocar-dia`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          semana_numero: semanaNumero,
-          dia_a: diaOrigem,
-          dia_b: diaDestino,
-        }),
-      })
-
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}))
-        throw new Error(err.error || `HTTP ${resp.status}`)
-      }
-
-      const data = await resp.json()
-      toast.success(`Dias trocados (${data.itens_trocados} itens)`)
-
-      // Recarrega o cardápio para refletir o estado persistido
-      await recarregarCardapio()
-    } catch (e) {
-      toast.error('Erro ao trocar dias: ' + (e instanceof Error ? e.message : ''))
-      await recarregarCardapio()
     }
   }
 
@@ -711,25 +565,17 @@ export default function CardapioEditorPage() {
   }, [semanaAtual, cardapio, metas])
 
   // Open add dialog for a specific slot
-  // v8.8: pré-seleciona as preparações que JÁ ESTÃO no slot
-  function openAddDialog(diaId: string, tipoRefeicaoId: string, diaSemana: string) {
+  function openAddDialog(diaId: string, tipoRefeicaoId: string) {
     setAddDiaId(diaId)
     setAddTipoRefeicaoId(tipoRefeicaoId)
     setAddPrepSearch('')
+    setAddSelectedPrepIds(new Set())
     setAddFilter('all')
     setAddSemAlergenos(new Set())
-
-    // Buscar itens que já estão neste slot e pré-selecioná-los
-    const itensExistentes = getItensForSlot(diaSemana, tipoRefeicaoId)
-    const prepIdsExistentes = new Set(itensExistentes.map(i => i.preparacao_id))
-    setAddSelectedPrepIds(prepIdsExistentes)
-    setAddInitialPrepIds(new Set(prepIdsExistentes))  // snapshot do estado inicial
-
     setAddDialogOpen(true)
   }
 
   // Toggle preparation selection
-  // v8.8: ao selecionar, limpa a busca para mostrar todos
   function togglePrepSelection(prepId: string) {
     setAddSelectedPrepIds(prev => {
       const next = new Set(prev)
@@ -737,110 +583,50 @@ export default function CardapioEditorPage() {
       else next.add(prepId)
       return next
     })
-    // Limpar a busca após selecionar/desselecionar
-    setAddPrepSearch('')
   }
 
-  // v8.8: Adicionar E remover preparações (baseado no que foi marcado/desmarcado)
+  // Add all selected preparations
   async function handleAddPreparacoes() {
-    if (!addDiaId) return
-    // Permite size === 0 se o usuário desmarcou tudo (para remover todos)
+    if (!addDiaId || addSelectedPrepIds.size === 0) return
     setAdding(true)
     try {
-      // Calcular o que adicionar (marcado agora mas não estava antes)
-      const paraAdicionar = Array.from(addSelectedPrepIds).filter(id => !addInitialPrepIds.has(id))
-      // Calcular o que remover (estava antes mas foi desmarcado)
-      const paraRemover = Array.from(addInitialPrepIds).filter(id => !addSelectedPrepIds.has(id))
+      const items = Array.from(addSelectedPrepIds).map(prepId => ({
+        dia_id: addDiaId,
+        tipo_refeicao_id: addTipoRefeicaoId,
+        preparacao_id: prepId,
+        porcoes: 1,
+      }))
 
-      let adicionadas = 0
-      let removidas = 0
-
-      // ── ADICIONAR novas preparações ──
-      if (paraAdicionar.length > 0) {
-        const items = paraAdicionar.map(prepId => ({
-          dia_id: addDiaId,
-          tipo_refeicao_id: addTipoRefeicaoId,
-          preparacao_id: prepId,
-          porcoes: 1,
-        }))
-
-        const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/item`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items }),
-        })
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}))
-          throw new Error(errData.error || 'Erro ao adicionar preparações')
-        }
-        const itensCriados = await res.json()
-        adicionadas = paraAdicionar.length
-
-        // Atualização otimista
-        const novosItens = (Array.isArray(itensCriados) ? itensCriados : [itensCriados]) as CardapioItem[]
-        setCardapio(prev => {
-          if (!prev) return prev
-          return {
-            ...prev,
-            semanas: prev.semanas.map(s => ({
-              ...s,
-              dias: s.dias.map(d => {
-                if (d.id !== addDiaId) return d
-                return { ...d, itens: [...d.itens, ...novosItens] }
-              }),
-            })),
-          }
-        })
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/item`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || 'Erro ao adicionar preparações')
       }
-
-      // ── REMOVER preparações desmarcadas ──
-      if (paraRemover.length > 0) {
-        // Para cada preparação a remover, encontrar o item no slot e deletar
-        for (const prepId of paraRemover) {
-          // Buscar o item no estado atual
-          const dia = semanaAtual?.dias.find(d => d.id === addDiaId)
-          const item = dia?.itens.find(i => i.preparacao_id === prepId && i.tipo_refeicao_id === addTipoRefeicaoId)
-          if (!item) continue
-
-          const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/item`, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ item_id: item.id }),
-          })
-          if (res.ok) {
-            removidas++
-            // Atualização otimista
-            setCardapio(prev => {
-              if (!prev) return prev
-              return {
-                ...prev,
-                semanas: prev.semanas.map(s => ({
-                  ...s,
-                  dias: s.dias.map(d => {
-                    if (d.id !== addDiaId) return d
-                    return { ...d, itens: d.itens.filter(i => i.id !== item.id) }
-                  }),
-                })),
-              }
-            })
-          }
-        }
-      }
-
-      // Toast informativo
-      if (adicionadas > 0 && removidas > 0) {
-        toast.success(`${adicionadas} adicionada(s), ${removidas} removida(s)`)
-      } else if (adicionadas > 0) {
-        toast.success(`${adicionadas} preparação(ões) adicionada(s)`)
-      } else if (removidas > 0) {
-        toast.success(`${removidas} preparação(ões) removida(s)`)
-      } else {
-        toast.info('Nenhuma alteração')
-      }
-
+      const itensCriados = await res.json()
+      toast.success(`${addSelectedPrepIds.size} preparação(ões) adicionada(s)`)
       setAddDialogOpen(false)
+
+      // ── ATUALIZAÇÃO OTIMISTA (sem refresh) ──
+      const novosItens = (Array.isArray(itensCriados) ? itensCriados : [itensCriados]) as CardapioItem[]
+      setCardapio(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          semanas: prev.semanas.map(s => ({
+            ...s,
+            dias: s.dias.map(d => {
+              if (d.id !== addDiaId) return d
+              return { ...d, itens: [...d.itens, ...novosItens] }
+            }),
+          })),
+        }
+      })
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao atualizar preparações')
+      toast.error(err instanceof Error ? err.message : 'Erro ao adicionar preparações')
     } finally {
       setAdding(false)
     }
@@ -1336,11 +1122,8 @@ export default function CardapioEditorPage() {
     if (idxAlvo === undefined) return null
     const offsetDias = idxAlvo - 1
     if (offsetDias < 0 || offsetDias > 4) return null
-    // v8.8: se data_inicio está vazio (cardápio novo sem data configurada), não calcular feriados
-    if (!semanaAtual.data_inicio) return null
 
     const inicio = new Date(semanaAtual.data_inicio + 'T12:00:00')
-    if (isNaN(inicio.getTime())) return null  // data inválida — não calcular
     const dataDia = new Date(inicio)
     dataDia.setDate(inicio.getDate() + offsetDias)
     const dataIso = dataDia.toISOString().split('T')[0]
@@ -1454,105 +1237,6 @@ export default function CardapioEditorPage() {
       toast.error('Erro ao salvar nome')
     } finally {
       setSaving(false)
-    }
-  }
-
-  // v8.9: Editar semestre do cardápio
-  async function handleSaveSemestre(semestre: number) {
-    if (!cardapio) return
-    setSaving(true)
-    try {
-      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ semestre }),
-      })
-      if (!res.ok) throw new Error('Erro ao salvar semestre')
-      toast.success(`Semestre alterado para ${semestre}`)
-      loadData()
-    } catch {
-      toast.error('Erro ao salvar semestre')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  // v8.16: Localizar e Substituir preparação
-  async function handleLocalizar() {
-    if (!cardapio || !localizarBusca.trim()) return
-    setLocalizarBuscando(true)
-    setLocalizarPrepSelecionada(null)
-    try {
-      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/localizar-substituir?q=${encodeURIComponent(localizarBusca.trim())}`)
-      if (!res.ok) throw new Error('Erro ao buscar')
-      const data = await res.json()
-      setLocalizarResultados(data.preparacoes || [])
-      if ((data.preparacoes || []).length === 0) {
-        toast.info('Nenhuma ocorrência encontrada')
-      }
-    } catch {
-      toast.error('Erro ao localizar preparação')
-    } finally {
-      setLocalizarBuscando(false)
-    }
-  }
-
-  async function handleSubstituirUm(itemId: string) {
-    if (!cardapio || !localizarSubstituta) {
-      toast.error('Selecione a preparação substituta')
-      return
-    }
-    setLocalizarSubstituindo(true)
-    try {
-      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/localizar-substituir`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          acao: 'substituir_um',
-          item_id: itemId,
-          preparacao_id_nova: localizarSubstituta,
-        }),
-      })
-      if (!res.ok) throw new Error('Erro ao substituir')
-      toast.success('Preparação substituída')
-      // Recarrega cardápio + re-busca
-      await loadData()
-      await handleLocalizar()
-    } catch {
-      toast.error('Erro ao substituir')
-    } finally {
-      setLocalizarSubstituindo(false)
-    }
-  }
-
-  async function handleSubstituirTodos(prepIdAntiga: string) {
-    if (!cardapio || !localizarSubstituta) {
-      toast.error('Selecione a preparação substituta')
-      return
-    }
-    if (!confirm('Substituir TODAS as ocorrências? Esta ação não pode ser desfeita.')) return
-    setLocalizarSubstituindo(true)
-    try {
-      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/localizar-substituir`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          acao: 'substituir_todos',
-          preparacao_id_antiga: prepIdAntiga,
-          preparacao_id_nova: localizarSubstituta,
-        }),
-      })
-      if (!res.ok) throw new Error('Erro ao substituir todos')
-      const data = await res.json()
-      toast.success(`${data.atualizados} substituídas, ${data.duplicatas_removidas} duplicatas removidas`)
-      setLocalizarPrepSelecionada(null)
-      setLocalizarSubstituta('')
-      await loadData()
-      await handleLocalizar()
-    } catch {
-      toast.error('Erro ao substituir todos')
-    } finally {
-      setLocalizarSubstituindo(false)
     }
   }
 
@@ -1712,38 +1396,30 @@ export default function CardapioEditorPage() {
     // Filtro por alérgenos (excluir)
     if (addSemAlergenos.size > 0) {
       list = list.filter((p) => {
-        const alergenos = detectarAlergenosPreparacao(
+        // v9.6.4: respeita override manual de alergenos
+        const bloqueados = parseAlergenosArrayLocal((p as any).alergenos_bloqueados)
+        const forcados = parseAlergenosArrayLocal((p as any).alergenos_forcados)
+        const alergenos = detectarAlergenosPreparacaoComOverride(
           p.ingredientes.map((ing) => ({
             nome: ing.alimento.nome,
             grupo: ing.alimento.grupo,
-          }))
+          })),
+          bloqueados,
+          forcados,
         )
         // Se tem QUALQUER alérgeno da lista de exclusão, remover
         return !alergenos.some((a) => addSemAlergenos.has(a))
       })
     }
 
-    // v8.8: Busca inteligente — por palavras (AND), sem acento
-    const q = normalizeText(addPrepSearch).trim()
+    // Busca por nome (sem acento)
+    const q = normalizeText(addPrepSearch)
     if (q) {
-      const queryWords = q.split(/\s+/).filter(w => w.length > 0)
-      list = list.filter((p) => {
-        const nome = normalizeText(p.nome)
-        return queryWords.every(qw => nome.includes(qw))
-      })
+      list = list.filter((p) => normalizeText(p.nome).includes(q))
     }
 
-    // v8.8: Ordenar — selecionados PRIMEIRO (fixados no topo), depois alfabético
-    const selIds = addSelectedPrepIds
-    list = [...list].sort((a, b) => {
-      const aSel = selIds.has(a.id) ? 0 : 1
-      const bSel = selIds.has(b.id) ? 0 : 1
-      if (aSel !== bSel) return aSel - bSel
-      return a.nome.localeCompare(b.nome)
-    })
-
     return list
-  }, [preparacoes, addFilter, addSemAlergenos, addPrepSearch, addSelectedPrepIds])
+  }, [preparacoes, addFilter, addSemAlergenos, addPrepSearch])
 
   if (loading) {
     return (
@@ -1807,19 +1483,7 @@ export default function CardapioEditorPage() {
               {getStatusBadge(cardapio.status)}
             </div>
             <p className="text-xs text-muted-foreground">
-              {cardapio.escola?.nome || 'Modelo base'} · {cardapio.ano}/
-              {/* v8.9: Semestre editável */}
-              <select
-                value={cardapio.semestre}
-                onChange={(e) => handleSaveSemestre(Number(e.target.value))}
-                disabled={saving}
-                className="inline-block bg-transparent border-0 text-xs text-muted-foreground cursor-pointer hover:text-[#1A3A5C] focus:outline-none focus:ring-0"
-                style={{ appearance: 'none', WebkitAppearance: 'none' } as React.CSSProperties}
-                title="Clique para alterar o semestre"
-              >
-                <option value={1}>1</option>
-                <option value={2}>2</option>
-              </select>
+              {cardapio.escola?.nome || 'Modelo base'} · {cardapio.ano}/{cardapio.semestre}
             </p>
           </div>
         </div>
@@ -1852,18 +1516,29 @@ export default function CardapioEditorPage() {
             {cardapio.semanas?.[0]?.data_inicio ? formatDate(cardapio.semanas[0].data_inicio) : 'Definir data'}
           </button>
 
-          {/* Botão Replicar p/ Escolas (disponível para QUALQUER cardápio — base ou de escola) */}
-          <Link href={`/nutricao/cardapios/${cardapioId}/replicar`}>
-            <Button variant="outline" size="sm" className="text-xs h-8 border-purple-200 text-purple-700 hover:bg-purple-50">
-              <Copy className="w-3 h-3 mr-1" /> Replicar p/ Escolas
-            </Button>
-          </Link>
+          {/* Botão Replicar p/ Escolas (somente se for base) */}
+          {!cardapio.escola_id && (
+            <Link href={`/nutricao/cardapios/${cardapioId}/replicar`}>
+              <Button variant="outline" size="sm" className="text-xs h-8 border-purple-200 text-purple-700 hover:bg-purple-50">
+                <Copy className="w-3 h-3 mr-1" /> Replicar p/ Escolas
+              </Button>
+            </Link>
+          )}
 
           {/* Botão Comparar com Base (somente se for instância de escola) */}
           {cardapio.escola_id && (
             <Link href={`/nutricao/cardapios/${cardapioId}/comparar`}>
               <Button variant="outline" size="sm" className="text-xs h-8 border-blue-200 text-blue-700 hover:bg-blue-50">
                 <GitCompare className="w-3 h-3 mr-1" /> Comparar c/ Base
+              </Button>
+            </Link>
+          )}
+
+          {/* Botão Clonar em Lote (somente se for base) — mantido para compat. */}
+          {!cardapio.escola_id && (
+            <Link href={`/nutricao/cardapios/${cardapioId}/clonar-lote`}>
+              <Button variant="outline" size="sm" className="text-xs h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+                <Layers className="w-3 h-3 mr-1" /> Clonar em Lote
               </Button>
             </Link>
           )}
@@ -1934,32 +1609,6 @@ export default function CardapioEditorPage() {
             >
               <Unlock className="w-3 h-3 mr-0.5" />
               {semanaAtual.diferenciada ? 'Restaurar' : 'Diferenciar'}
-            </Button>
-          )}
-          {/* v6: Botão "Reordenar semana" — re-aplica ordem canônica em todos os slots da semana */}
-          {semanaAtual && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 text-[10px] text-[#1A3A5C] hover:bg-[#1A3A5C]/10 ml-2"
-              onClick={() => handleReordenarSemana(currentSemana)}
-              title="Reordenar toda a semana (aplica ordem canônica: bebida → pão → fruta / salada → arroz → feijão → proteína → acompanhamento → fruta / cuscuz → acompanhamento → fruta)"
-            >
-              <ArrowDownUp className="w-3 h-3 mr-0.5" />
-              Reordenar
-            </Button>
-          )}
-          {/* v8.16: Botão "Localizar e Substituir" preparação no cardápio inteiro */}
-          {semanaAtual && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 text-[10px] text-[#1A3A5C] hover:bg-[#1A3A5C]/10 ml-2"
-              onClick={() => setLocalizarSubstituirOpen(true)}
-              title="Localizar uma preparação no cardápio e substituir por outra (uma por uma ou todas)"
-            >
-              <ArrowLeftRight className="w-3 h-3 mr-0.5" />
-              Substituir
             </Button>
           )}
           {/* Legenda semáforo */}
@@ -2102,31 +1751,13 @@ export default function CardapioEditorPage() {
               const diaData = semanaAtual?.dias.find((d) => d.dia_semana === dia.value)
               const resumoDia = getResumoDia(dia.value)
               const semaforo = getDiaTrafficLight(resumoDia.energia)
-              // v6.4: estado visual do modo "Trocar dia"
-              const ehOrigemTroca = diaTrocaOrigem === dia.value
-              const emModoTroca = diaTrocaOrigem !== null
               return (
                 <div
                   key={dia.value}
-                  className={`bg-white rounded-xl border overflow-hidden relative transition-all ${
-                    ehOrigemTroca
-                      ? 'border-[#D4A017] ring-2 ring-[#D4A017]'
-                      : emModoTroca
-                        ? 'border-[#D4A017]/40 cursor-pointer hover:border-[#D4A017] hover:ring-1 hover:ring-[#D4A017]/50'
-                        : 'border-gray-200'
-                  }`}
-                  // v6.4: se em modo troca e NÃO é a origem, clicar no card troca com a origem
-                  onClick={(e) => {
-                    if (emModoTroca && !ehOrigemTroca) {
-                      e.preventDefault()
-                      handleTrocarDia(dia.value, currentSemana)
-                    }
-                  }}
+                  className="bg-white rounded-xl border border-gray-200 overflow-hidden"
                 >
                   {/* Day Header with Copy button + traffic-light dot */}
-                  <div className={`text-white py-1.5 px-2 flex items-center justify-between ${
-                    ehOrigemTroca ? 'bg-[#D4A017]' : 'bg-[#1A3A5C]'
-                  }`}>
+                  <div className="bg-[#1A3A5C] text-white py-1.5 px-2 flex items-center justify-between">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                         semaforo === 'green' ? 'bg-emerald-400' :
@@ -2144,63 +1775,22 @@ export default function CardapioEditorPage() {
                           </span>
                         ) : null
                       })()}
-                      {/* v6.4: Badge "Origem" quando em modo troca */}
-                      {ehOrigemTroca && (
-                        <span className="ml-1 px-1 py-0 rounded bg-white/20 text-[8px] font-bold flex-shrink-0">
-                          ORIGEM
-                        </span>
-                      )}
                     </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {/* v6.4: Botão "Trocar dia" — ativa modo de troca (2 cliques) */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (ehOrigemTroca) {
-                            setDiaTrocaOrigem(null)
-                            toast.info('Troca cancelada')
-                          } else {
-                            setDiaTrocaOrigem(dia.value)
-                            toast.info(`Clique em outro dia para trocar com ${dia.label}`)
-                          }
-                        }}
-                        className={`transition-colors ${
-                          ehOrigemTroca
-                            ? 'text-white'
-                            : 'text-white/70 hover:text-[#D4A017]'
-                        }`}
-                        title={ehOrigemTroca ? 'Cancelar troca' : 'Trocar este dia com outro (clique depois no destino)'}
-                      >
-                        <ArrowLeftRight className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openCopyDialog(dia.value, currentSemana)
-                        }}
-                        className="text-white/70 hover:text-white transition-colors"
-                        title="Copiar refeições para outro dia"
-                      >
-                        <Copy className="w-3 h-3" />
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => openCopyDialog(dia.value, currentSemana)}
+                      className="text-white/70 hover:text-white transition-colors flex-shrink-0"
+                      title="Copiar refeições para outro dia"
+                    >
+                      <Copy className="w-3 h-3" />
+                    </button>
                   </div>
 
                   {/* Refeição slots */}
                   <div className="p-1.5 space-y-1.5">
                     {refeicoesForCategoria.map((cr) => {
-                      // v8.13: pula slots sub — eles são renderizados DENTRO do slot pai
-                      if (cr.tipo_refeicao.sub_de_codigo) return null
-
                       const itens = getItensForSlot(dia.value, cr.tipo_refeicao_id)
                       const slotKey = `${dia.value}-${cr.tipo_refeicao_id}`
                       const isDragOver = dragOverSlot === slotKey
-
-                      // v8.13.2: busca TODOS os slots sub (pode ter múltiplos) — ex: FRUTA_MANHA + LANCHE_PRE_ESCOLA são subs de CAFE_MANHA
-                      const slotsSub = refeicoesForCategoria.filter(
-                        sub => sub.tipo_refeicao.sub_de_codigo === cr.tipo_refeicao.codigo
-                      )
-
                       return (
                         <div
                           key={cr.tipo_refeicao_id}
@@ -2332,133 +1922,12 @@ export default function CardapioEditorPage() {
                             className="w-full h-5 text-[9px] text-muted-foreground hover:text-[#1A3A5C] hover:bg-[#1A3A5C]/5"
                             onClick={() => {
                               if (diaData) {
-                                openAddDialog(diaData.id, cr.tipo_refeicao_id, dia.value)
+                                openAddDialog(diaData.id, cr.tipo_refeicao_id)
                               }
                             }}
                           >
                             <Plus className="w-2.5 h-2.5 mr-0.5" /> Adicionar
                           </Button>
-
-                          {/* v8.13.2: SUB slots (pode ter múltiplos — ex: Fruta da Manhã + Lanche Pré-Escola dentro de Café da Manhã) */}
-                          {slotsSub.map((slotSub) => {
-                            const slotSubKey = `${dia.value}-${slotSub.tipo_refeicao_id}`
-                            const isDragOverSub = dragOverSlot === slotSubKey
-                            const itensSub = getItensForSlot(dia.value, slotSub.tipo_refeicao_id)
-                            return (
-                            <div
-                              key={slotSub.tipo_refeicao_id}
-                              className={`mt-1.5 ml-2 pl-2 border-l-2 border-[#D4A017]/40 rounded-sm transition-colors ${
-                                isDragOverSub ? 'bg-[#D4A017]/5' : ''
-                              }`}
-                              onDragOver={(e) => {
-                                e.preventDefault()
-                                e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move'
-                                if (!isDragOverSub) setDragOverSlot(slotSubKey)
-                              }}
-                              onDragLeave={() => {
-                                if (dragOverSlot === slotSubKey) setDragOverSlot(null)
-                              }}
-                              onDrop={(e) => {
-                                e.preventDefault()
-                                setDragOverSlot(null)
-                                if (draggedItem) {
-                                  if (e.altKey) {
-                                    handleDuplicateItem(draggedItem, currentSemana, dia.value, slotSub.tipo_refeicao_id)
-                                  } else {
-                                    handleMoveItem(draggedItem, currentSemana, dia.value, slotSub.tipo_refeicao_id)
-                                  }
-                                  setDraggedItem(null)
-                                  setDragAltHint(false)
-                                }
-                              }}
-                            >
-                              <div className="flex items-center justify-between mb-0.5 mt-1">
-                                <span className="text-[9px] font-medium text-[#D4A017] truncate flex items-center gap-0.5">
-                                  <span className="opacity-60">↳</span>
-                                  {slotSub.tipo_refeicao.nome}
-                                </span>
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    onClick={() => openHorarioDialog(
-                                      slotSub.tipo_refeicao_id,
-                                      slotSub.tipo_refeicao.nome,
-                                      slotSub.tipo_refeicao.horario,
-                                      (slotSub as { horario_efetivo?: string }).horario_efetivo ?? slotSub.tipo_refeicao.horario,
-                                    )}
-                                    className={`text-[7px] h-3.5 px-1 inline-flex items-center gap-0.5 rounded border transition-colors ${
-                                      (slotSub as { horario_override?: unknown }).horario_override
-                                        ? 'bg-[#D4A017]/15 border-[#D4A017]/50 text-[#D4A017]'
-                                        : 'bg-transparent border-gray-200 text-gray-500 hover:border-[#D4A017]/50 hover:text-[#D4A017]'
-                                    }`}
-                                    title={`Horário padrão: ${slotSub.tipo_refeicao.horario}. Clique para editar.`}
-                                  >
-                                    <ClockIcon className="w-2 h-2" />
-                                    {(slotSub as { horario_efetivo?: string }).horario_efetivo ?? slotSub.tipo_refeicao.horario}
-                                  </button>
-                                  {itensSub.length > 0 && (
-                                    <button
-                                      onClick={() => handleClearSlot(dia.value, slotSub.tipo_refeicao_id)}
-                                      className="text-red-300 hover:text-red-500 transition-colors"
-                                      title="Limpar refeição"
-                                    >
-                                      <Trash2 className="w-2 h-2" />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              {itensSub.map((item) => (
-                                <div
-                                  key={item.id}
-                                  draggable
-                                  onDragStart={(e) => {
-                                    setDraggedItem(item)
-                                    e.dataTransfer.effectAllowed = 'copyMove'
-                                    setDragAltHint(true)
-                                  }}
-                                  onDragEnd={() => {
-                                    setDraggedItem(null)
-                                    setDragOverSlot(null)
-                                    setDragAltHint(false)
-                                  }}
-                                  className={`flex items-center gap-1 mb-0.5 p-0.5 rounded bg-white border border-gray-100 text-[9px] group cursor-grab active:cursor-grabbing ${
-                                    draggedItem?.id === item.id ? 'opacity-50' : ''
-                                  }`}
-                                  title="Arraste para mover • Alt+Arraste para duplicar"
-                                >
-                                  <GripVertical className="w-2 h-2 text-gray-300 flex-shrink-0 group-hover:text-gray-400" />
-                                  <span className="flex-1 truncate">{item.preparacao.nome}</span>
-                                  {item.porcoes > 1 && (
-                                    <span
-                                      className="px-1 rounded border border-gray-200 text-[8px] font-bold text-[#1A3A5C] flex-shrink-0"
-                                      title={`${item.porcoes} porções`}
-                                    >
-                                      {item.porcoes}×
-                                    </span>
-                                  )}
-                                  <button
-                                    onClick={() => handleRemoveItem(item.id)}
-                                    className="text-red-300 hover:text-red-500 ml-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                    title="Remover preparação"
-                                  >
-                                    <Trash2 className="w-2 h-2" />
-                                  </button>
-                                </div>
-                              ))}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="w-full h-4 text-[8px] text-muted-foreground hover:text-[#D4A017] hover:bg-[#D4A017]/5"
-                                onClick={() => {
-                                  if (diaData) {
-                                    openAddDialog(diaData.id, slotSub.tipo_refeicao_id, dia.value)
-                                  }
-                                }}
-                              >
-                                <Plus className="w-2 h-2 mr-0.5" /> Add
-                              </Button>
-                            </div>
-                            )
-                          })}
                         </div>
                       )
                     })}
@@ -2597,9 +2066,9 @@ export default function CardapioEditorPage() {
 
       {/* ═══ Add Preparações Dialog (Multi-Select) ═══ */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col gap-2 p-4 overflow-hidden">
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col gap-3 p-5 overflow-hidden">
           <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="text-[#1A3A5C] text-sm">Gerenciar Preparações</DialogTitle>
+            <DialogTitle className="text-[#1A3A5C] text-sm">Adicionar Preparações</DialogTitle>
           </DialogHeader>
           <div className="flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden">
             {/* Abas de filtro rápido */}
@@ -2671,33 +2140,21 @@ export default function CardapioEditorPage() {
               })}
             </div>
 
-            {/* v8.8: Contador compacto (sem chips — selecionados aparecem no topo da lista) */}
+            {/* Selected count */}
             {addSelectedPrepIds.size > 0 && (
-              <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-[#1A3A5C]/5 border border-[#1A3A5C]/10 flex-shrink-0">
+              <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-[#1A3A5C]/5 border border-[#1A3A5C]/10 flex-shrink-0">
                 <Check className="w-3.5 h-3.5 text-[#1A3A5C]" />
                 <span className="text-xs font-medium text-[#1A3A5C]">{addSelectedPrepIds.size} selecionada(s)</span>
-                {(() => {
-                  const paraAdd = Array.from(addSelectedPrepIds).filter(id => !addInitialPrepIds.has(id)).length
-                  const paraRem = Array.from(addInitialPrepIds).filter(id => !addSelectedPrepIds.has(id)).length
-                  if (paraAdd > 0 || paraRem > 0) {
-                    return (
-                      <span className="text-[10px] text-[#D4A017] font-medium ml-1">
-                        ({paraAdd > 0 ? `+${paraAdd}` : ''}{paraAdd > 0 && paraRem > 0 ? ' ' : ''}{paraRem > 0 ? `-${paraRem}` : ''})
-                      </span>
-                    )
-                  }
-                  return null
-                })()}
                 <button
                   onClick={() => setAddSelectedPrepIds(new Set())}
                   className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
                 >
-                  Limpar
+                  Limpar seleção
                 </button>
               </div>
             )}
 
-            {/* v8.8: Lista com selecionados fixados no topo + info nutricional */}
+            {/* Preparations list with checkboxes — flex-1 para precher espaço restante */}
             <ScrollArea className="flex-1 min-h-0 border rounded-lg">
               <div className="p-1">
                 {filteredPreparacoes.length === 0 ? (
@@ -2706,80 +2163,69 @@ export default function CardapioEditorPage() {
                   </p>
                 ) : (
                   filteredPreparacoes.map((p) => {
-                    const alergenos = detectarAlergenosPreparacao(
+                    // v9.6.4: respeita override manual de alergenos
+                    const bloqueados = parseAlergenosArrayLocal((p as any).alergenos_bloqueados)
+                    const forcados = parseAlergenosArrayLocal((p as any).alergenos_forcados)
+                    const alergenos = detectarAlergenosPreparacaoComOverride(
                       p.ingredientes.map((ing) => ({
                         nome: ing.alimento.nome,
                         grupo: ing.alimento.grupo,
-                      }))
+                      })),
+                      bloqueados,
+                      forcados,
                     )
-                    const isSelected = addSelectedPrepIds.has(p.id)
-                    const ehNovo = isSelected && !addInitialPrepIds.has(p.id)
-                    // v8.8: Calcular info nutricional (kcal + proteína) usando quantidade_gramas base (100%)
-                    // Mesma lógica da página de preparações — NÃO usar percapitas[0] que pode ser BERCARIO
-                    const kcal = p.ingredientes.reduce((sum, ing) => {
-                      const g = ing.quantidade_gramas
-                      return sum + (g * (ing.alimento.energia_kcal || 0)) / 100
-                    }, 0)
-                    const prot = p.ingredientes.reduce((sum, ing) => {
-                      const g = ing.quantidade_gramas
-                      return sum + (g * (ing.alimento.proteinas_g || 0)) / 100
-                    }, 0)
                     return (
                       <label
                         key={p.id}
-                        className={`flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer transition-colors text-xs ${
-                          isSelected
-                            ? ehNovo
-                              ? 'bg-emerald-50 border border-emerald-300'
-                              : 'bg-[#1A3A5C]/10 border border-[#1A3A5C]/30'
+                        className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors text-xs ${
+                          addSelectedPrepIds.has(p.id)
+                            ? 'bg-[#1A3A5C]/10 border border-[#1A3A5C]/20'
                             : 'hover:bg-gray-50 border border-transparent'
                         }`}
                       >
                         <Checkbox
-                          checked={isSelected}
+                          checked={addSelectedPrepIds.has(p.id)}
                           onCheckedChange={() => togglePrepSelection(p.id)}
                           className="flex-shrink-0"
                         />
                         {p.favorita && (
                           <Star className="w-3 h-3 text-[#D4A017] flex-shrink-0 fill-[#D4A017]" />
                         )}
-                        {ehNovo && (
-                          <span className="text-[7px] font-bold text-emerald-600 bg-emerald-100 px-0.5 rounded flex-shrink-0 leading-tight">NEW</span>
-                        )}
                         <span className="font-medium truncate flex-1 min-w-0">{p.nome}</span>
-                        {/* Info compacta à direita */}
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          {kcal > 0 && (
-                            <span className="text-[8px] text-muted-foreground whitespace-nowrap tabular-nums">
-                              {kcal.toFixed(0)}kcal
-                            </span>
-                          )}
-                          {alergenos.length > 0 && (
-                            <div className="flex items-center gap-px">
-                              {alergenos.map((sigla) => (
-                                <span
-                                  key={sigla}
-                                  className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm border border-gray-300 text-[7px] font-bold text-gray-600"
-                                  title={sigla}
-                                >
-                                  {sigla}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              openEditPrepInDialog(p.id)
-                            }}
-                            className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded p-0.5 transition-colors"
-                            title="Editar preparação"
-                          >
-                            <Pencil className="w-2.5 h-2.5" />
-                          </button>
-                        </div>
+                        {alergenos.length > 0 && (
+                          <div className="flex items-center gap-0.5 flex-shrink-0">
+                            {alergenos.map((sigla) => (
+                              <span
+                                key={sigla}
+                                className="inline-flex items-center justify-center w-4 h-4 rounded-sm border border-gray-300 text-[8px] font-bold text-gray-600"
+                                title={sigla}
+                              >
+                                {sigla}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {p.vezes_usada > 0 && (
+                          <span className="text-[9px] text-muted-foreground flex-shrink-0">
+                            {p.vezes_usada}×
+                          </span>
+                        )}
+                        <span className="text-[10px] text-muted-foreground flex-shrink-0">
+                          {p.ingredientes.length} ing.
+                        </span>
+                        {/* v8: Botão editar preparação — abre sub-dialog (não abre nova aba) */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            openEditPrepInDialog(p.id)
+                          }}
+                          className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded p-0.5 flex-shrink-0 transition-colors"
+                          title="Editar preparação"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
                       </label>
                     )
                   })
@@ -2802,17 +2248,10 @@ export default function CardapioEditorPage() {
             <Button
               size="sm"
               onClick={handleAddPreparacoes}
-              disabled={adding}
+              disabled={adding || addSelectedPrepIds.size === 0}
               className="bg-[#1A3A5C] hover:bg-[#1A3A5C]/90"
             >
-              {adding ? 'Salvando...' : (() => {
-                const paraAdd = Array.from(addSelectedPrepIds).filter(id => !addInitialPrepIds.has(id)).length
-                const paraRem = Array.from(addInitialPrepIds).filter(id => !addSelectedPrepIds.has(id)).length
-                if (paraAdd > 0 && paraRem > 0) return `Salvar (+${paraAdd} / -${paraRem})`
-                if (paraAdd > 0) return `Adicionar ${paraAdd} preparação(ões)`
-                if (paraRem > 0) return `Remover ${paraRem} preparação(ões)`
-                return 'Nenhuma alteração'
-              })()}
+              {adding ? 'Adicionando...' : `Adicionar ${addSelectedPrepIds.size} preparação(ões)`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3248,193 +2687,6 @@ export default function CardapioEditorPage() {
               </Button>
             </div>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* v8.16: Dialog "Localizar e Substituir" preparação */}
-      <Dialog open={localizarSubstituirOpen} onOpenChange={(v) => {
-        setLocalizarSubstituirOpen(v)
-        if (!v) {
-          setLocalizarBusca('')
-          setLocalizarResultados([])
-          setLocalizarPrepSelecionada(null)
-          setLocalizarSubstituta('')
-        }
-      }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="text-[#1A3A5C] flex items-center gap-2">
-              <ArrowLeftRight className="w-4 h-4" />
-              Localizar e Substituir Preparação
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 overflow-y-auto flex-1 pr-1">
-            {/* Busca */}
-            <div className="flex gap-2">
-              <Input
-                placeholder="Buscar preparação (ex: Suco, Arroz, Feijão)..."
-                value={localizarBusca}
-                onChange={(e) => setLocalizarBusca(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && localizarBusca.trim().length >= 2) handleLocalizar() }}
-                className="flex-1"
-              />
-              <Button
-                onClick={handleLocalizar}
-                disabled={localizarBuscando || localizarBusca.trim().length < 2}
-                className="bg-[#1A3A5C] hover:bg-[#1A3A5C]/90"
-              >
-                {localizarBuscando ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                <span className="ml-1">Buscar</span>
-              </Button>
-            </div>
-
-            {/* Resultados */}
-            {localizarResultados.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  {localizarResultados.reduce((s, p) => s + p.ocorrencias.length, 0)} ocorrência(s) em {localizarResultados.length} preparação(ões).
-                  Clique numa ocorrência para ir até ela no editor.
-                </p>
-                {localizarResultados.map((prep) => (
-                  <div key={prep.preparacao_id} className="border rounded-md p-2 bg-white">
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium truncate">{prep.preparacao_nome}</span>
-                        {prep.categoria && (
-                          <Badge variant="outline" className="ml-2 text-[9px]">{prep.categoria}</Badge>
-                        )}
-                        <span className="ml-2 text-xs text-muted-foreground">{prep.ocorrencias.length}×</span>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        onClick={() => {
-                          setLocalizarPrepSelecionada(localizarPrepSelecionada === prep.preparacao_id ? null : prep.preparacao_id)
-                          setLocalizarSubstituta('')
-                        }}
-                      >
-                        {localizarPrepSelecionada === prep.preparacao_id ? 'Cancelar' : 'Substituir'}
-                      </Button>
-                    </div>
-
-                    {/* Lista de ocorrências — clicáveis para navegar até a semana/dia */}
-                    <div className="text-[11px] space-y-0.5 mb-1">
-                      {prep.ocorrencias.slice(0, 12).map((oc) => (
-                        <button
-                          key={oc.item_id}
-                          onClick={() => {
-                            // v8.16.1: navega até a semana/dia da ocorrência
-                            setCurrentSemana(oc.semana_num)
-                            setLocalizarSubstituirOpen(false)
-                            toast.info(`Indo para Semana ${oc.semana_num} · ${oc.dia_semana} · ${oc.tipo_refeicao_nome}`)
-                          }}
-                          className="flex items-center gap-2 w-full text-left hover:bg-blue-50 hover:text-blue-700 transition-colors rounded px-1 py-0.5 cursor-pointer group"
-                          title={`Ir para Semana ${oc.semana_num} · ${oc.dia_semana} · ${oc.tipo_refeicao_nome}`}
-                        >
-                          <span className="text-[9px] bg-[#1A3A5C]/10 text-[#1A3A5C] px-1.5 py-0.5 rounded font-medium group-hover:bg-[#1A3A5C] group-hover:text-white transition-colors">
-                            S{oc.semana_num}
-                          </span>
-                          <span className="capitalize text-muted-foreground group-hover:text-blue-700">{oc.dia_semana}</span>
-                          <span className="text-[9px] text-[#1A3A5C]/70 group-hover:text-blue-600">·</span>
-                          <span className="text-[10px] text-[#1A3A5C]/70 group-hover:text-blue-600">{oc.tipo_refeicao_nome}</span>
-                          <ExternalLink className="w-2.5 h-2.5 ml-auto text-gray-300 group-hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-all" />
-                        </button>
-                      ))}
-                      {prep.ocorrencias.length > 12 && (
-                        <p className="text-[10px] italic text-muted-foreground pl-1">
-                          + {prep.ocorrencias.length - 12} outras ocorrências...
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Painel de substituição */}
-                    {localizarPrepSelecionada === prep.preparacao_id && (
-                      <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded space-y-3">
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-semibold text-amber-800">
-                            Substituir "{prep.preparacao_nome}" por:
-                          </Label>
-                          <Select value={localizarSubstituta} onValueChange={setLocalizarSubstituta}>
-                            <SelectTrigger className="h-8 text-xs bg-white">
-                              <SelectValue placeholder="Selecionar preparação substituta" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {preparacoes.filter(p => p.id !== prep.preparacao_id).map((p) => (
-                                <SelectItem key={p.id} value={p.id} className="text-xs">{p.nome}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        {localizarSubstituta && (
-                          <div className="flex flex-col gap-2 pt-1 border-t border-amber-200">
-                            <p className="text-[10px] text-amber-700">
-                              Escolha o tipo de substituição:
-                            </p>
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-8 text-xs flex-1 bg-white hover:bg-amber-100 border-amber-300"
-                                disabled={localizarSubstituindo}
-                                onClick={() => handleSubstituirTodos(prep.preparacao_id)}
-                              >
-                                <ArrowLeftRight className="w-3 h-3 mr-1" />
-                                Substituir TODAS ({prep.ocorrencias.length})
-                              </Button>
-                            </div>
-                            <p className="text-[10px] text-muted-foreground">
-                              <strong>TODAS:</strong> troca todas as ocorrências de uma vez. Se a substituta já existir em algum slot, a ocorrência é removida (evita duplicata).
-                            </p>
-
-                            <div className="pt-2 border-t border-amber-200">
-                              <p className="text-[10px] font-semibold text-amber-800 mb-1">
-                                Ou substitua uma por uma:
-                              </p>
-                              <div className="space-y-1 max-h-40 overflow-y-auto">
-                                {prep.ocorrencias.slice(0, 12).map((oc) => (
-                                  <div key={oc.item_id} className="flex items-center gap-2 text-[10px] bg-white rounded px-2 py-1 border border-amber-100">
-                                    <span className="text-[9px] bg-[#1A3A5C]/10 text-[#1A3A5C] px-1 rounded font-medium">S{oc.semana_num}</span>
-                                    <span className="capitalize text-muted-foreground">{oc.dia_semana}</span>
-                                    <span className="text-[#1A3A5C]/70">·</span>
-                                    <span className="text-[#1A3A5C]/70">{oc.tipo_refeicao_nome}</span>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-5 text-[9px] ml-auto px-1.5 text-amber-700 hover:bg-amber-100"
-                                      disabled={localizarSubstituindo}
-                                      onClick={() => handleSubstituirUm(oc.item_id)}
-                                    >
-                                      Substituir
-                                    </Button>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {localizarResultados.length === 0 && localizarBusca && !localizarBuscando && (
-              <p className="text-center text-sm text-muted-foreground py-4">
-                Clique em "Buscar" para localizar preparações.
-              </p>
-            )}
-
-            {!localizarBusca && (
-              <div className="text-center text-sm text-muted-foreground py-8 space-y-2">
-                <ArrowLeftRight className="w-8 h-8 mx-auto opacity-30" />
-                <p>Digite o nome de uma preparação para localizá-la no cardápio.</p>
-                <p className="text-[11px]">Você poderá substituir uma por uma ou todas de uma vez.</p>
-              </div>
-            )}
-          </div>
         </DialogContent>
       </Dialog>
     </div>

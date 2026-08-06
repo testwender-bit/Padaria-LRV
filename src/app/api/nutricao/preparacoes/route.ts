@@ -1,8 +1,22 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { FASES_ESCOLARES, calcularPercapitaPorFase, type FaseEscolar } from '@/lib/nutricao-utils'
-import { detectarAlergenosPreparacao } from '@/lib/alergenos-utils'
+import { detectarAlergenosPreparacao, detectarAlergenosPreparacaoComOverride, type AlergenoSigla } from '@/lib/alergenos-utils'
 import { normalizeText } from '@/lib/busca-utils'
+
+// v9.6.4: helper para parsear JSON string de alergenos (vindo do banco)
+function parseAlergenosArray(jsonStr: unknown): AlergenoSigla[] {
+  if (!jsonStr || typeof jsonStr !== 'string') return []
+  try {
+    const arr = JSON.parse(jsonStr)
+    if (!Array.isArray(arr)) return []
+    return arr.filter((s): s is AlergenoSigla =>
+      ['L', 'O', 'T', 'S'].includes(s)
+    )
+  } catch {
+    return []
+  }
+}
 
 export async function GET(request: Request) {
   try {
@@ -54,13 +68,18 @@ export async function GET(request: Request) {
     }
 
     // Filtro por alérgenos (precisa processar ingredientes)
+    // v9.6.4: agora respeita alergenos_bloqueados e alergenos_forcados
     if (semAlergenos.length > 0) {
       preparacoes = preparacoes.filter((p) => {
-        const alergenos = detectarAlergenosPreparacao(
+        const bloqueados = parseAlergenosArray((p as any).alergenos_bloqueados)
+        const forcados = parseAlergenosArray((p as any).alergenos_forcados)
+        const alergenos = detectarAlergenosPreparacaoComOverride(
           p.ingredientes.map((ing) => ({
             nome: ing.alimento.nome,
             grupo: ing.alimento.grupo,
-          }))
+          })),
+          bloqueados,
+          forcados,
         )
         // Se a preparação tem QUALQUER alérgeno da lista de exclusão, remover
         return !alergenos.some((a) => semAlergenos.includes(a))
@@ -118,6 +137,9 @@ export async function POST(request: Request) {
           modo_preparo: body.modo_preparo || null,
           // v8: categoria (default PREPARACAO)
           categoria: body.categoria || 'PREPARACAO',
+          // v9.6.4: override manual de alérgenos
+          alergenos_bloqueados: JSON.stringify(body.alergenos_bloqueados || []),
+          alergenos_forcados: JSON.stringify(body.alergenos_forcados || []),
           ativo: true,
         },
       })

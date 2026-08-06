@@ -24,10 +24,23 @@ import {
 } from '@/lib/nutricao-utils'
 import {
   detectarAlergenosPreparacao,
+  detectarAlergenosPreparacaoComOverride,
   ALERGENOS,
   ALERGENOS_LIST,
   type AlergenoSigla,
 } from '@/lib/alergenos-utils'
+
+// v9.6.4: helper para parsear JSON string de alergenos (vindo do banco)
+function parseAlergenosArrayPdf(jsonStr: unknown): AlergenoSigla[] {
+  if (!jsonStr || typeof jsonStr !== 'string') return []
+  try {
+    const arr = JSON.parse(jsonStr)
+    if (!Array.isArray(arr)) return []
+    return arr.filter((s): s is AlergenoSigla => ['L', 'O', 'T', 'S'].includes(s))
+  } catch {
+    return []
+  }
+}
 import { sortItensByRefeicao } from '@/lib/ordenacao-preparacoes'
 import { parseHorarioToMinutes } from '@/lib/horario-utils'
 
@@ -392,11 +405,16 @@ function SemanaPrintPage({
                     ) : itens.length > 0 ? (
                       <ul className="sp-prep-list">
                         {itens.map((item) => {
-                          const alergenos = detectarAlergenosPreparacao(
+                          // v9.6.4: respeita override manual de alergenos
+                          const bloqueados = parseAlergenosArrayPdf((item.preparacao as any).alergenos_bloqueados)
+                          const forcados = parseAlergenosArrayPdf((item.preparacao as any).alergenos_forcados)
+                          const alergenos = detectarAlergenosPreparacaoComOverride(
                             item.preparacao.ingredientes.map((ing) => ({
                               nome: ing.alimento.nome,
                               grupo: ing.alimento.grupo,
-                            }))
+                            })),
+                            bloqueados,
+                            forcados,
                           )
                           return (
                             <li key={item.id} className="sp-prep-item">

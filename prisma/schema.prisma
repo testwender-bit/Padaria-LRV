@@ -467,6 +467,11 @@ model Preparacao {
   // BEBIDA     = bebida (suco, leite, chá)
   // SOBREMESA  = sobremesa
   categoria    String  @default("PREPARACAO")
+  // v9.6.4: override manual de alérgenos (JSON string com siglas: L,O,T,S)
+  // alergenos_bloqueados: siglas REMOVIDAS da detecção automática (ex.: "T" num cuscuz de milho)
+  // alergenos_forcados: siglas ADICIONADAS além da detecção automática
+  alergenos_bloqueados  String  @default("[]")
+  alergenos_forcados    String  @default("[]")
 
   ingredientes   PreparacaoIngrediente[]
   cardapio_itens CardapioItem[]
