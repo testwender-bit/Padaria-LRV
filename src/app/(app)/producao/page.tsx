@@ -200,6 +200,8 @@ export default function ProducaoPage() {
         rota: 'OUTROS',
         // v9.5.2: ordem_rota alta para aparecer por último dentro da rota OUTROS
         ordem_rota: 9999,
+        // v9.6.3: ordem_pcq alta para aparecer por último no PCQ também
+        ordem_pcq: 9999,
         busca_propria: false,
         produto: extra.produto as ItemProducao['produto'],
         quantidade: extra.quantidade,
