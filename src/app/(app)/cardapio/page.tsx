@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,9 +19,9 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
+  DialogTrigger,
 } from '@/components/ui/dialog'
-import { CalendarDays, Plus, Edit2, Save, Calendar, AlertCircle } from 'lucide-react'
+import { CalendarDays, Plus, Edit2, Save } from 'lucide-react'
 import { TIPOS_PAO } from '@/lib/unit-options'
 import { getISOWeek } from 'date-fns'
 import { toast } from 'sonner'
@@ -56,27 +56,6 @@ export default function CardapioPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editData, setEditData] = useState<Partial<CardapioEntry>>({})
 
-  // v9.3: seletor de ano e semestre
-  const anoAtual = new Date().getFullYear()
-  const mesAtual = new Date().getMonth() + 1
-  const [anoSel, setAnoSel] = useState<number>(anoAtual)
-  const [semestreSel, setSemestreSel] = useState<number>(mesAtual >= 7 ? 2 : 1)
-
-  // v9.4: data de início do semestre (quando criar a primeira semana)
-  // Default: 1º sem = 1ª segunda de fevereiro, 2º sem = 1ª segunda de agosto
-  function calcularSegundaPadrao(ano: number, semestre: number): string {
-    const mes = semestre === 1 ? 1 : 7 // fevereiro (index 1) ou agosto (index 7)
-    let data = new Date(ano, mes, 1)
-    const dia = data.getDay()
-    if (dia !== 1) {
-      data.setDate(data.getDate() + (8 - dia) % 7)
-    }
-    return data.toISOString().split('T')[0]
-  }
-  const [dataInicioSemestre, setDataInicioSemestre] = useState<string>(
-    calcularSegundaPadrao(anoAtual, mesAtual >= 7 ? 2 : 1)
-  )
-
   useEffect(() => {
     Promise.all([
       fetch('/api/cardapio').then((r) => r.json()),
@@ -87,45 +66,6 @@ export default function CardapioPage() {
       setLoading(false)
     })
   }, [])
-
-  // v9.4: quando muda ano ou semestre, recalcula a data padrão
-  // (só se o semestre estiver vazio — se já tem semanas, mantém)
-  useEffect(() => {
-    if (cardapioFiltrado.length === 0) {
-      setDataInicioSemestre(calcularSegundaPadrao(anoSel, semestreSel))
-    }
-  }, [anoSel, semestreSel])
-
-  // Anos disponíveis no banco + ano atual
-  const anosDisponiveis = useMemo(() => {
-    const anos = new Set(cardapio.map((c) => c.ano))
-    anos.add(anoAtual)
-    return Array.from(anos).sort((a, b) => b - a)
-  }, [cardapio, anoAtual])
-
-  // v9.3: filtra por ano e semestre selecionados
-  // Semestre 1 = semanas 1-22 começando em fevereiro
-  // Semestre 2 = semanas 1-22 começando em agosto
-  // Como o banco usa semana 1-22 por ano, distinguimos por data_inicio
-  const cardapioFiltrado = useMemo(() => {
-    return cardapio
-      .filter((c) => c.ano === anoSel)
-      .filter((c) => {
-        if (semestreSel === 1) {
-          // 1º semestre: janeiro a junho
-          const mes = new Date(c.data_inicio + 'T12:00:00').getMonth() + 1
-          return mes >= 1 && mes <= 6
-        } else {
-          // 2º semestre: julho a dezembro
-          const mes = new Date(c.data_inicio + 'T12:00:00').getMonth() + 1
-          return mes >= 7 && mes <= 12
-        }
-      })
-      .sort((a, b) => a.semana - b.semana)
-  }, [cardapio, anoSel, semestreSel])
-
-  const maxSemana = cardapioFiltrado.length > 0 ? Math.max(...cardapioFiltrado.map((c) => c.semana)) : 0
-  const proximaSemana = maxSemana + 1
 
   async function handleSave() {
     if (!editingId) return
@@ -149,36 +89,30 @@ export default function CardapioPage() {
     }
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="w-8 h-8 rounded-full border-2 border-[#D4A017]/30 border-t-[#D4A017] animate-spin" />
+      </div>
+    )
+  }
+
+  const lanchesAtivos = lanches.filter((l) => l.ativo)
+  const maxSemana = cardapio.length > 0 ? Math.max(...cardapio.map((c) => c.semana)) : 0
+  const proximaSemana = maxSemana + 1
+
   async function handleCreateSemana() {
     if (proximaSemana > 22) {
-      toast.error('Máximo de 22 semanas por semestre atingido')
+      toast.error('Máximo de 22 semanas atingido')
       return
     }
     try {
-      // Calcula a data da próxima semana baseada na última semana do semestre selecionado
-      const ultima = cardapioFiltrado[cardapioFiltrado.length - 1]
-      let segundaProxima: Date
-
-      if (ultima) {
-        // Continua da última semana
-        const fimAnterior = new Date(ultima.data_fim + 'T12:00:00')
-        segundaProxima = new Date(fimAnterior)
-        segundaProxima.setDate(segundaProxima.getDate() + 3) // pula o fim de semana
-        // Ajusta para segunda-feira
-        const dia = segundaProxima.getDay()
-        if (dia !== 1) {
-          segundaProxima.setDate(segundaProxima.getDate() + (8 - dia) % 7)
-        }
-      } else {
-        // v9.4: Primeira semana do semestre — usa a data definida pelo usuário
-        segundaProxima = new Date(dataInicioSemestre + 'T12:00:00')
-        // Ajusta para a próxima segunda-feira se não for
-        const dia = segundaProxima.getDay()
-        if (dia !== 1) {
-          segundaProxima.setDate(segundaProxima.getDate() + (8 - dia) % 7)
-        }
-      }
-
+      const hoje = new Date()
+      const inicioProxima = cardapio.length > 0
+        ? new Date((cardapio[cardapio.length - 1]?.data_fim || hoje.toISOString().split('T')[0]) + 'T12:00:00')
+        : hoje
+      const segundaProxima = new Date(inicioProxima)
+      segundaProxima.setDate(segundaProxima.getDate() + (segundaProxima.getDay() === 0 ? 1 : segundaProxima.getDay() === 6 ? 2 : 7 - segundaProxima.getDay() + 1))
       const sextaProxima = new Date(segundaProxima)
       sextaProxima.setDate(sextaProxima.getDate() + 4)
       const isoWeek = getISOWeek(segundaProxima)
@@ -187,7 +121,7 @@ export default function CardapioPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ano: anoSel,
+          ano: segundaProxima.getFullYear(),
           semana: proximaSemana,
           numero_semana_iso: isoWeek,
           data_inicio: segundaProxima.toISOString().split('T')[0],
@@ -206,16 +140,6 @@ export default function CardapioPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-8 h-8 rounded-full border-2 border-[#D4A017]/30 border-t-[#D4A017] animate-spin" />
-      </div>
-    )
-  }
-
-  const lanchesAtivos = lanches.filter((l) => l.ativo)
-
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -225,86 +149,21 @@ export default function CardapioPage() {
         </div>
         {proximaSemana <= 22 && (
           <Button onClick={handleCreateSemana} className="bg-gradient-to-r from-[#1A3A5C] to-[#2C5282]">
-            <Plus className="w-4 h-4 mr-1" /> Nova Semana {proximaSemana}
+            <Plus className="w-4 h-4 mr-1" /> Nova Semana
           </Button>
         )}
       </div>
 
-      {/* v9.3: Seletor de Ano + Semestre */}
-      <Card className="border-[#1A3A5C]/10">
-        <CardContent className="p-4 flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-[#1A3A5C]" />
-            <Label className="text-xs font-semibold text-[#1A3A5C]">Ano:</Label>
-            <Select value={String(anoSel)} onValueChange={(v) => setAnoSel(Number(v))}>
-              <SelectTrigger className="w-24 h-8 text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {anosDisponiveis.map((a) => (
-                  <SelectItem key={a} value={String(a)}>{a}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-2">
-            <Label className="text-xs font-semibold text-[#1A3A5C]">Semestre:</Label>
-            <div className="flex gap-1 bg-muted rounded-lg p-0.5">
-              <Button
-                size="sm"
-                variant={semestreSel === 1 ? 'default' : 'ghost'}
-                onClick={() => setSemestreSel(1)}
-                className={`h-7 text-xs ${semestreSel === 1 ? 'bg-[#1A3A5C] text-white' : ''}`}
-              >
-                1º Semestre
-              </Button>
-              <Button
-                size="sm"
-                variant={semestreSel === 2 ? 'default' : 'ghost'}
-                onClick={() => setSemestreSel(2)}
-                className={`h-7 text-xs ${semestreSel === 2 ? 'bg-[#1A3A5C] text-white' : ''}`}
-              >
-                2º Semestre
-              </Button>
-            </div>
-          </div>
-          {/* v9.4: Campo de data de início do semestre (só aparece quando semestre está vazio) */}
-          {cardapioFiltrado.length === 0 && (
-            <div className="flex items-center gap-2 border-l pl-4 ml-2 border-gray-200">
-              <Label className="text-xs font-semibold text-[#D4A017]">Início do semestre:</Label>
-              <Input
-                type="date"
-                value={dataInicioSemestre}
-                onChange={(e) => setDataInicioSemestre(e.target.value)}
-                className="w-40 h-8 text-sm"
-              />
-              <span className="text-[10px] text-muted-foreground">
-                (ajustado para a próxima segunda-feira)
-              </span>
-            </div>
-          )}
-          <div className="text-xs text-muted-foreground ml-auto">
-            {cardapioFiltrado.length} semana(s) cadastrada(s)
-          </div>
-        </CardContent>
-      </Card>
-
-      {cardapioFiltrado.length === 0 ? (
+      {cardapio.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <CalendarDays className="w-12 h-12 text-muted-foreground/30 mb-4" />
-            <p className="text-muted-foreground mb-2">
-              Nenhuma semana cadastrada para {anoSel} — {semestreSel}º semestre
-            </p>
-            <p className="text-xs text-muted-foreground mb-4">
-              Clique em "Nova Semana 1" para começar a cadastrar
-            </p>
-            <Button onClick={handleCreateSemana} className="bg-gradient-to-r from-[#1A3A5C] to-[#2C5282]">
-              <Plus className="w-4 h-4 mr-1" /> Criar Semana 1
-            </Button>
+            <p className="text-muted-foreground">Nenhuma semana cadastrada</p>
           </CardContent>
         </Card>
       ) : (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-2">
-          {cardapioFiltrado.map((entry) => (
+          {cardapio.map((entry) => (
             <Card
               key={entry.id}
               className="border-amber-100 hover:shadow-md transition-shadow"
@@ -368,14 +227,18 @@ export default function CardapioPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="col-span-2 sm:col-span-4 lg:col-span-6">
-                      <Label className="text-xs">Aviso / Observação da Semana</Label>
-                      <Input
+                    {/* v9.6.7: Aviso/observação da semana — aparece no dashboard e produção */}
+                    <div className="md:col-span-2">
+                      <Label className="text-xs">Aviso da Semana (observação)</Label>
+                      <textarea
+                        className="w-full min-h-[60px] p-2 text-sm rounded-md border border-input bg-background resize-y"
+                        placeholder="Ex: Semana com feriado na quinta — produção reduzida. Deixe vazio se não houver aviso."
                         value={editData.obs || ''}
-                        onChange={(e) => setEditData((prev) => ({ ...prev, obs: e.target.value }))}
-                        placeholder="Ex: Semana com feriado na quinta — ajustar produção"
-                        className="h-8 text-sm"
+                        onChange={(e) => setEditData((prev) => ({ ...prev, obs: e.target.value || null }))}
                       />
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Aparece como banner no Dashboard e na página de Produção APENAS nesta semana (match exato da semana ISO).
+                      </p>
                     </div>
                     <div className="flex gap-1">
                       <Button size="sm" onClick={handleSave} className="h-8 bg-[#1A3A5C]">
@@ -409,12 +272,6 @@ export default function CardapioPage() {
                       {entry.lanche_bifasica && (
                         <Badge className="bg-purple-100 text-purple-700 text-[10px]">
                           B: {entry.lanche_bifasica.nome}
-                        </Badge>
-                      )}
-                      {entry.obs && (
-                        <Badge className="bg-amber-100 text-amber-800 text-[10px] flex items-center gap-1" title={entry.obs}>
-                          <AlertCircle className="w-2.5 h-2.5" />
-                          {entry.obs.length > 40 ? entry.obs.substring(0, 40) + '...' : entry.obs}
                         </Badge>
                       )}
                     </div>

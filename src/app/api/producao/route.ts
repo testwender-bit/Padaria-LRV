@@ -37,6 +37,10 @@ export async function GET(request: Request) {
 
     // Fallback: try to find cardápio by date range if not found by ISO week
     let cardapioFinal = cardapio
+    // v9.6.7: matchExato = true apenas se encontrou por numero_semana_iso.
+    // Se caiu no fallback (date range), matchExato = false — nesse caso
+    // NÃO retornamos o obs, pois o cardápio pode ser de outra semana.
+    let matchExato = !!cardapioFinal
     if (!cardapioFinal) {
       const segundaStr = dataISO(inicio)
       const sextaStr = dataISO(addDays(inicio, 4))
@@ -47,6 +51,7 @@ export async function GET(request: Request) {
         },
         include: { lanche_regular: true, lanche_bifasica: true },
       })
+      matchExato = false
     }
 
     // Feriados da semana
@@ -459,6 +464,10 @@ export async function GET(request: Request) {
       nomePao,
       lancheRegular: lancheRegular?.nome || null,
       lancheBifasica: lancheBifasica?.nome || null,
+      // v9.6.7: obs (aviso da semana) — SÓ retorna se matchExato (cardápio
+      // encontrado por numero_semana_iso exato). Se caiu no fallback de
+      // date range, não retorna obs (pode ser de outra semana).
+      obs: matchExato ? (cardapioFinal?.obs || null) : null,
       dias: diasProducao,
       // v9.5.4: produções extras para a página injetar como ItemProducao
       producaoExtra,

@@ -33,6 +33,7 @@ interface DashboardData {
   nomePao: string
   lancheRegular: string | null
   lancheBifasica: string | null
+  // v9.6.7: aviso da semana (obs do cardápio)
   obs: string | null
 }
 
@@ -115,6 +116,7 @@ export default function DashboardPage() {
           nomePao: producao.nomePao || 'Pão Francês',
           lancheRegular: producao.lancheRegular,
           lancheBifasica: producao.lancheBifasica,
+          // v9.6.7: aviso da semana
           obs: producao.obs || null,
         })
       } catch (err) {
@@ -148,19 +150,15 @@ export default function DashboardPage() {
         <SeletorSemana />
       </div>
 
-      {/* v9.4: Aviso da semana (vem do cardápio semestral) */}
+      {/* v9.6.7: Aviso da semana (obs do cardápio) */}
       {data?.obs && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3"
-        >
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-amber-800">📌 Aviso da Semana</p>
-            <p className="text-sm text-amber-700 mt-0.5">{data.obs}</p>
+            <p className="text-sm font-semibold text-amber-800">Aviso da Semana</p>
+            <p className="text-sm text-amber-700 mt-1">{data.obs}</p>
           </div>
-        </motion.div>
+        </div>
       )}
 
       {/* KPI Cards */}

@@ -34,6 +34,8 @@ export async function GET(request: Request) {
 
     // Fallback: try to find cardápio by date range
     let cardapioFinal = cardapio
+    // v9.6.7: matchExato = true apenas se encontrou por numero_semana_iso.
+    let matchExato = !!cardapioFinal
     if (!cardapioFinal) {
       const segundaStr = dataISO(inicio)
       const sextaStr = dataISO(addDays(inicio, 4))
@@ -44,6 +46,7 @@ export async function GET(request: Request) {
         },
         include: { lanche_regular: true, lanche_bifasica: true },
       })
+      matchExato = false
     }
 
     const tipoPao = cardapioFinal?.tipo_pao || 'PADRAO'
@@ -237,6 +240,8 @@ export async function GET(request: Request) {
       nomePao: cardapioFinal?.nome_pao || 'Pão Francês',
       lancheRegular: lancheRegular?.nome || null,
       lancheBifasica: lancheBifasica?.nome || null,
+      // v9.6.7: obs (aviso da semana) — SÓ se matchExato
+      obs: matchExato ? (cardapioFinal?.obs || null) : null,
       romaneios,
     })
   } catch (error) {
