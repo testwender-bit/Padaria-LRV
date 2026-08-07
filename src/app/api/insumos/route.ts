@@ -1,11 +1,19 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
-export async function GET() {
+// ============================================================
+// GET /api/insumos?inativos=true
+// Lista insumos ativos por padrão. Use ?inativos=true para listar todos
+// (incluindo inativos) — necessário para a página de Gerenciar Insumos.
+// ============================================================
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url)
+    const incluirInativos = searchParams.get('inativos') === 'true'
+
     const insumos = await db.insumo.findMany({
-      where: { ativo: true },
-      orderBy: { nome: 'asc' },
+      where: incluirInativos ? {} : { ativo: true },
+      orderBy: [{ ativo: 'desc' }, { nome: 'asc' }],
     })
     return NextResponse.json(insumos)
   } catch (error) {

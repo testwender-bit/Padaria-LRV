@@ -122,10 +122,13 @@ export async function GET(request: Request) {
 }
 
 // POST /api/contagem — create a batch of physical counts
+// Body: { data_contagem, itens: [{insumo_id, quantidade, obs?}], reconciliar?: boolean }
+// Se reconciliar=true, atualiza Insumo.estoque_atual para cada insumo
+// (cria MovimentacaoEstoque de ajuste para registrar a mudança).
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { data_contagem, itens } = body
+    const { data_contagem, itens, reconciliar } = body
 
     if (!data_contagem || !/^\d{4}-\d{2}-\d{2}$/.test(data_contagem)) {
       return NextResponse.json({ error: 'Data de contagem inválida. Use YYYY-MM-DD.' }, { status: 400 })
@@ -138,48 +141,86 @@ export async function POST(request: Request) {
     const now = new Date()
     const criadoEm = `${data_contagem} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
 
-    // Use transaction to create all counts atomically
-    const created = await db.$transaction(
-      itens.map((item: { insumo_id: string; quantidade: number; obs?: string }) => {
-        // We need to fetch the current estoque_atual for the insumo
-        // But we can't do async inside the map, so we'll handle it differently
-        return db.contagemEstoque.create({
+    // v9.6.8: Transação ATÔMICA — cria contagens + snapshot do estoque + (opcional) reconcilia
+    const result = await db.$transaction(async (tx) => {
+      // 1. Buscar estoque_atual de todos os insumos de uma vez (evita N+1)
+      const insumoIds = itens.map((i: { insumo_id: string }) => i.insumo_id)
+      const insumos = await tx.insumo.findMany({
+        where: { id: { in: insumoIds } },
+        select: { id: true, estoque_atual: true, nome: true, unidade: true, preco_unitario: true },
+      })
+      const insumoMap = new Map(insumos.map((i) => [i.id, i]))
+
+      // 2. Criar todas as contagens com snapshot correto
+      const created = []
+      const ajustes = []  // para reconciliação
+      for (const item of itens) {
+        const insumo = insumoMap.get(item.insumo_id)
+        if (!insumo) continue  // insumo não encontrado — pula
+
+        const estoqueSistema = insumo.estoque_atual
+        const diferenca = Math.round((estoqueSistema - item.quantidade) * 1000) / 1000
+
+        const contagem = await tx.contagemEstoque.create({
           data: {
             data_contagem,
             insumo_id: item.insumo_id,
             quantidade: item.quantidade,
-            estoque_sistema: 0, // placeholder, will be updated
-            diferenca: 0, // placeholder, will be updated
+            estoque_sistema: estoqueSistema,
+            diferenca,
             obs: item.obs || null,
             criado_em: criadoEm,
           },
         })
-      })
-    )
+        created.push(contagem)
 
-    // Now update each record with the correct estoque_sistema and diferenca
-    for (let i = 0; i < created.length; i++) {
-      const insumo = await db.insumo.findUnique({
-        where: { id: itens[i].insumo_id },
-        select: { estoque_atual: true },
-      })
+        // Se for reconciliar e houver diferença, prepara ajuste
+        if (reconciliar && diferenca !== 0) {
+          ajustes.push({
+            insumo_id: item.insumo_id,
+            insumo,
+            diferenca,
+            quantidadeFisica: item.quantidade,
+          })
+        }
+      }
 
-      const estoqueSistema = insumo?.estoque_atual || 0
-      const diferenca = Math.round((estoqueSistema - itens[i].quantidade) * 1000) / 1000
+      // 3. Se reconciliar=true, ajustar estoque e criar movimentações
+      let ajustesFeitos = 0
+      for (const ajuste of ajustes) {
+        const delta = ajuste.quantidadeFisica - ajuste.insumo.estoque_atual
+        if (delta === 0) continue
 
-      await db.contagemEstoque.update({
-        where: { id: created[i].id },
-        data: {
-          estoque_sistema: estoqueSistema,
-          diferenca,
-        },
-      })
-    }
+        // Criar movimentação de ajuste
+        await tx.movimentacaoEstoque.create({
+          data: {
+            insumo_id: ajuste.insumo_id,
+            tipo: delta > 0 ? 'ENTRADA' : 'SAIDA',
+            quantidade: Math.abs(delta),
+            preco_unitario: ajuste.insumo.preco_unitario,
+            preco_total: Math.abs(delta) * ajuste.insumo.preco_unitario,
+            data: data_contagem,
+            obs: `Ajuste de contagem física — ${data_contagem}`,
+          },
+        })
+
+        // Atualizar estoque
+        await tx.insumo.update({
+          where: { id: ajuste.insumo_id },
+          data: { estoque_atual: ajuste.quantidadeFisica },
+        })
+        ajustesFeitos++
+      }
+
+      return { created, ajustesFeitos }
+    })
 
     return NextResponse.json({
       success: true,
-      count: created.length,
+      count: result.created.length,
       data: data_contagem,
+      ajustes: reconciliar ? result.ajustesFeitos : 0,
+      reconciliado: reconciliar || false,
     }, { status: 201 })
   } catch (error) {
     console.error('Erro ao salvar contagem:', error)

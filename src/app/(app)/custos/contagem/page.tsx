@@ -132,7 +132,7 @@ export default function ContagemPage() {
     })
   }
 
-  const handleSave = async () => {
+  const handleSave = async (reconciliar: boolean = false) => {
     const itens = insumos
       .filter((i) => contagens.has(i.id) && contagens.get(i.id)! > 0)
       .map((i) => ({
@@ -145,6 +145,16 @@ export default function ContagemPage() {
       return
     }
 
+    if (reconciliar) {
+      const confirmar = window.confirm(
+        'Reconciliar estoque ao físico?\n\n' +
+        'Isto vai AJUSTAR o estoque_atual de cada insumo para o valor da contagem física, ' +
+        'criando movimentações de ENTRADA ou SAIDA para registrar a diferença.\n\n' +
+        'Esta ação NÃO pode ser desfeita.'
+      )
+      if (!confirmar) return
+    }
+
     setSaving(true)
     try {
       const res = await fetch('/api/contagem', {
@@ -153,12 +163,17 @@ export default function ContagemPage() {
         body: JSON.stringify({
           data_contagem: dataContagem,
           itens,
+          reconciliar,
         }),
       })
 
       if (res.ok) {
         const data = await res.json()
-        toast.success(`Contagem salva! ${data.count} itens registrados.`)
+        let msg = `Contagem salva! ${data.count} itens registrados.`
+        if (reconciliar && data.ajustes > 0) {
+          msg += ` ${data.ajustes} ajuste(s) de estoque criado(s).`
+        }
+        toast.success(msg)
         // Reload data
         loadData()
       } else {
@@ -308,10 +323,10 @@ export default function ContagemPage() {
       </motion.div>
 
       {/* Action buttons */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <Button
           className="bg-gradient-to-r from-[#1A3A5C] to-[#2C5282]"
-          onClick={handleSave}
+          onClick={() => handleSave(false)}
           disabled={saving}
         >
           {saving ? (
@@ -320,6 +335,17 @@ export default function ContagemPage() {
             <Save className="w-4 h-4 mr-1" />
           )}
           Salvar Contagem
+        </Button>
+        {/* v9.6.8: Ajustar ao Físico — salva E reconcilia estoque */}
+        <Button
+          variant="outline"
+          className="border-amber-300 text-amber-700 hover:bg-amber-50"
+          onClick={() => handleSave(true)}
+          disabled={saving}
+          title="Salva a contagem E ajusta o estoque do sistema para o valor físico"
+        >
+          <Save className="w-4 h-4 mr-1" />
+          Ajustar ao Físico
         </Button>
         <Button variant="outline" onClick={handleLimpar}>
           <Eraser className="w-4 h-4 mr-1" />

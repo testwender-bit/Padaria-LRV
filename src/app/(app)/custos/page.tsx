@@ -417,7 +417,15 @@ export default function CustosPage() {
       </motion.div>
 
       {/* Sub-page links */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+        {/* v9.6.8: Novo link Gerenciar Insumos */}
+        <Link href="/custos/insumos">
+          <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100/50 border border-indigo-200 hover:shadow-md transition-all cursor-pointer group">
+            <Package className="w-6 h-6 text-indigo-600 mb-2 group-hover:scale-110 transition-transform" />
+            <p className="text-sm font-semibold text-indigo-900">Gerenciar</p>
+            <p className="text-xs text-indigo-600">Insumos</p>
+          </div>
+        </Link>
         <Link href="/custos/previsao">
           <div className="p-4 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100/50 border border-amber-200 hover:shadow-md transition-all cursor-pointer group">
             <TrendingUp className="w-6 h-6 text-amber-600 mb-2 group-hover:scale-110 transition-transform" />

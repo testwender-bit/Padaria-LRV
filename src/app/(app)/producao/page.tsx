@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, Fragment } from 'react'
 import { motion } from 'framer-motion'
 import { SeletorSemana } from '@/components/seletor-semana'
 import { AjusteDialog } from '@/components/ajuste-dialog'
@@ -491,8 +491,8 @@ export default function ProducaoPage() {
                   </thead>
                   <tbody>
                     {DIAS_PRODUCAO.filter(d => consolidado.totais_por_dia.lanche[d] > 0).map((d) => (
-                      <>
-                        <tr key={d} style={{ borderTop: '1.5pt solid #000' }}>
+                      <Fragment key={d}>
+                        <tr style={{ borderTop: '1.5pt solid #000' }}>
                           <td style={{ fontWeight: '800', fontSize: '8pt', textTransform: 'uppercase', padding: '1.5mm 1.5mm', borderBottom: '0.5pt solid #000', letterSpacing: '0.3pt' }}>
                             ■ {DIAS_LABEL_CURTO_PRODUCAO[d].toUpperCase()}
                           </td>
@@ -506,7 +506,7 @@ export default function ProducaoPage() {
                             <td style={{ textAlign: 'center', padding: '0.8mm 1.5mm', fontSize: '8pt' }}>{escola.lanche[d]}</td>
                           </tr>
                         ))}
-                      </>
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>

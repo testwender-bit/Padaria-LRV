@@ -1,19 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Plus, TrendingUp, TrendingDown } from 'lucide-react'
+import { Plus, TrendingUp, TrendingDown, Search, Filter } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Movimentacao {
@@ -42,16 +38,45 @@ export default function MovimentacoesPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editMov, setEditMov] = useState<Partial<Movimentacao> & { insumo_id?: string }>({})
 
-  useEffect(() => {
-    Promise.all([
-      fetch('/api/movimentacoes').then((r) => r.json()),
-      fetch('/api/insumos').then((r) => r.json()),
-    ]).then(([m, i]) => {
+  // v9.6.8: Filtros
+  const [filtroInsumo, setFiltroInsumo] = useState('all')
+  const [filtroTipo, setFiltroTipo] = useState('all')
+  const [filtroDataInicio, setFiltroDataInicio] = useState('')
+  const [filtroDataFim, setFiltroDataFim] = useState('')
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    try {
+      // Construir query com filtros
+      const params = new URLSearchParams()
+      if (filtroInsumo !== 'all') params.set('insumo_id', filtroInsumo)
+      if (filtroTipo !== 'all') params.set('tipo', filtroTipo)
+      if (filtroDataInicio) params.set('data_inicio', filtroDataInicio)
+      if (filtroDataFim) params.set('data_fim', filtroDataFim)
+      params.set('limite', '500')
+
+      const [movRes, insumosRes] = await Promise.all([
+        fetch(`/api/movimentacoes?${params.toString()}`),
+        fetch('/api/insumos'),
+      ])
+      const [m, i] = await Promise.all([movRes.json(), insumosRes.json()])
       setMovs(Array.isArray(m) ? m : [])
       setInsumos(Array.isArray(i) ? i : [])
+    } catch {
+      setMovs([])
+    } finally {
       setLoading(false)
-    })
-  }, [])
+    }
+  }, [filtroInsumo, filtroTipo, filtroDataInicio, filtroDataFim])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  function limparFiltros() {
+    setFiltroInsumo('all')
+    setFiltroTipo('all')
+    setFiltroDataInicio('')
+    setFiltroDataFim('')
+  }
 
   async function handleCreate() {
     if (!editMov.insumo_id || !editMov.tipo) return
@@ -71,8 +96,7 @@ export default function MovimentacoesPage() {
         toast.success('Movimentação registrada!')
         setDialogOpen(false)
         setEditMov({})
-        const updated = await fetch('/api/movimentacoes').then((r) => r.json())
-        setMovs(Array.isArray(updated) ? updated : [])
+        loadData()
       }
     } catch {
       toast.error('Erro ao registrar movimentação')
@@ -81,6 +105,8 @@ export default function MovimentacoesPage() {
 
   const formatBRL = (v: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+
+  const hasFiltros = filtroInsumo !== 'all' || filtroTipo !== 'all' || filtroDataInicio || filtroDataFim
 
   if (loading) {
     return (
@@ -95,7 +121,7 @@ export default function MovimentacoesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-[#1A3A5C]">Movimentações</h1>
-          <p className="text-sm text-muted-foreground">Registro de entradas e saídas de estoque</p>
+          <p className="text-sm text-muted-foreground">Registro de entradas e saídas de estoque · {movs.length} registro(s)</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
@@ -156,44 +182,86 @@ export default function MovimentacoesPage() {
         </Dialog>
       </div>
 
+      {/* v9.6.8: Filtros */}
+      <Card>
+        <CardContent className="p-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Filter className="w-3 h-3 text-muted-foreground" />
+            <Select value={filtroInsumo} onValueChange={setFiltroInsumo}>
+              <SelectTrigger className="h-8 text-xs w-[180px]"><SelectValue placeholder="Todos insumos" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos insumos</SelectItem>
+                {insumos.map((i) => (
+                  <SelectItem key={i.id} value={i.id}>{i.nome}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filtroTipo} onValueChange={setFiltroTipo}>
+              <SelectTrigger className="h-8 text-xs w-[120px]"><SelectValue placeholder="Todos tipos" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos tipos</SelectItem>
+                <SelectItem value="ENTRADA">Entrada</SelectItem>
+                <SelectItem value="SAIDA">Saída</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input type="date" value={filtroDataInicio} onChange={(e) => setFiltroDataInicio(e.target.value)} className="h-8 text-xs w-[140px]" placeholder="De" />
+            <span className="text-xs text-muted-foreground">→</span>
+            <Input type="date" value={filtroDataFim} onChange={(e) => setFiltroDataFim(e.target.value)} className="h-8 text-xs w-[140px]" placeholder="Até" />
+            {hasFiltros && (
+              <Button variant="ghost" size="sm" onClick={limparFiltros} className="h-8 text-xs">Limpar</Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto max-h-[60vh] overflow-y-auto custom-scrollbar">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-background">
-                <tr>
-                  <th className="text-left p-2 text-xs font-medium text-muted-foreground">Data</th>
-                  <th className="text-center p-2 text-xs font-medium text-muted-foreground">Tipo</th>
-                  <th className="text-left p-2 text-xs font-medium text-muted-foreground">Insumo</th>
-                  <th className="text-right p-2 text-xs font-medium text-muted-foreground">Qtd</th>
-                  <th className="text-right p-2 text-xs font-medium text-muted-foreground">Preço Unit.</th>
-                  <th className="text-right p-2 text-xs font-medium text-muted-foreground">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {movs.map((mov) => (
-                  <tr key={mov.id} className="border-b border-muted/30 hover:bg-muted/20">
-                    <td className="p-2">{new Date(mov.data + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
-                    <td className="p-2 text-center">
-                      {mov.tipo === 'ENTRADA' ? (
-                        <span className="inline-flex items-center gap-1 text-green-700 bg-green-50 px-2 py-0.5 rounded text-xs">
-                          <TrendingUp className="w-3 h-3" /> Entrada
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-red-700 bg-red-50 px-2 py-0.5 rounded text-xs">
-                          <TrendingDown className="w-3 h-3" /> Saída
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-2 font-medium">{mov.insumo.nome}</td>
-                    <td className="p-2 text-right font-mono">{mov.quantidade} {mov.insumo.unidade}</td>
-                    <td className="p-2 text-right font-mono">{formatBRL(mov.preco_unitario)}</td>
-                    <td className="p-2 text-right font-mono font-semibold">{formatBRL(mov.preco_total)}</td>
+          {movs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16">
+              <p className="text-muted-foreground text-sm">
+                {hasFiltros ? 'Nenhuma movimentação encontrada para os filtros.' : 'Nenhuma movimentação registrada.'}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto max-h-[60vh] overflow-y-auto custom-scrollbar">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-background">
+                  <tr>
+                    <th className="text-left p-2 text-xs font-medium text-muted-foreground">Data</th>
+                    <th className="text-center p-2 text-xs font-medium text-muted-foreground">Tipo</th>
+                    <th className="text-left p-2 text-xs font-medium text-muted-foreground">Insumo</th>
+                    <th className="text-right p-2 text-xs font-medium text-muted-foreground">Qtd</th>
+                    <th className="text-right p-2 text-xs font-medium text-muted-foreground">Preço Unit.</th>
+                    <th className="text-right p-2 text-xs font-medium text-muted-foreground">Total</th>
+                    <th className="text-left p-2 text-xs font-medium text-muted-foreground">Obs</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {movs.map((mov) => (
+                    <tr key={mov.id} className="border-b border-muted/30 hover:bg-muted/20">
+                      <td className="p-2">{new Date(mov.data + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
+                      <td className="p-2 text-center">
+                        {mov.tipo === 'ENTRADA' ? (
+                          <span className="inline-flex items-center gap-1 text-green-700 bg-green-50 px-2 py-0.5 rounded text-xs">
+                            <TrendingUp className="w-3 h-3" /> Entrada
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-red-700 bg-red-50 px-2 py-0.5 rounded text-xs">
+                            <TrendingDown className="w-3 h-3" /> Saída
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-2 font-medium">{mov.insumo.nome}</td>
+                      <td className="p-2 text-right font-mono">{mov.quantidade} {mov.insumo.unidade}</td>
+                      <td className="p-2 text-right font-mono">{formatBRL(mov.preco_unitario)}</td>
+                      <td className="p-2 text-right font-mono font-semibold">{formatBRL(mov.preco_total)}</td>
+                      <td className="p-2 text-xs text-muted-foreground max-w-[200px] truncate" title={mov.obs || ''}>{mov.obs || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

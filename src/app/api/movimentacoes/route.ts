@@ -1,12 +1,40 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
-export async function GET() {
+// ============================================================
+// GET /api/movimentacoes
+// Query params (todos opcionais):
+//   ?data_inicio=YYYY-MM-DD — filtrar a partir desta data
+//   ?data_fim=YYYY-MM-DD     — filtrar até esta data
+//   ?insumo_id=xxx           — filtrar por insumo específico
+//   ?tipo=ENTRADA|SAIDA      — filtrar por tipo
+//   ?limite=100              — número máx de resultados (default 100, máx 500)
+// ============================================================
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url)
+    const dataInicio = searchParams.get('data_inicio')
+    const dataFim = searchParams.get('data_fim')
+    const insumoId = searchParams.get('insumo_id')
+    const tipo = searchParams.get('tipo')
+    const limite = Math.min(Number(searchParams.get('limite') || 100), 500)
+
+    const where: Record<string, unknown> = {}
+    if (dataInicio || dataFim) {
+      where.data = {}
+      if (dataInicio) (where.data as any).gte = dataInicio
+      if (dataFim) (where.data as any).lte = dataFim
+    }
+    if (insumoId) where.insumo_id = insumoId
+    if (tipo && ['ENTRADA', 'SAIDA'].includes(tipo.toUpperCase())) {
+      where.tipo = tipo.toUpperCase()
+    }
+
     const movimentacoes = await db.movimentacaoEstoque.findMany({
+      where,
       include: { insumo: true },
       orderBy: { data: 'desc' },
-      take: 100,
+      take: limite,
     })
     return NextResponse.json(movimentacoes)
   } catch (error) {

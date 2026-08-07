@@ -37,11 +37,11 @@ export async function GET(request: Request) {
 
     // Fallback: try to find cardápio by date range if not found by ISO week
     let cardapioFinal = cardapio
-    // v9.6.7: matchExato = true apenas se encontrou por numero_semana_iso.
-    // Se caiu no fallback (date range), matchExato = false — nesse caso
-    // NÃO retornamos o obs, pois o cardápio pode ser de outra semana.
-    let matchExato = !!cardapioFinal
-    if (!cardapioFinal) {
+    // v9.6.7: matchExato = true apenas se encontrou por numero_semana_iso
+    // E o numero_semana_iso do cardápio encontrado bate com a semana calculada.
+    // Isto evita que o obs de uma semana apareça em outra.
+    let matchExato = !!cardapioFinal && cardapioFinal.numero_semana_iso === semana
+    if (!cardapioFinal || !matchExato) {
       const segundaStr = dataISO(inicio)
       const sextaStr = dataISO(addDays(inicio, 4))
       cardapioFinal = await db.cardapioSemestral.findFirst({

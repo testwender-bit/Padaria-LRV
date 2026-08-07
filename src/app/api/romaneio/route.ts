@@ -34,9 +34,9 @@ export async function GET(request: Request) {
 
     // Fallback: try to find cardápio by date range
     let cardapioFinal = cardapio
-    // v9.6.7: matchExato = true apenas se encontrou por numero_semana_iso.
-    let matchExato = !!cardapioFinal
-    if (!cardapioFinal) {
+    // v9.6.7: matchExato = true apenas se numero_semana_iso bate com a semana
+    let matchExato = !!cardapioFinal && cardapioFinal.numero_semana_iso === semana
+    if (!cardapioFinal || !matchExato) {
       const segundaStr = dataISO(inicio)
       const sextaStr = dataISO(addDays(inicio, 4))
       cardapioFinal = await db.cardapioSemestral.findFirst({
