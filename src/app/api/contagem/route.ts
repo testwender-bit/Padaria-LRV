@@ -152,8 +152,8 @@ export async function POST(request: Request) {
       const insumoMap = new Map(insumos.map((i) => [i.id, i]))
 
       // 2. Criar todas as contagens com snapshot correto
-      const created = []
-      const ajustes = []  // para reconciliação
+      const created: Array<{ id: string; data_contagem: string; insumo_id: string; quantidade: number; estoque_sistema: number; diferenca: number; obs: string | null; criado_em: string }> = []
+      const ajustes: Array<{ insumo_id: string; insumo: { id: string; estoque_atual: number; nome: string; unidade: string; preco_unitario: number }; diferenca: number; quantidadeFisica: number }> = []  // para reconciliação
       for (const item of itens) {
         const insumo = insumoMap.get(item.insumo_id)
         if (!insumo) continue  // insumo não encontrado — pula
