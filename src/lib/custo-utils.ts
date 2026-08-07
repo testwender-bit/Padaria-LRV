@@ -31,6 +31,8 @@ export interface TotaisSemana {
   total_pcq: number
   total_lanche: number
   dias: TotaisDia[]
+  // v9.7: quais lanches são servidos e suas quantidades totais
+  lanches_servidos: Array<{ lanche_id: string; lanche_nome: string; quantidade: number }>
 }
 
 export interface InsumoCalculado {
@@ -125,6 +127,8 @@ export async function calcularTotaisSemana(dataRef: string): Promise<TotaisSeman
   let total_pf = 0
   let total_pcq = 0
   let total_lanche = 0
+  // v9.7: rastrear quais lanches são servidos e suas quantidades
+  const lanchesServidosMap = new Map<string, number>()  // lanche_id → quantidade total
 
   // Domingo: produção PF para segunda
   const domingo = addDays(inicio, -1)
@@ -259,6 +263,8 @@ export async function calcularTotaisSemana(dataRef: string): Promise<TotaisSeman
       const { zerado } = produtoZerado(feriadosMap, diaStr, escola.categoria, 'LANCHE')
       const qtd = ajustesMap.has(ajusteKey) ? ajustesMap.get(ajusteKey)! : (zerado ? 0 : qtdBase)
       diaLanche += qtd
+      // v9.7: rastrear quantidade por lanche_id
+      lanchesServidosMap.set(lancheId, (lanchesServidosMap.get(lancheId) || 0) + qtd)
     }
 
     dias.push({
@@ -287,6 +293,15 @@ export async function calcularTotaisSemana(dataRef: string): Promise<TotaisSeman
     total_pcq,
     total_lanche,
     dias,
+    // v9.7: lanches servidos com nome e quantidade
+    lanches_servidos: Array.from(lanchesServidosMap.entries()).map(([lanche_id, quantidade]) => {
+      const lanche = lancheRegular?.id === lanche_id ? lancheRegular : lancheBifasica?.id === lanche_id ? lancheBifasica : null
+      return {
+        lanche_id,
+        lanche_nome: lanche?.nome || 'Lanche desconhecido',
+        quantidade,
+      }
+    }),
   }
 }
 
@@ -297,36 +312,70 @@ export async function calcularInsumosSemana(
 ): Promise<InsumoCalculado[]> {
   // Fetch receitas and insumos
   const [receitas, insumos] = await Promise.all([
-    db.receita.findMany({ include: { insumo: true } }),
+    db.receita.findMany({ include: { insumo: true, lanche: true } }),
     db.insumo.findMany({ where: { ativo: true }, orderBy: { nome: 'asc' } }),
   ])
 
-  // Build receita lookup: Map<produto_tipo, Map<insumo_id, quantidade_por_unidade>>
-  const receitaMap = new Map<string, Map<string, number>>()
+  // Build receita lookup for PF and PCQ (generic, no lanche_id)
+  // Map<produto_tipo, Map<insumo_id, quantidade>>
+  const receitaGenericMap = new Map<string, Map<string, number>>()
   for (const r of receitas) {
-    if (!receitaMap.has(r.produto_tipo)) {
-      receitaMap.set(r.produto_tipo, new Map())
+    if (r.lanche_id) continue  // skip lanche-specific recipes for now
+    if (!receitaGenericMap.has(r.produto_tipo)) {
+      receitaGenericMap.set(r.produto_tipo, new Map())
     }
-    receitaMap.get(r.produto_tipo)!.set(r.insumo_id, r.quantidade_por_unidade)
+    receitaGenericMap.get(r.produto_tipo)!.set(r.insumo_id, r.quantidade_por_unidade)
   }
+
+  // v9.7: Build lanche-specific receita lookup
+  // Map<lanche_id, Map<insumo_id, quantidade>>
+  const receitaLancheMap = new Map<string, Map<string, number>>()
+  for (const r of receitas) {
+    if (!r.lanche_id) continue  // only lanche-specific recipes
+    if (!receitaLancheMap.has(r.lanche_id)) {
+      receitaLancheMap.set(r.lanche_id, new Map())
+    }
+    receitaLancheMap.get(r.lanche_id)!.set(r.insumo_id, r.quantidade_por_unidade)
+  }
+
+  // Generic LANCHE receita (fallback when no specific recipe)
+  const lancheGenericReceita = receitaGenericMap.get('LANCHE') || new Map<string, number>()
 
   // Calculate per-insumo requirements
   const resultado: InsumoCalculado[] = []
 
   for (const insumo of insumos) {
-    const pfReceita = receitaMap.get('PF')?.get(insumo.id) || 0
-    const pcqReceita = receitaMap.get('PCQ')?.get(insumo.id) || 0
-    const lancheReceita = receitaMap.get('LANCHE')?.get(insumo.id) || 0
+    const pfReceita = receitaGenericMap.get('PF')?.get(insumo.id) || 0
+    const pcqReceita = receitaGenericMap.get('PCQ')?.get(insumo.id) || 0
 
-    // If this insumo is not used in any recipe, skip detailed calc but still include
+    // PF and PCQ: same as before (generic recipe × total)
     let detalhePF = 0
     let detalhePCQ = 0
-    let detalheLanche = 0
-
     for (const dia of totais.dias) {
       detalhePF += dia.total_pf * pfReceita
       detalhePCQ += dia.total_pcq * pcqReceita
-      detalheLanche += dia.total_lanche * lancheReceita
+    }
+
+    // v9.7: LANCHE — use receita específica por lanche quando disponível
+    let detalheLanche = 0
+    if (totais.lanches_servidos && totais.lanches_servidos.length > 0) {
+      for (const ls of totais.lanches_servidos) {
+        // Tenta receita específica deste lanche
+        const receitaEspecifica = receitaLancheMap.get(ls.lanche_id)?.get(insumo.id)
+        if (receitaEspecifica !== undefined) {
+          detalheLanche += ls.quantidade * receitaEspecifica
+        } else {
+          // Fallback: receita genérica de LANCHE
+          const receitaGenerica = lancheGenericReceita.get(insumo.id) || 0
+          detalheLanche += ls.quantidade * receitaGenerica
+        }
+      }
+    } else {
+      // Fallback: se não há lanches_servidos, usa total_lanche × receita genérica
+      const lancheReceita = lancheGenericReceita.get(insumo.id) || 0
+      for (const dia of totais.dias) {
+        detalheLanche += dia.total_lanche * lancheReceita
+      }
     }
 
     const quantidade_estimada = detalhePF + detalhePCQ + detalheLanche

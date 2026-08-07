@@ -21,6 +21,6 @@ export const menuPrincipal = [
 export const menuSecundario = [
   { href: '/feriados', label: 'Feriados', icon: CalendarOff, color: 'text-red-500' },
   { href: '/historico', label: 'Histórico', icon: History, color: 'text-teal-500' },
-  { href: '/custos', label: 'Insumos', icon: DollarSign, color: 'text-emerald-500' },
+  { href: '/custos', label: 'Controle de Estoque', icon: DollarSign, color: 'text-emerald-500' },
   { href: '/nutricao', label: 'Nutrição', icon: BookOpen, color: 'text-cyan-600', destaque: true },
 ]

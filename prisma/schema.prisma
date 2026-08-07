@@ -148,6 +148,7 @@ model Lanche {
   distribuicao      LancheDistribuicao[]
   cardapio_regular  CardapioSemestral[] @relation("CardapioRegular")
   cardapio_bifasica CardapioSemestral[] @relation("CardapioBifasica")
+  receitas          Receita[]  // v9.7: receitas específicas deste lanche
 }
 
 // ── Lanche Distribuição (escola × dia × quantidade) ─────────
@@ -276,10 +277,14 @@ model Receita {
   produto_tipo         String  // PF, PCQ, LANCHE
   insumo_id            String
   quantidade_por_unidade Float  @default(0) // qtd de insumo por unidade de produto
+  // v9.7: lanche específico (apenas quando produto_tipo = "LANCHE")
+  // null = receita genérica de LANCHE (fallback). preenchido = receita específica daquele lanche.
+  lanche_id            String?
 
   insumo Insumo @relation(fields: [insumo_id], references: [id], onDelete: Cascade)
+  lanche Lanche? @relation(fields: [lanche_id], references: [id], onDelete: SetNull)
 
-  @@unique([produto_tipo, insumo_id])
+  @@unique([produto_tipo, insumo_id, lanche_id])
 }
 
 // ── Movimentações de Estoque ─────────────────────────────────

@@ -1,139 +1,122 @@
-# Fix v9.6.8 — Melhorias completas no sistema de Insumos
+# v9.7 — Controle de Estoque + Receitas específicas por lanche
 
-## Resumo das melhorias implementadas
+## O que mudou
 
-1. **Nova página "Gerenciar Insumos"** (CRUD completo)
-2. **Nova API `/api/insumos/[id]`** com PUT e DELETE
-3. **Botão "Ajustar ao Físico"** na Contagem (reconcilia estoque)
-4. **API de contagem** agora atômica + suporta `reconciliar=true`
-5. **Filtros em Movimentações** (por insumo, tipo, data início/fim)
-6. **API de movimentações** aceita query params de filtro + limite
-7. **Link "Gerenciar Insumos"** adicionado no dashboard de custos
+1. **Renomeado "Insumos" → "Controle de Estoque"** no menu e no título do dashboard
+2. **Receitas específicas por lanche** — cada lanche pode ter sua própria receita com ingredientes diferentes
+3. **Cálculo de consumo inteligente** — usa receita específica do lanche quando disponível, fallback para genérica
 
-## Detalhes de cada melhoria
+## O problema do lanche
 
-### 1. Página "Gerenciar Insumos" (`/custos/insumos`)
+Antes, o sistema tratava "LANCHE" como um único produto com uma única receita genérica.
+Mas existem **vários lanches diferentes** (lanche regular, lanche bifásica, etc.), cada um
+com ingredientes próprios. O sistema multiplicava o total de lanches pela receita genérica,
+ignorando que lanches diferentes usam insumos diferentes.
 
-Nova página completa para CRUD de insumos:
+## A solução
 
-- **Listar** todos os insumos (ativos e inativos, com toggle "Mostrar inativos")
-- **Buscar** por nome (busca em tempo real)
-- **Criar** novo insumo (dialog com nome, unidade, preço, estoque, mínimo, fornecedor, ativo)
-- **Editar** insumo existente (mesmos campos)
-- **Desativar/Reativar** (botão Power — soft delete via `ativo: false`)
-- **Excluir permanentemente** (com confirmação — remove físico, cascata deleta movimentações/contagens)
-- **Indicador visual** de estoque baixo (⚠ quando `estoque_atual < estoque_minimo`)
-- Insumos inativos aparecem com opacidade reduzida
+### Novo campo `lanche_id` na Receita
 
-### 2. API `/api/insumos/[id]` (PUT + DELETE)
+```prisma
+model Receita {
+  produto_tipo         String  // PF, PCQ, LANCHE
+  insumo_id            String
+  quantidade_por_unidade Float
+  lanche_id            String?  // NOVO: lanche específico (null = genérico)
+  lanche Lanche? @relation(...)
+  @@unique([produto_tipo, insumo_id, lanche_id])
+}
+```
 
-- **PUT**: atualiza campos enviados (nome, unidade, preço, estoque, mínimo, fornecedor, ativo)
-- **DELETE**: soft delete por padrão (marca `ativo: false`). Com `?force=true`, exclui permanentemente
-- Preserva histórico de movimentações e contagens (soft delete recomendado)
+- `lanche_id = null` → receita genérica de LANCHE (fallback para qualquer lanche sem receita própria)
+- `lanche_id = "xxx"` → receita específica daquele lanche
 
-### 3. GET `/api/insumos` atualizado
+### Página de Receitas atualizada
 
-- Aceita query param `?inativos=true` para listar TODOS (incluindo inativos)
-- Sem o param, lista apenas ativos (comportamento padrão preservado)
-- Ordenação: ativos primeiro, depois por nome
+Ao cadastrar uma receita com `produto_tipo = "LANCHE"`, aparece um seletor:
+- **"Genérico (todos os lanches — fallback)"** — para a receita padrão
+- Lista de lanches ativos — para receitas específicas
 
-### 4. Botão "Ajustar ao Físico" na Contagem
+As receitas são agrupadas por tipo + lanche, com badges indicando "Específica" ou "Fallback".
+Cada receita tem botão de excluir (DELETE).
 
-Na página de Contagem, agora há DOIS botões:
+### Cálculo de consumo (calcularInsumosSemana)
 
-- **Salvar Contagem** (azul) — salva a contagem como snapshot (comportamento original)
-- **Ajustar ao Físico** (amarelo) — salva a contagem E ajusta o estoque do sistema:
-  - Para cada insumo com diferença, cria uma `MovimentacaoEstoque` (ENTRADA ou SAIDA)
-  - Atualiza `Insumo.estoque_atual` para o valor da contagem física
-  - Tudo em UMA transação atômica
-  - Confirmação com `window.confirm()` explicando a ação
+Para cada insumo, o cálculo de lanche agora:
 
-### 5. API de Contagem — atômica + reconciliação
+1. Olha quais lanches são servidos na semana (via `lanches_servidos`)
+2. Para cada lanche servido, procura receita específica (`lanche_id = lanche.id`)
+3. Se encontrou, multiplica: `quantidade_do_lanche × receita_específica`
+4. Se não encontrou, usa a receita genérica de LANCHE como fallback
 
-O POST foi reescrito:
+**Resultado**: se você tem lanche A (1000 unidades) e lanche B (500 unidades), e cadastrou
+receitas específicas para ambos, o sistema calcula o consumo de cada um separadamente.
 
-- **Antes**: criava com placeholders, depois loop N+1 para atualizar (NÃO atômico)
-- **Depois**: transação `db.$transaction(async (tx) => ...)` com tudo dentro:
-  1. Busca estoque de todos os insumos de uma vez (evita N+1)
-  2. Cria contagens com snapshot correto
-  3. Se `reconciliar=true`, cria movimentações de ajuste + atualiza estoque
-- Aceita `reconciliar: boolean` no body
+### `calcularTotaisSemana` atualizada
 
-### 6. Filtros em Movimentações
+Agora retorna `lanches_servidos: [{ lanche_id, lanche_nome, quantidade }]` — quais lanches
+foram servidos e em qual quantidade, para o cálculo usar.
 
-A página de Movimentações agora tem uma barra de filtros:
+## Schema completo
 
-- **Filtro por insumo** (dropdown com todos os insumos)
-- **Filtro por tipo** (Todos / Entrada / Saída)
-- **Filtro por data** (Data início → Data fim)
-- Botão "Limpar" para resetar filtros
-- Contador de registros no header
-- Coluna "Obs" adicionada na tabela (com truncate + tooltip)
-- Mensagem "Nenhum resultado" quando filtros não encontram nada
-- Limite aumentado de 100 para 500 (com parâmetro `?limite=`)
-
-### 7. API de Movimentações com filtros
-
-GET `/api/movimentacoes` agora aceita query params:
-
-- `?data_inicio=YYYY-MM-DD`
-- `?data_fim=YYYY-MM-DD`
-- `?insumo_id=xxx`
-- `?tipo=ENTRADA|SAIDA`
-- `?limite=N` (default 100, máx 500)
+O `prisma/schema.prisma` no patch é o **schema completo e definitivo**, com TODOS os campos:
+- `provider = "postgresql"` + `directUrl`
+- `ordem_pcq` em Escola
+- `pao_fixo` em Escola
+- `escala_impressao` em CardapioNutricional
+- `alergenos_bloqueados` + `alergenos_forcados` em Preparacao
+- `lanche_id` em Receita (NOVO)
+- `receitas` em Lanche (NOVO — relation)
 
 ## Arquivos incluídos
 
 ```
-src/app/api/insumos/route.ts                              # GET aceita ?inativos=true
-src/app/api/insumos/[id]/route.ts                         # NOVO: PUT + DELETE
-src/app/api/contagem/route.ts                             # POST atômico + reconciliar
-src/app/api/movimentacoes/route.ts                        # GET com filtros
-src/app/(app)/custos/insumos/page.tsx                     # NOVO: CRUD completo
-src/app/(app)/custos/contagem/page.tsx                    # Botão "Ajustar ao Físico"
-src/app/(app)/custos/movimentacoes/page.tsx               # Filtros + coluna Obs
-src/app/(app)/custos/page.tsx                             # Link "Gerenciar Insumos"
+prisma/schema.prisma                              # schema completo + lanche_id em Receita + receitas em Lanche
+src/lib/menu-config.ts                            # "Insumos" → "Controle de Estoque"
+src/lib/custo-utils.ts                            # lanches_servidos + receita específica por lanche
+src/app/api/receitas/route.ts                     # GET com lanche + POST com lanche_id + DELETE
+src/app/(app)/custos/receitas/page.tsx            # seletor de lanche + agrupar por lanche + excluir
+src/app/(app)/custos/page.tsx                     # título "Controle de Estoque"
 ```
 
 ## Como aplicar
 
 ```bash
-git checkout -b fix/insumos-completo
+git checkout -b fix/estoque-lanches
 
-unzip -o insumos-completo-v968.zip -d .
+unzip -o estoque-lanches-v97.zip -d .
+
+npx prisma generate
+npx prisma db push
 
 git add -A
-git commit -m "feat(v9.6.8): melhorias completas no sistema de insumos"
-git push -u origin fix/insumos-completo
+git commit -m "feat(v9.7): Controle de Estoque + receitas específicas por lanche"
+git push -u origin fix/estoque-lanches
 ```
-
-**Sem migração de banco** — todos os campos usados já existem (Insumo, MovimentacaoEstoque, ContagemEstoque). Nenhum campo novo foi adicionado ao schema.
 
 ## Verificação
 
-### Gerenciar Insumos
+### Renomeação
 
-1. Vá em **Insumos** (menu lateral) → no dashboard, clique no novo tile **"Gerenciar Insumos"**
-2. Deve aparecer a lista de todos os insumos (ativos e inativos)
-3. Clique em **"Novo Insumo"** → preencha o formulário → Salve
-4. Edite um insumo existente (ícone lápis)
-5. Desative um insumo (ícone power) — ele fica com opacidade reduzida
-6. Marque "Mostrar inativos" para ver/ocultar inativos
-7. Busque por nome (digite no campo de busca)
+1. O menu lateral deve mostrar **"Controle de Estoque"** (antes "Insumos")
+2. O título do dashboard deve ser **"Controle de Estoque"**
 
-### Contagem com Ajuste ao Físico
+### Receitas específicas por lanche
 
-1. Vá em **Insumos → Contagem**
-2. Preencha as quantidades físicas dos insumos
-3. Clique em **"Ajustar ao Físico"** (botão amarelo)
-4. Confirme a ação no dialog
-5. O sistema deve mostrar: "Contagem salva! X itens registrados. Y ajuste(s) de estoque criado(s)."
-6. Vá em **Movimentações** — deve ver as movimentações de ajuste criadas
-7. Vá em **Gerenciar Insumos** — os estoques devem refletir a contagem física
+1. Vá em **Controle de Estoque → Receitas**
+2. Clique em **Nova Receita**
+3. Selecione produto = "Lanche"
+4. Deve aparecer um seletor **"Lanche Específico (opcional)"**
+5. Selecione um lanche específico (ex.: "Lanche Regular")
+6. Cadastre os insumos daquele lanche
+7. Repita para outro lanche (ex.: "Lanche Bifásica") com insumos diferentes
+8. As receitas aparecem agrupadas: "Lanche — Genérica (Fallback)" e "Lanche — Lanche Regular (Específica)"
+9. Clique no ícone de lixeira para excluir uma receita
 
-### Filtros em Movimentações
+### Cálculo de consumo
 
-1. Vá em **Insumos → Movimentações**
-2. Use os filtros: insumo, tipo, data início, data fim
-3. A lista deve atualizar automaticamente
-4. Clique "Limpar" para voltar a ver tudo
+1. Vá no **Dashboard do Controle de Estoque**
+2. O sistema agora calcula o consumo de insumos considerando:
+   - Receitas específicas de cada lanche (quando cadastradas)
+   - Fallback para receita genérica (quando não há específica)
+3. Os totais devem refletir os ingredientes corretos de cada lanche

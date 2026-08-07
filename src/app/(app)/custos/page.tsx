@@ -168,7 +168,7 @@ export default function CustosPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-[#1A3A5C]">Controle de Insumos</h1>
+          <h1 className="text-2xl font-bold text-[#1A3A5C]">Controle de Estoque</h1>
           <p className="text-sm text-muted-foreground">
             Acompanhamento de consumo, estoque e previsão
           </p>
