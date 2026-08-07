@@ -76,6 +76,8 @@ model Escola {
   recebe_lanche Boolean  @default(true)
   ativo         Boolean  @default(true)
   ordem_rota    Int      @default(0)
+  // v9.6.3: ordenação específica para PCQ (pão de cachorro quente) na produção
+  ordem_pcq      Int      @default(0)
   obs           String?
   // v9.5: marca escolas que recebem pão francês em quantidade fixa
   // (não segue a tabela padrão seg/ter/qua/qui/sex)
