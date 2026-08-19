@@ -8,9 +8,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 // ── Autenticação (NextAuth) ─────────────────────────────────
@@ -77,8 +76,6 @@ model Escola {
   recebe_lanche Boolean  @default(true)
   ativo         Boolean  @default(true)
   ordem_rota    Int      @default(0)
-  // v9.6.3: ordenação específica para PCQ (pão de cachorro quente) na produção
-  ordem_pcq     Int      @default(0)
   obs           String?
   // v9.5: marca escolas que recebem pão francês em quantidade fixa
   // (não segue a tabela padrão seg/ter/qua/qui/sex)
@@ -125,12 +122,13 @@ model PfQuantidade {
 model PcqQuantidade {
   id              String  @id @default(cuid())
   escola_id       String
-  prod_segunda    Int     @default(0)
-  prod_quarta     Int     @default(0)
-  prod_sexta      Int     @default(0)
-  pf_comp_segunda Int     @default(0)
-  pf_comp_quarta  Int     @default(0)
-  pf_comp_sexta   Int     @default(0)
+  // v9.7.2: mudado de Int para Float para aceitar números quebrados (ex: 1,5 formas)
+  prod_segunda    Float   @default(0)
+  prod_quarta     Float   @default(0)
+  prod_sexta      Float   @default(0)
+  pf_comp_segunda Float   @default(0)
+  pf_comp_quarta  Float   @default(0)
+  pf_comp_sexta   Float   @default(0)
 
   escola Escola @relation(fields: [escola_id], references: [id], onDelete: Cascade)
 
@@ -148,7 +146,6 @@ model Lanche {
   distribuicao      LancheDistribuicao[]
   cardapio_regular  CardapioSemestral[] @relation("CardapioRegular")
   cardapio_bifasica CardapioSemestral[] @relation("CardapioBifasica")
-  receitas          Receita[]  // v9.7: receitas específicas deste lanche
 }
 
 // ── Lanche Distribuição (escola × dia × quantidade) ─────────
@@ -277,14 +274,10 @@ model Receita {
   produto_tipo         String  // PF, PCQ, LANCHE
   insumo_id            String
   quantidade_por_unidade Float  @default(0) // qtd de insumo por unidade de produto
-  // v9.7: lanche específico (apenas quando produto_tipo = "LANCHE")
-  // null = receita genérica de LANCHE (fallback). preenchido = receita específica daquele lanche.
-  lanche_id            String?
 
   insumo Insumo @relation(fields: [insumo_id], references: [id], onDelete: Cascade)
-  lanche Lanche? @relation(fields: [lanche_id], references: [id], onDelete: SetNull)
 
-  @@unique([produto_tipo, insumo_id, lanche_id])
+  @@unique([produto_tipo, insumo_id])
 }
 
 // ── Movimentações de Estoque ─────────────────────────────────
@@ -452,10 +445,6 @@ model Preparacao {
   // SOBREMESA  = sobremesa
   categoria    String  @default("PREPARACAO")
 
-  // v9.6.4: override manual de alérgenos (JSON string com siglas: L,O,T,S)
-  alergenos_bloqueados  String  @default("[]")
-  alergenos_forcados    String  @default("[]")
-
   ingredientes   PreparacaoIngrediente[]
   cardapio_itens CardapioItem[]
 
@@ -530,9 +519,6 @@ model CardapioNutricional {
   // null = não recebe / não aplicável para este cardápio.
   dia_pao_frances   String?  // SEG | TER | QUA | QUI | SEX | null
   dia_lanche        String?  // SEG | TER | QUA | QUI | SEX | null
-
-  // v9.5.5: escala de impressão (zoom) por cardápio (70-150, default 100)
-  escala_impressao  Int     @default(100)
 
   escola            Escola?        @relation(fields: [escola_id], references: [id], onDelete: SetNull)
   nutricionista     Nutricionista  @relation(fields: [nutricionista_id], references: [id])
