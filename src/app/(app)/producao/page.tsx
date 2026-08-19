@@ -239,27 +239,14 @@ export default function ProducaoPage() {
     return novosDias
   }, [data, producaoExtra])
 
-  if (loading || !data) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full border-2 border-[#D4A017]/30 border-t-[#D4A017] animate-spin" />
-          <span className="text-muted-foreground">Calculando produção...</span>
-        </div>
-      </div>
-    )
-  }
-
-  const inicio = semanaReferencia ? new Date(semanaReferencia + 'T12:00:00') : new Date()
-  const domingo = addDays(inicio, -1) // domingo antes da segunda
-  const semanaLabel = `Semana ${data.semana} — ${formatarPeriodoSemana(inicioSemana(inicio), fimSemana(inicio))}`
   // Usa diasComExtra para que as instituições extras apareçam junto (silenciosamente)
   const consolidado = consolidarProducaoSemana(diasComExtra)
 
   // v9.7.4: Construir lookup de ajustes para destacar células e mostrar motivo
-  // Formato: Map<escola_id_dia_entrega_produto, {motivo, qtd_original}>
+  // MOVIDO para antes do early return (Rules of Hooks)
   const ajustesInfoMap = useMemo(() => {
     const map = new Map<string, { motivo: string; qtd_original: number }>()
+    if (!data) return map
     for (const dia of diasComExtra) {
       const allItems = [...(dia.itens_pf || []), ...(dia.itens_pcq || []), ...(dia.itens_lanche || [])]
       for (const item of allItems) {
@@ -273,11 +260,27 @@ export default function ProducaoPage() {
       }
     }
     return map
-  }, [diasComExtra])
+  }, [diasComExtra, data])
+
+  if (loading || !data) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full border-2 border-[#D4A017]/30 border-t-[#D4A017] animate-spin" />
+          <span className="text-muted-foreground">Calculando produção...</span>
+        </div>
+      </div>
+    )
+  }
 
   // PF unit label
   const pfUnit = 'unid.'
   const pcqUnit = 'formas'
+
+  // v9.7.3: estas variáveis precisam estar depois do early return
+  const inicio = semanaReferencia ? new Date(semanaReferencia + 'T12:00:00') : new Date()
+  const domingo = addDays(inicio, -1)
+  const semanaLabel = `Semana ${data.semana} — ${formatarPeriodoSemana(inicioSemana(inicio), fimSemana(inicio))}`
 
   // Lanche name
   const lancheNome = data.lancheRegular || data.lancheBifasica || 'Lanche'
