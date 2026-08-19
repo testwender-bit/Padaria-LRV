@@ -116,6 +116,35 @@ export async function PUT(request: Request) {
         mescla_parcial_integral: body.mescla_parcial_integral,
       },
     })
+
+    // v9.7.1: Se ativou recebe_pf e não tem PfQuantidade, criar registro vazio
+    if (body.recebe_pf !== false) {
+      const pfExistente = await db.pfQuantidade.findFirst({ where: { escola_id: body.id } })
+      if (!pfExistente) {
+        await db.pfQuantidade.create({
+          data: {
+            escola_id: body.id,
+            tipo_pao: 'PADRAO',
+            segunda: 0, terca: 0, quarta: 0, quinta: 0, sexta: 0,
+          },
+        })
+      }
+    }
+
+    // v9.7.1: Se ativou recebe_pcq e não tem PcqQuantidade, criar registro vazio
+    if (body.recebe_pcq !== false) {
+      const pcqExistente = await db.pcqQuantidade.findFirst({ where: { escola_id: body.id } })
+      if (!pcqExistente) {
+        await db.pcqQuantidade.create({
+          data: {
+            escola_id: body.id,
+            prod_segunda: 0, prod_quarta: 0, prod_sexta: 0,
+            pf_comp_segunda: 0, pf_comp_quarta: 0, pf_comp_sexta: 0,
+          },
+        })
+      }
+    }
+
     return NextResponse.json(escola)
   } catch (error) {
     console.error('Erro ao atualizar escola:', error)
