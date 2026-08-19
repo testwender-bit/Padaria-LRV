@@ -184,7 +184,7 @@ export async function GET(request: Request) {
 
     diasProducao.push({
       data: domingoStr,
-      dia_label: 'Domingo',
+      dia_label: 'Seg Madrugada',  // v9.7.3: era 'Domingo'
       dia_curto: 'Dom',
       dia_key: 'domingo',
       itens_pf: itensPfDomingo,
@@ -262,7 +262,9 @@ export async function GET(request: Request) {
           const campoPcq = pcqConfig.campo as keyof typeof pcqQ
           const qtdFormas = pcqQ[campoPcq] as number
 
-          if (qtdFormas > 0) {
+          // v9.7.3: Removido o guard `if (qtdFormas > 0)` — agora sempre processa,
+          // para que ajustes em células com qtd=0 funcionem (criar quantidade onde não tinha).
+          {
             const ajusteKey = `${escola.id}_${diaKey}_PCQ`
             // BUG FIX 7: Check feriado on PRODUCTION day AND on DELIVERY days
             let zeradoPcq = false
@@ -405,7 +407,8 @@ export async function GET(request: Request) {
 
         const distKey = `${lancheId}_${escola.id}_${diaKey}`
         const qtdBase = lancheDistMap.get(distKey) || 0
-        if (qtdBase === 0) continue
+        // v9.7.3: Removido `if (qtdBase === 0) continue` — agora sempre processa,
+        // para que ajustes em células sem distribuição funcionem (criar qtd onde não tinha).
 
         const ajusteKey = `${escola.id}_${diaKey}_LANCHE`
         const { zerado, feriado: feriadoNome } = produtoZerado(feriadosMap, diaStr, escola.categoria, 'LANCHE')

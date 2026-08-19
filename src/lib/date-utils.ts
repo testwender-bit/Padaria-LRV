@@ -31,7 +31,7 @@ export type DiaProducao = 'domingo' | 'segunda' | 'terca' | 'quarta' | 'quinta' 
 export const DIAS_PRODUCAO: DiaProducao[] = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta']
 
 export const DIAS_LABEL_CURTO_PRODUCAO: Record<DiaProducao, string> = {
-  domingo: 'Dom',
+  domingo: 'Seg Mad',  // v9.7.3: era 'Dom' — produção de domingo é madrugada de segunda
   segunda: 'Seg',
   terca: 'Ter',
   quarta: 'Qua',
@@ -40,7 +40,7 @@ export const DIAS_LABEL_CURTO_PRODUCAO: Record<DiaProducao, string> = {
 }
 
 export const DIAS_LABEL_PRODUCAO: Record<DiaProducao, string> = {
-  domingo: 'Domingo',
+  domingo: 'Seg Madrugada',  // v9.7.3: era 'Domingo'
   segunda: 'Segunda',
   terca: 'Terça',
   quarta: 'Quarta',

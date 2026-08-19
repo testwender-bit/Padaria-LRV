@@ -269,17 +269,16 @@ export default function ProducaoPage() {
     return (a.nome_curto || '').localeCompare(b.nome_curto || '')
   }
 
+  // v9.7.3: não filtrar por total > 0 na view semanal — escolas com ajuste zerando
+  // continuam visíveis (igual view Por Dia). A impressão continua filtrando zerados.
   const escolasPF = consolidado.escolas.filter(e => e.total_pf > 0).sort(sortEscolas)
-  // v9.5.4: "Produção Extra" = apenas rota OUTROS (instituições avulsas:
-  // Bombeiros, Ambulância, etc.). INTERIOR (Fredolino, São Cristóvão) é
-  // escola regular e fica junto com as demais.
   const escolasRegularesPF = escolasPF.filter(e => (e.rota || '').toUpperCase() !== 'OUTROS')
   const escolasOutrasPF = escolasPF.filter(e => (e.rota || '').toUpperCase() === 'OUTROS')
 
-  // v9.6.3: PCQ agora usa ordenação ESPECÍFICA (ordem_pcq), separada do PF.
-  // Lanche continua usando ordem_rota (não foi solicitada ordem específica).
-  const escolasPCQ = consolidado.escolas.filter(e => e.total_pcq > 0).sort(sortEscolasPCQ)
-  const escolasLanche = consolidado.escolas.filter(e => e.total_lanche > 0).sort(sortEscolas)
+  // v9.7.3: PCQ e Lanche na view semanal — mostra todas as escolas que RECEBEM o produto
+  // (mesmo se zerado por ajuste/feriado), para permitir reajustar.
+  const escolasPCQ = consolidado.escolas.filter(e => e.total_pcq > 0 || (e as any).recebe_pcq !== false).sort(sortEscolasPCQ)
+  const escolasLanche = consolidado.escolas.filter(e => e.total_lanche > 0 || (e as any).recebe_lanche !== false).sort(sortEscolas)
 
   // Datas para o romaneio (entrega: segunda-sexta)
   const datasEntrega: Record<DiaSemana, string> = {
@@ -403,17 +402,17 @@ export default function ProducaoPage() {
           {printPFPage('2ª via')}
         </div>
 
-        {/* ==================== PÁGINA 3: PCQ E LANCHES ==================== */}
-        {(consolidado.total_pcq > 0 || consolidado.total_lanche > 0) && (
+        {/* ==================== PÁGINA 3: PCQ ==================== */}
+        {consolidado.total_pcq > 0 && (
           <div className="print-page-break">
             {/* Header */}
             <div className="print-doc-header">
               <div className="print-doc-header-left">
                 <div className="print-doc-logo"><img src="/brasao.jpg" alt="Brasão" /></div>
                 <div className="print-doc-title-block">
-                  <div className="print-doc-title">PRODUÇÃO — PCQ E LANCHES</div>
+                  <div className="print-doc-title">PRODUÇÃO — PCQ</div>
                   <div className="print-doc-subtitle">Padaria Escolar Municipal — Prefeitura de Lucas do Rio Verde / MT</div>
-                  <div className="print-doc-subtitle">Pão de Cachorro Quente + Lanches</div>
+                  <div className="print-doc-subtitle">Pão de Cachorro Quente</div>
                 </div>
               </div>
               <div className="print-doc-header-right">
@@ -422,7 +421,7 @@ export default function ProducaoPage() {
               </div>
             </div>
 
-            {/* Info block — PÃO e LANCHE lado a lado */}
+            {/* Info block */}
             <div className="print-info-block">
               <div className="print-info-left">
                 <div className="print-info-semana">SEMANA {data.semana} / {data.ano}</div>
@@ -431,87 +430,122 @@ export default function ProducaoPage() {
               <div className="print-info-right">
                 <div className="print-info-inline">
                   <span className="print-info-item"><span className="print-info-label">PÃO:</span> {data.nomePao}</span>
-                  {lancheNome && <span className="print-info-item print-info-divider"><span className="print-info-label">LANCHE:</span> {lancheNome}</span>}
                 </div>
               </div>
             </div>
 
             {/* PCQ Section */}
-            {consolidado.total_pcq > 0 && (
-              <>
-                <div className="print-section-header">
-                  <span className="print-section-title-text">PCQ — PÃO DE CACHORRO QUENTE</span>
-                  <span className="print-section-total">Total: {consolidado.total_pcq.toLocaleString('pt-BR')} {pcqUnit}</span>
-                </div>
-                <table className="print-table">
-                  <thead>
-                    <tr>
-                      <th className="print-col-escola">ESCOLA / UNIDADE</th>
-                      {DIAS_PRODUCAO.map((d) => (
-                        <th key={d} className="print-col-dia">{DIAS_LABEL_CURTO_PRODUCAO[d]}</th>
-                      ))}
-                      <th className="print-col-total">TOTAL</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {escolasPCQ.map((escola) => (
-                      <tr key={escola.id}>
-                        <td className="print-col-escola">{escola.nome_curto}</td>
-                        {DIAS_PRODUCAO.map((d) => (
-                          <td key={d} className="print-col-dia">{escola.pcq[d] > 0 ? escola.pcq[d] : '—'}</td>
-                        ))}
-                        <td className="print-col-total">{escola.total_pcq.toLocaleString('pt-BR')}</td>
-                      </tr>
+            <div className="print-section-header">
+              <span className="print-section-title-text">PCQ — PÃO DE CACHORRO QUENTE</span>
+              <span className="print-section-total">Total: {consolidado.total_pcq.toLocaleString('pt-BR')} {pcqUnit}</span>
+            </div>
+            <table className="print-table">
+              <thead>
+                <tr>
+                  <th className="print-col-escola">ESCOLA / UNIDADE</th>
+                  {DIAS_PRODUCAO.map((d) => (
+                    <th key={d} className="print-col-dia">{DIAS_LABEL_CURTO_PRODUCAO[d]}</th>
+                  ))}
+                  <th className="print-col-total">TOTAL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {escolasPCQ.map((escola) => (
+                  <tr key={escola.id}>
+                    <td className="print-col-escola">{escola.nome_curto}</td>
+                    {DIAS_PRODUCAO.map((d) => (
+                      <td key={d} className="print-col-dia">{escola.pcq[d] > 0 ? escola.pcq[d] : '—'}</td>
                     ))}
-                    <tr className="print-row-subtotal">
-                      <td className="print-col-escola">TOTAL GERAL ({pcqUnit.toUpperCase()})</td>
-                      {DIAS_PRODUCAO.map((d) => (
-                        <td key={d} className="print-col-dia">{consolidado.totais_por_dia.pcq[d] || '—'}</td>
-                      ))}
-                      <td className="print-col-total">{consolidado.total_pcq.toLocaleString('pt-BR')}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </>
+                    <td className="print-col-total">{escola.total_pcq.toLocaleString('pt-BR')}</td>
+                  </tr>
+                ))}
+                <tr className="print-row-subtotal">
+                  <td className="print-col-escola">TOTAL GERAL ({pcqUnit.toUpperCase()})</td>
+                  {DIAS_PRODUCAO.map((d) => (
+                    <td key={d} className="print-col-dia">{consolidado.totais_por_dia.pcq[d] || '—'}</td>
+                  ))}
+                  <td className="print-col-total">{consolidado.total_pcq.toLocaleString('pt-BR')}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            {/* v9.4: Aviso da semana na impressão */}
+            {data.obs && (
+              <div style={{ marginTop: '3mm', padding: '2mm 3mm', border: '0.5pt solid #999', background: '#fffff0', fontSize: '7.5pt', fontStyle: 'italic' }}>
+                <strong>⚠️ AVISO DA SEMANA:</strong> {data.obs}
+              </div>
             )}
 
-            {/* v9.4: Lanche Section — tabela compacta com escolas agrupadas por dia */}
-            {consolidado.total_lanche > 0 && (
-              <>
-                <div className="print-section-header print-section-spacer">
-                  <span className="print-section-title-text">{lancheNome.toUpperCase()} — ENTREGAS POR DIA</span>
-                  <span className="print-section-total">Total: {consolidado.total_lanche.toLocaleString('pt-BR')}</span>
+            {/* Footer */}
+            <div className="print-footer">Sistema de Gestão da Padaria Escolar Municipal — Lucas do Rio Verde / MT</div>
+          </div>
+        )}
+
+        {/* ==================== PÁGINA 4: LANCHES (página separada) ==================== */}
+        {consolidado.total_lanche > 0 && (
+          <div className="print-page-break">
+            {/* Header */}
+            <div className="print-doc-header">
+              <div className="print-doc-header-left">
+                <div className="print-doc-logo"><img src="/brasao.jpg" alt="Brasão" /></div>
+                <div className="print-doc-title-block">
+                  <div className="print-doc-title">PRODUÇÃO — LANCHES</div>
+                  <div className="print-doc-subtitle">Padaria Escolar Municipal — Prefeitura de Lucas do Rio Verde / MT</div>
+                  <div className="print-doc-subtitle">{lancheNome || 'Lanche'}</div>
                 </div>
-                <table className="print-table" style={{ tableLayout: 'fixed', width: '100%' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ width: '65%', textAlign: 'left', padding: '1mm 1.5mm', fontSize: '7pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>DIA / ESCOLA</th>
-                      <th style={{ width: '35%', textAlign: 'center', padding: '1mm 1.5mm', fontSize: '7pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>QUANTIDADE</th>
+              </div>
+              <div className="print-doc-header-right">
+                <div className="print-doc-gerado">GERADO EM</div>
+                <div className="print-doc-gerado-date">{geradoEm}</div>
+              </div>
+            </div>
+
+            {/* Info block */}
+            <div className="print-info-block">
+              <div className="print-info-left">
+                <div className="print-info-semana">SEMANA {data.semana} / {data.ano}</div>
+                <div className="print-info-periodo">{formatarPeriodoSemana(inicioSemana(inicio), fimSemana(inicio))}</div>
+              </div>
+              <div className="print-info-right">
+                <div className="print-info-inline">
+                  {lancheNome && <span className="print-info-item"><span className="print-info-label">LANCHE:</span> {lancheNome}</span>}
+                </div>
+              </div>
+            </div>
+
+            {/* Lanche Section — tabela compacta com escolas agrupadas por dia */}
+            <div className="print-section-header">
+              <span className="print-section-title-text">{(lancheNome || 'Lanche').toUpperCase()} — ENTREGAS POR DIA</span>
+              <span className="print-section-total">Total: {consolidado.total_lanche.toLocaleString('pt-BR')}</span>
+            </div>
+            <table className="print-table" style={{ tableLayout: 'fixed', width: '100%' }}>
+              <thead>
+                <tr>
+                  <th style={{ width: '65%', textAlign: 'left', padding: '1mm 1.5mm', fontSize: '7pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>DIA / ESCOLA</th>
+                  <th style={{ width: '35%', textAlign: 'center', padding: '1mm 1.5mm', fontSize: '7pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>QUANTIDADE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {DIAS_PRODUCAO.filter(d => consolidado.totais_por_dia.lanche[d] > 0).map((d) => (
+                  <Fragment key={d}>
+                    <tr style={{ borderTop: '1.5pt solid #000' }}>
+                      <td style={{ fontWeight: '800', fontSize: '8pt', textTransform: 'uppercase', padding: '1.5mm 1.5mm', borderBottom: '0.5pt solid #000', letterSpacing: '0.3pt' }}>
+                        ■ {DIAS_LABEL_CURTO_PRODUCAO[d].toUpperCase()}
+                      </td>
+                      <td style={{ fontWeight: '800', fontSize: '8pt', textAlign: 'center', padding: '1.5mm 1.5mm', borderBottom: '0.5pt solid #000' }}>
+                        {consolidado.totais_por_dia.lanche[d]} unid.
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {DIAS_PRODUCAO.filter(d => consolidado.totais_por_dia.lanche[d] > 0).map((d) => (
-                      <Fragment key={d}>
-                        <tr style={{ borderTop: '1.5pt solid #000' }}>
-                          <td style={{ fontWeight: '800', fontSize: '8pt', textTransform: 'uppercase', padding: '1.5mm 1.5mm', borderBottom: '0.5pt solid #000', letterSpacing: '0.3pt' }}>
-                            ■ {DIAS_LABEL_CURTO_PRODUCAO[d].toUpperCase()}
-                          </td>
-                          <td style={{ fontWeight: '800', fontSize: '8pt', textAlign: 'center', padding: '1.5mm 1.5mm', borderBottom: '0.5pt solid #000' }}>
-                            {consolidado.totais_por_dia.lanche[d]} unid.
-                          </td>
-                        </tr>
-                        {escolasLanche.filter(e => e.lanche[d] > 0).map((escola) => (
-                          <tr key={`${d}-${escola.id}`}>
-                            <td style={{ padding: '0.8mm 1.5mm 0.8mm 6mm', fontSize: '8pt' }}>{escola.nome_curto}</td>
-                            <td style={{ textAlign: 'center', padding: '0.8mm 1.5mm', fontSize: '8pt' }}>{escola.lanche[d]}</td>
-                          </tr>
-                        ))}
-                      </Fragment>
+                    {escolasLanche.filter(e => e.lanche[d] > 0).map((escola) => (
+                      <tr key={`${d}-${escola.id}`}>
+                        <td style={{ padding: '0.8mm 1.5mm 0.8mm 6mm', fontSize: '8pt' }}>{escola.nome_curto}</td>
+                        <td style={{ textAlign: 'center', padding: '0.8mm 1.5mm', fontSize: '8pt' }}>{escola.lanche[d]}</td>
+                      </tr>
                     ))}
-                  </tbody>
-                </table>
-              </>
-            )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
 
             {/* v9.4: Aviso da semana na impressão */}
             {data.obs && (
@@ -810,7 +844,7 @@ export default function ProducaoPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {consolidado.escolas.filter(e => e.total_pf > 0).map((escola) => (
+                    {escolasPF.map((escola) => (
                       <tr key={escola.id} className="border-b border-muted/30 hover:bg-muted/20">
                         <td className="p-2 font-medium text-sm">{escola.nome_curto}</td>
                         {DIAS_PRODUCAO.map((d) => (
@@ -855,7 +889,7 @@ export default function ProducaoPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {consolidado.escolas.filter(e => e.total_pcq > 0).map((escola) => (
+                    {escolasPCQ.map((escola) => (
                       <tr key={escola.id} className="border-b border-muted/30 hover:bg-muted/20">
                         <td className="p-2 font-medium text-sm">{escola.nome_curto}</td>
                         {DIAS_PRODUCAO.map((d) => (
@@ -900,7 +934,7 @@ export default function ProducaoPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {consolidado.escolas.filter(e => e.total_lanche > 0).map((escola) => (
+                    {escolasLanche.map((escola) => (
                       <tr key={escola.id} className="border-b border-muted/30 hover:bg-muted/20">
                         <td className="p-2 font-medium text-sm">{escola.nome_curto}</td>
                         {DIAS_PRODUCAO.map((d) => (
