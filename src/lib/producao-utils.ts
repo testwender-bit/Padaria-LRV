@@ -45,6 +45,8 @@ export interface ItemProducao {
   obs?: string
   dia_entrega?: string
   ajustado?: boolean
+  ajuste_motivo?: string  // v9.7.4: motivo do ajuste (para exibir na UI)
+  ajuste_qtd_original?: number  // v9.7.4: qtd original antes do ajuste
   zerado?: boolean
   feriado_nome?: string
 }

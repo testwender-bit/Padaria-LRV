@@ -149,6 +149,22 @@ export default function ProducaoPage() {
   function openAjusteFromWeekly(escolaId: string, escolaNome: string, diaProd: DiaProducao, produto: 'PF' | 'PCQ' | 'LANCHE', quantidade: number) {
     // v9.4: permite ajustar mesmo se quantidade for 0 (célula vazia)
     const diaEntrega = entregaFromProducao(diaProd, produto)
+
+    // v9.7.4: Se já tem ajuste, mostrar o motivo antes de abrir o dialog
+    const ajusteKey = `${escolaId}_${diaEntrega}_${produto}`
+    const ajusteInfo = ajustesInfoMap.get(ajusteKey)
+    if (ajusteInfo) {
+      // Mostra o motivo e permite editar
+      const confirmar = window.confirm(
+        `Ajuste existente:\n\n` +
+        `Quantidade original: ${ajusteInfo.qtd_original}\n` +
+        `Quantidade atual: ${quantidade}\n` +
+        `Motivo: ${ajusteInfo.motivo}\n\n` +
+        `Deseja editar este ajuste?`
+      )
+      if (!confirmar) return
+    }
+
     setAjusteTarget({
       escolaId,
       escolaNome,
@@ -240,6 +256,25 @@ export default function ProducaoPage() {
   // Usa diasComExtra para que as instituições extras apareçam junto (silenciosamente)
   const consolidado = consolidarProducaoSemana(diasComExtra)
 
+  // v9.7.4: Construir lookup de ajustes para destacar células e mostrar motivo
+  // Formato: Map<escola_id_dia_entrega_produto, {motivo, qtd_original}>
+  const ajustesInfoMap = useMemo(() => {
+    const map = new Map<string, { motivo: string; qtd_original: number }>()
+    for (const dia of diasComExtra) {
+      const allItems = [...(dia.itens_pf || []), ...(dia.itens_pcq || []), ...(dia.itens_lanche || [])]
+      for (const item of allItems) {
+        if (item.ajustado && item.dia_entrega) {
+          const key = `${item.escola_id}_${item.dia_entrega}_${item.produto}`
+          map.set(key, {
+            motivo: (item as any).ajuste_motivo || 'Sem motivo informado',
+            qtd_original: (item as any).ajuste_qtd_original ?? item.quantidade,
+          })
+        }
+      }
+    }
+    return map
+  }, [diasComExtra])
+
   // PF unit label
   const pfUnit = 'unid.'
   const pcqUnit = 'formas'
@@ -271,14 +306,21 @@ export default function ProducaoPage() {
 
   // v9.7.3: não filtrar por total > 0 na view semanal — escolas com ajuste zerando
   // continuam visíveis (igual view Por Dia). A impressão continua filtrando zerados.
+  // v9.7.4: helper para destacar células ajustadas na view semanal
+  function getAjusteInfo(escolaId: string, diaProd: DiaProducao, produto: string) {
+    const diaEntrega = entregaFromProducao(diaProd, produto)
+    return ajustesInfoMap.get(`${escolaId}_${diaEntrega}_${produto}`)
+  }
+
   const escolasPF = consolidado.escolas.filter(e => e.total_pf > 0).sort(sortEscolas)
   const escolasRegularesPF = escolasPF.filter(e => (e.rota || '').toUpperCase() !== 'OUTROS')
   const escolasOutrasPF = escolasPF.filter(e => (e.rota || '').toUpperCase() === 'OUTROS')
 
-  // v9.7.3: PCQ e Lanche na view semanal — mostra todas as escolas que RECEBEM o produto
-  // (mesmo se zerado por ajuste/feriado), para permitir reajustar.
-  const escolasPCQ = consolidado.escolas.filter(e => e.total_pcq > 0 || (e as any).recebe_pcq !== false).sort(sortEscolasPCQ)
-  const escolasLanche = consolidado.escolas.filter(e => e.total_lanche > 0 || (e as any).recebe_lanche !== false).sort(sortEscolas)
+  // v9.7.4: PCQ e Lanche na view semanal — mostra escolas que RECEBEM o produto
+  // (recebe_pcq === true) mesmo se zerado por ajuste/feriado, para permitir reajustar.
+  // Não mostra escolas desmarcadas (recebe_pcq === false).
+  const escolasPCQ = consolidado.escolas.filter(e => e.total_pcq > 0 || (e as any).recebe_pcq === true).sort(sortEscolasPCQ)
+  const escolasLanche = consolidado.escolas.filter(e => e.total_lanche > 0 || (e as any).recebe_lanche === true).sort(sortEscolas)
 
   // Datas para o romaneio (entrega: segunda-sexta)
   const datasEntrega: Record<DiaSemana, string> = {
@@ -847,12 +889,17 @@ export default function ProducaoPage() {
                     {escolasPF.map((escola) => (
                       <tr key={escola.id} className="border-b border-muted/30 hover:bg-muted/20">
                         <td className="p-2 font-medium text-sm">{escola.nome_curto}</td>
-                        {DIAS_PRODUCAO.map((d) => (
-                          <td key={d} className="p-2 text-center font-mono text-sm cursor-pointer hover:bg-amber-50 rounded"
+                        {DIAS_PRODUCAO.map((d) => {
+                          const ajuste = getAjusteInfo(escola.id, d, 'PF')
+                          return (
+                          <td key={d} className={`p-2 text-center font-mono text-sm cursor-pointer hover:bg-amber-50 rounded ${ajuste ? 'bg-amber-100 text-amber-700 font-semibold' : ''}`}
+                            title={ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : ''}
                             onClick={() => openAjusteFromWeekly(escola.id, escola.nome, d, 'PF', escola.pf[d])}>
                             {escola.pf[d] > 0 ? escola.pf[d] : ''}
+                            {ajuste && <span className="ml-0.5 text-[8px] text-amber-600">●</span>}
                           </td>
-                        ))}
+                          )
+                        })}
                         <td className="p-2 text-right font-mono font-semibold bg-amber-50 text-sm">{escola.total_pf.toLocaleString('pt-BR')}</td>
                       </tr>
                     ))}
@@ -892,12 +939,17 @@ export default function ProducaoPage() {
                     {escolasPCQ.map((escola) => (
                       <tr key={escola.id} className="border-b border-muted/30 hover:bg-muted/20">
                         <td className="p-2 font-medium text-sm">{escola.nome_curto}</td>
-                        {DIAS_PRODUCAO.map((d) => (
-                          <td key={d} className="p-2 text-center font-mono text-sm cursor-pointer hover:bg-orange-50 rounded"
+                        {DIAS_PRODUCAO.map((d) => {
+                          const ajuste = getAjusteInfo(escola.id, d, 'PCQ')
+                          return (
+                          <td key={d} className={`p-2 text-center font-mono text-sm cursor-pointer hover:bg-orange-50 rounded ${ajuste ? 'bg-amber-100 text-amber-700 font-semibold' : ''}`}
+                            title={ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : ''}
                             onClick={() => openAjusteFromWeekly(escola.id, escola.nome, d, 'PCQ', escola.pcq[d])}>
                             {escola.pcq[d] > 0 ? escola.pcq[d] : ''}
+                            {ajuste && <span className="ml-0.5 text-[8px] text-amber-600">●</span>}
                           </td>
-                        ))}
+                          )
+                        })}
                         <td className="p-2 text-right font-mono font-semibold bg-orange-50 text-sm">{escola.total_pcq.toLocaleString('pt-BR')}</td>
                       </tr>
                     ))}
@@ -937,12 +989,17 @@ export default function ProducaoPage() {
                     {escolasLanche.map((escola) => (
                       <tr key={escola.id} className="border-b border-muted/30 hover:bg-muted/20">
                         <td className="p-2 font-medium text-sm">{escola.nome_curto}</td>
-                        {DIAS_PRODUCAO.map((d) => (
-                          <td key={d} className="p-2 text-center font-mono text-sm cursor-pointer hover:bg-pink-50 rounded"
+                        {DIAS_PRODUCAO.map((d) => {
+                          const ajuste = getAjusteInfo(escola.id, d, 'LANCHE')
+                          return (
+                          <td key={d} className={`p-2 text-center font-mono text-sm cursor-pointer hover:bg-pink-50 rounded ${ajuste ? 'bg-amber-100 text-amber-700 font-semibold' : ''}`}
+                            title={ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : ''}
                             onClick={() => openAjusteFromWeekly(escola.id, escola.nome, d, 'LANCHE', escola.lanche[d])}>
                             {escola.lanche[d] > 0 ? escola.lanche[d] : ''}
+                            {ajuste && <span className="ml-0.5 text-[8px] text-amber-600">●</span>}
                           </td>
-                        ))}
+                          )
+                        })}
                         <td className="p-2 text-right font-mono font-semibold bg-pink-50 text-sm">{escola.total_lanche.toLocaleString('pt-BR')}</td>
                       </tr>
                     ))}

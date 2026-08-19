@@ -64,8 +64,12 @@ export async function GET(request: Request) {
 
     // Ajustes map
     const ajustesMap = new Map<string, number>()
+    // v9.7.4: map com metadados do ajuste (motivo, qtd_original)
+    const ajustesMetaMap = new Map<string, { motivo: string; qtd_original: number }>()
     for (const a of ajustes) {
-      ajustesMap.set(`${a.escola_id}_${a.dia_semana}_${a.produto}`, a.qtd_final)
+      const key = `${a.escola_id}_${a.dia_semana}_${a.produto}`
+      ajustesMap.set(key, a.qtd_final)
+      ajustesMetaMap.set(key, { motivo: a.motivo || '', qtd_original: a.qtd_original })
     }
 
     // Cardápio da semana
@@ -128,6 +132,8 @@ export async function GET(request: Request) {
         unidade: 'un',
         dia_entrega: 'segunda',
         ajustado: ajustesMap.has(ajusteKey),
+        ajuste_motivo: ajustesMetaMap.get(ajusteKey)?.motivo || undefined,
+        ajuste_qtd_original: ajustesMetaMap.get(ajusteKey)?.qtd_original,
         zerado,
         feriado_nome: feriadoNome,
       })
@@ -177,6 +183,8 @@ export async function GET(request: Request) {
         unidade: 'un',
         dia_entrega: 'segunda',
         ajustado: ajustesMap.has(ajusteKey),
+        ajuste_motivo: ajustesMetaMap.get(ajusteKey)?.motivo || undefined,
+        ajuste_qtd_original: ajustesMetaMap.get(ajusteKey)?.qtd_original,
         zerado: zeradoComp,
         feriado_nome: feriadoNomeComp,
       })
@@ -243,6 +251,8 @@ export async function GET(request: Request) {
             unidade: 'un',
             dia_entrega: diaEntrega,
             ajustado: ajustesMap.has(ajusteKey),
+        ajuste_motivo: ajustesMetaMap.get(ajusteKey)?.motivo || undefined,
+        ajuste_qtd_original: ajustesMetaMap.get(ajusteKey)?.qtd_original,
             zerado,
             feriado_nome: feriadoNome,
           })
@@ -307,6 +317,8 @@ export async function GET(request: Request) {
               unidade: 'formas',
               dia_entrega: diaKey,
               ajustado: ajustesMap.has(ajusteKey),
+        ajuste_motivo: ajustesMetaMap.get(ajusteKey)?.motivo || undefined,
+        ajuste_qtd_original: ajustesMetaMap.get(ajusteKey)?.qtd_original,
               zerado: zeradoPcq,
               feriado_nome: feriadoNomePcq,
             })
@@ -392,6 +404,8 @@ export async function GET(request: Request) {
             unidade: 'un',
             dia_entrega: entregaDia,
             ajustado: ajustesMap.has(ajusteKey),
+        ajuste_motivo: ajustesMetaMap.get(ajusteKey)?.motivo || undefined,
+        ajuste_qtd_original: ajustesMetaMap.get(ajusteKey)?.qtd_original,
             zerado: zeradoComp,
             feriado_nome: feriadoNomeComp,
           })
@@ -428,6 +442,8 @@ export async function GET(request: Request) {
           unidade: lancheRegular?.unidade || 'un',
           dia_entrega: diaKey,
           ajustado: ajustesMap.has(ajusteKey),
+        ajuste_motivo: ajustesMetaMap.get(ajusteKey)?.motivo || undefined,
+        ajuste_qtd_original: ajustesMetaMap.get(ajusteKey)?.qtd_original,
           zerado,
           feriado_nome: feriadoNome,
         })
