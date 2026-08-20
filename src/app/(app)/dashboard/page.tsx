@@ -35,6 +35,14 @@ interface DashboardData {
   lancheBifasica: string | null
   // v9.6.7: aviso da semana (obs do cardápio)
   obs: string | null
+  // v9.7.5: feriados da semana (seg-sex + dom D-1) — alerta complementar ao aviso
+  feriados_semana: Array<{
+    data: string
+    nome: string
+    tipo: string
+    escolas_afetadas: string
+    acao: string
+  }>
 }
 
 const container = {
@@ -118,6 +126,8 @@ export default function DashboardPage() {
           lancheBifasica: producao.lancheBifasica,
           // v9.6.7: aviso da semana
           obs: producao.obs || null,
+          // v9.7.5: feriados da semana
+          feriados_semana: Array.isArray(producao?.feriados_semana) ? producao.feriados_semana : [],
         })
       } catch (err) {
         console.error('Erro ao carregar dashboard:', err)
@@ -150,14 +160,48 @@ export default function DashboardPage() {
         <SeletorSemana />
       </div>
 
-      {/* v9.6.7: Aviso da semana (obs do cardápio) */}
-      {data?.obs && (
-        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-amber-800">Aviso da Semana</p>
-            <p className="text-sm text-amber-700 mt-1">{data.obs}</p>
-          </div>
+      {/* v9.6.7: Aviso da semana (obs do cardápio) + v9.7.5: alerta de feriados da semana */}
+      {(data?.obs || (data?.feriados_semana && data.feriados_semana.length > 0)) && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 space-y-3">
+          {data?.obs && (
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800">Aviso da Semana</p>
+                <p className="text-sm text-amber-700 mt-1">{data.obs}</p>
+              </div>
+            </div>
+          )}
+          {/* v9.7.5: Alerta de feriados da semana */}
+          {data?.feriados_semana && data.feriados_semana.length > 0 && (
+            <div className="flex items-start gap-3 border-t border-amber-200 pt-3">
+              <CalendarOff className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-red-800">
+                  {data.feriados_semana.length === 1
+                    ? 'Feriado na semana:'
+                    : `${data.feriados_semana.length} feriados na semana:`}
+                </p>
+                <ul className="text-sm text-red-700 mt-1 space-y-0.5">
+                  {data.feriados_semana.map((f, idx) => (
+                    <li key={`${f.data}-${idx}`} className="flex items-start gap-2">
+                      <span className="font-mono text-red-900">
+                        {new Date(f.data + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                      </span>
+                      <span className="font-medium">{f.nome}</span>
+                      <span className="text-red-500/70 text-xs">
+                        ({f.acao === 'zerar_dia' ? 'zerar tudo' :
+                          f.acao === 'zerar_pf' ? 'sem PF' :
+                          f.acao === 'zerar_pcq' ? 'sem PCQ' :
+                          f.acao === 'zerar_lanche' ? 'sem lanche' :
+                          f.acao === 'apenas_observacao' ? 'observação' : f.acao})
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

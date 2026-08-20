@@ -19,11 +19,14 @@ import {
   Calendar,
   Plus,
   Trash2,
+  Edit2,
+  Save,
+  CalendarOff,
 } from 'lucide-react'
 import Link from 'next/link'
 import { formatarData, numeroSemana, anoSemana, inicioSemana, fimSemana, formatarPeriodoSemana, dataISO, DIAS_SEMANA, DIAS_LABEL_CURTO, DIAS_PRODUCAO, DIAS_LABEL_CURTO_PRODUCAO, type DiaSemana, type DiaProducao } from '@/lib/date-utils'
 import type { ProducaoDia, ItemProducao } from '@/lib/producao-utils'
-import { PF_PRODUCAO_PARA_ENTREGA } from '@/lib/producao-utils'
+import { PF_PRODUCAO_PARA_ENTREGA, ehDiaProducaoDoProduto } from '@/lib/producao-utils'
 import { consolidarProducaoSemana } from '@/lib/producao-semana-utils'
 import type { RomaneioMotorista } from '@/lib/romaneio-utils'
 import { useAppStore } from '@/store/app-store'
@@ -51,6 +54,16 @@ export default function ProducaoPage() {
     lancheRegular: string | null
     lancheBifasica: string | null
     obs: string | null
+    // v9.7.5: id do cardápio da semana (para PATCH do obs)
+    cardapio_id: string | null
+    // v9.7.5: feriados que caem na semana (seg-sex + dom D-1)
+    feriados_semana: Array<{
+      data: string
+      nome: string
+      tipo: string
+      escolas_afetadas: string
+      acao: string
+    }>
     dias: ProducaoDia[]
   } | null>(null)
   const [loading, setLoading] = useState(true)
@@ -68,6 +81,10 @@ export default function ProducaoPage() {
   const [extraForm, setExtraForm] = useState({
     nome_instituicao: '', produto: 'PF', dia_semana: 'segunda', quantidade: 0, observacao: '',
   })
+  // v9.7.5: edição inline do "Aviso da Semana" (obs do cardápio semestral)
+  const [avisoDialogOpen, setAvisoDialogOpen] = useState(false)
+  const [avisoEditando, setAvisoEditando] = useState('')
+  const [avisoSalvando, setAvisoSalvando] = useState(false)
   const [ajusteTarget, setAjusteTarget] = useState({
     escolaId: '', escolaNome: '', diaSemana: '', produto: '', quantidadeOriginal: 0,
   })
@@ -135,6 +152,46 @@ export default function ProducaoPage() {
         loadData()
       }
     } catch { toast.error('Erro ao remover') }
+  }
+
+  // v9.7.5: abrir diálogo de edição do "Aviso da Semana"
+  function abrirEdicaoAviso() {
+    if (!data) return
+    if (!data.cardapio_id) {
+      toast.error('Semana sem cardápio cadastrado. Cadastre primeiro em /cardapio.')
+      return
+    }
+    setAvisoEditando(data.obs || '')
+    setAvisoDialogOpen(true)
+  }
+
+  // v9.7.5: salvar aviso da semana (PATCH /api/cardapio com apenas o obs)
+  async function handleSaveAviso() {
+    if (!data) return
+    setAvisoSalvando(true)
+    try {
+      const res = await fetch('/api/cardapio', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ano: data.ano,
+          semana: data.semana,
+          obs: avisoEditando,
+        }),
+      })
+      if (res.ok) {
+        toast.success('Aviso da semana atualizado!')
+        setAvisoDialogOpen(false)
+        loadData()
+      } else {
+        const json = await res.json().catch(() => ({}))
+        toast.error(json.error || 'Erro ao salvar aviso')
+      }
+    } catch {
+      toast.error('Erro de conexão')
+    } finally {
+      setAvisoSalvando(false)
+    }
   }
 
   function openAjuste(item: ItemProducao) {
@@ -310,7 +367,11 @@ export default function ProducaoPage() {
   // v9.7.3: não filtrar por total > 0 na view semanal — escolas com ajuste zerando
   // continuam visíveis (igual view Por Dia). A impressão continua filtrando zerados.
   // v9.7.4: helper para destacar células ajustadas na view semanal
+  // v9.7.5: BUGFIX — só retorna ajuste se o dia for um dia VÁLIDO de produção
+  // para o produto. Antes, ajuste de quinta (PF D-1 entrega sexta) "vazava"
+  // para a coluna sexta na tabela de PF (que não tem produção na sexta).
   function getAjusteInfo(escolaId: string, diaProd: DiaProducao, produto: string) {
+    if (!ehDiaProducaoDoProduto(diaProd, produto)) return undefined
     const diaEntrega = entregaFromProducao(diaProd, produto)
     return ajustesInfoMap.get(`${escolaId}_${diaEntrega}_${produto}`)
   }
@@ -764,8 +825,9 @@ export default function ProducaoPage() {
                       </tr></thead>
                       <tbody>
                         {DIAS_SEMANA.filter(d => romaneio.totais_lanche[d] > 0).map((d) => (
-                          <>
-                            <tr key={d} style={{ borderTop: '1.5pt solid #000' }}>
+                          // v9.7.6: bugfix React key — <> não aceita key, trocado por Fragment
+                          <Fragment key={d}>
+                            <tr style={{ borderTop: '1.5pt solid #000' }}>
                               <td style={{ fontWeight: '800', fontSize: '8pt', textTransform: 'uppercase', padding: '1.5mm 1.5mm', borderBottom: '0.5pt solid #000', letterSpacing: '0.3pt' }}>
                                 ■ {DIAS_LABEL_CURTO[d].toUpperCase()}
                               </td>
@@ -779,7 +841,7 @@ export default function ProducaoPage() {
                                 <td style={{ textAlign: 'center', padding: '0.8mm 1.5mm', fontSize: '8pt' }}>{escola.lanche[d]}</td>
                               </tr>
                             ))}
-                          </>
+                          </Fragment>
                         ))}
                       </tbody>
                     </table>
@@ -835,13 +897,57 @@ export default function ProducaoPage() {
         </div>
       </div>
 
-      {/* v9.4: Aviso da semana (vem do cardápio semestral) */}
-      {data.obs && (
-        <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 flex items-start gap-3 print:hidden">
-          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-amber-800">Aviso da Semana {data.semana}</p>
-            <p className="text-sm text-amber-700">{data.obs}</p>
+      {/* v9.7.5: Aviso da semana (vem do cardápio semestral) + alerta de feriados */}
+      {(data.obs || (data.feriados_semana && data.feriados_semana.length > 0)) && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 print:hidden">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0 space-y-2">
+              {data.obs && (
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Aviso da Semana {data.semana}</p>
+                  <p className="text-sm text-amber-700">{data.obs}</p>
+                </div>
+              )}
+              {/* v9.7.5: Alerta de feriados da semana */}
+              {data.feriados_semana && data.feriados_semana.length > 0 && (
+                <div className="border-t border-amber-200 pt-2">
+                  <p className="text-xs font-semibold text-red-700 flex items-center gap-1 mb-1">
+                    <CalendarOff className="w-3.5 h-3.5" />
+                    {data.feriados_semana.length === 1
+                      ? 'Feriado na semana:'
+                      : `${data.feriados_semana.length} feriados na semana:`}
+                  </p>
+                  <ul className="text-xs text-red-700 space-y-0.5">
+                    {data.feriados_semana.map((f, idx) => (
+                      <li key={`${f.data}-${idx}`} className="flex items-start gap-1.5">
+                        <span className="font-mono text-red-800">
+                          {new Date(f.data + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                        </span>
+                        <span className="font-medium">{f.nome}</span>
+                        <span className="text-red-500/70">
+                          ({f.acao === 'zerar_dia' ? 'zerar tudo' :
+                            f.acao === 'zerar_pf' ? 'sem PF' :
+                            f.acao === 'zerar_pcq' ? 'sem PCQ' :
+                            f.acao === 'zerar_lanche' ? 'sem lanche' :
+                            f.acao === 'apenas_observacao' ? 'observação' : f.acao})
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+            {/* v9.7.5: botão editar aviso da semana */}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-amber-700 hover:bg-amber-100 hover:text-amber-900 h-8"
+              onClick={abrirEdicaoAviso}
+              title="Editar aviso da semana"
+            >
+              <Edit2 className="w-3.5 h-3.5" />
+            </Button>
           </div>
         </div>
       )}
@@ -893,10 +999,19 @@ export default function ProducaoPage() {
                       <tr key={escola.id} className="border-b border-muted/30 hover:bg-muted/20">
                         <td className="p-2 font-medium text-sm">{escola.nome_curto}</td>
                         {DIAS_PRODUCAO.map((d) => {
+                          const diaValido = ehDiaProducaoDoProduto(d, 'PF')
                           const ajuste = getAjusteInfo(escola.id, d, 'PF')
+                          // v9.7.5: sexta não é dia de produção de PF — célula neutra e não-clicável
+                          if (!diaValido) {
+                            return (
+                              <td key={d} className="p-2 text-center font-mono text-sm text-muted-foreground/30 bg-muted/10">
+                                —
+                              </td>
+                            )
+                          }
                           return (
                           <td key={d} className={`p-2 text-center font-mono text-sm cursor-pointer hover:bg-amber-50 rounded ${ajuste ? 'bg-amber-100 text-amber-700 font-semibold' : ''}`}
-                            title={ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : ''}
+                            title={ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : 'Clique para ajustar'}
                             onClick={() => openAjusteFromWeekly(escola.id, escola.nome, d, 'PF', escola.pf[d])}>
                             {escola.pf[d] > 0 ? escola.pf[d] : ''}
                             {ajuste && <span className="ml-0.5 text-[8px] text-amber-600">●</span>}
@@ -943,10 +1058,19 @@ export default function ProducaoPage() {
                       <tr key={escola.id} className="border-b border-muted/30 hover:bg-muted/20">
                         <td className="p-2 font-medium text-sm">{escola.nome_curto}</td>
                         {DIAS_PRODUCAO.map((d) => {
+                          const diaValido = ehDiaProducaoDoProduto(d, 'PCQ')
                           const ajuste = getAjusteInfo(escola.id, d, 'PCQ')
+                          // v9.7.5: PCQ só é produzido seg/qua/sex — outras colunas neutras
+                          if (!diaValido) {
+                            return (
+                              <td key={d} className="p-2 text-center font-mono text-sm text-muted-foreground/30 bg-muted/10">
+                                —
+                              </td>
+                            )
+                          }
                           return (
                           <td key={d} className={`p-2 text-center font-mono text-sm cursor-pointer hover:bg-orange-50 rounded ${ajuste ? 'bg-amber-100 text-amber-700 font-semibold' : ''}`}
-                            title={ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : ''}
+                            title={ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : 'Clique para ajustar'}
                             onClick={() => openAjusteFromWeekly(escola.id, escola.nome, d, 'PCQ', escola.pcq[d])}>
                             {escola.pcq[d] > 0 ? escola.pcq[d] : ''}
                             {ajuste && <span className="ml-0.5 text-[8px] text-amber-600">●</span>}
@@ -993,10 +1117,19 @@ export default function ProducaoPage() {
                       <tr key={escola.id} className="border-b border-muted/30 hover:bg-muted/20">
                         <td className="p-2 font-medium text-sm">{escola.nome_curto}</td>
                         {DIAS_PRODUCAO.map((d) => {
+                          const diaValido = ehDiaProducaoDoProduto(d, 'LANCHE')
                           const ajuste = getAjusteInfo(escola.id, d, 'LANCHE')
+                          // v9.7.5: lanche só é produzido seg-sex (não no domingo)
+                          if (!diaValido) {
+                            return (
+                              <td key={d} className="p-2 text-center font-mono text-sm text-muted-foreground/30 bg-muted/10">
+                                —
+                              </td>
+                            )
+                          }
                           return (
                           <td key={d} className={`p-2 text-center font-mono text-sm cursor-pointer hover:bg-pink-50 rounded ${ajuste ? 'bg-amber-100 text-amber-700 font-semibold' : ''}`}
-                            title={ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : ''}
+                            title={ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : 'Clique para ajustar'}
                             onClick={() => openAjusteFromWeekly(escola.id, escola.nome, d, 'LANCHE', escola.lanche[d])}>
                             {escola.lanche[d] > 0 ? escola.lanche[d] : ''}
                             {ajuste && <span className="ml-0.5 text-[8px] text-amber-600">●</span>}
@@ -1116,6 +1249,67 @@ export default function ProducaoPage() {
             <Button onClick={handleSaveExtra} className="w-full bg-[#1A3A5C] hover:bg-[#1A3A5C]/90">
               Adicionar
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* v9.7.5: Dialog editar aviso da semana (obs do cardápio) */}
+      <Dialog open={avisoDialogOpen} onOpenChange={setAvisoDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-[#1A3A5C]">Aviso da Semana {data?.semana}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-xs text-amber-700">
+                Este aviso aparece como banner no <strong>Dashboard</strong> e na <strong>Produção</strong> apenas
+                nesta semana (match exato da semana ISO). Deixe vazio para remover o banner.
+              </p>
+            </div>
+            <div>
+              <Label className="text-xs">Mensagem do aviso</Label>
+              <textarea
+                className="w-full min-h-[120px] p-2 text-sm rounded-md border border-input bg-background resize-y focus:outline-none focus:ring-2 focus:ring-[#1A3A5C]/30"
+                placeholder="Ex: Semana com feriado na quinta — produção reduzida. Reunião pedagógica sexta à tarde."
+                value={avisoEditando}
+                onChange={(e) => setAvisoEditando(e.target.value)}
+                autoFocus
+              />
+            </div>
+            {/* v9.7.5: mostrar feriados da semana como informação para o usuário */}
+            {data?.feriados_semana && data.feriados_semana.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-2">
+                <p className="text-xs font-semibold text-red-700 mb-1">Feriados nesta semana:</p>
+                <ul className="text-xs text-red-700 space-y-0.5">
+                  {data.feriados_semana.map((f, idx) => (
+                    <li key={`prev-${f.data}-${idx}`}>
+                      <span className="font-mono">
+                        {new Date(f.data + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                      </span>
+                      {' — '}
+                      <span className="font-medium">{f.nome}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                onClick={handleSaveAviso}
+                disabled={avisoSalvando}
+                className="flex-1 bg-[#1A3A5C] hover:bg-[#1A3A5C]/90"
+              >
+                <Save className="w-3.5 h-3.5 mr-1" />
+                {avisoSalvando ? 'Salvando...' : 'Salvar Aviso'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setAvisoDialogOpen(false)}
+                disabled={avisoSalvando}
+              >
+                Cancelar
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

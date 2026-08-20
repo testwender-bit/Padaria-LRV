@@ -30,6 +30,30 @@ export const LANCHE_PRODUCAO_PARA_ENTREGA: Record<string, DiaSemana> = {
   sexta: 'sexta',
 }
 
+// v9.7.5: Dias de PRODUÇÃO válidos por produto.
+// Usado pela view semanal para saber quais células são "clicáveis"
+// (ou seja, em quais dias o produto é efetivamente produzido).
+//
+// PF: dom→seg, seg→ter, ter→qua, qua→qui, qui→sex (D-1). Não tem sexta
+//     porque sábado não tem entrega.
+// PCQ: seg, qua, sex (mesmo dia de entrega — seg/qua/sex).
+// LANCHE: seg→sex (D-0, mesmo dia).
+// PF_COMP: dom (entrega seg), ter (entrega qua), qui (entrega sex) — D-1.
+export const DIAS_PRODUCAO_POR_PRODUTO: Record<string, string[]> = {
+  PF: ['domingo', 'segunda', 'terca', 'quarta', 'quinta'],
+  PCQ: ['segunda', 'quarta', 'sexta'],
+  LANCHE: ['segunda', 'terca', 'quarta', 'quinta', 'sexta'],
+  PF_COMP: ['domingo', 'terca', 'quinta'],
+}
+
+// v9.7.5: Retorna true se o dia é um dia válido de produção para o produto.
+// Previne bug visual onde ajuste de quinta (entrega sexta) "vazava" para
+// a coluna sexta na tabela de PF (que não tem produção de PF na sexta).
+export function ehDiaProducaoDoProduto(diaProd: string, produto: string): boolean {
+  const dias = DIAS_PRODUCAO_POR_PRODUTO[produto]
+  return !!dias && dias.includes(diaProd)
+}
+
 export interface ItemProducao {
   escola_id: string
   escola_nome: string

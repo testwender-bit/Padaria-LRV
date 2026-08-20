@@ -463,6 +463,48 @@ export async function GET(request: Request) {
       })
     }
 
+    // v9.7.5: Coletar feriados que caem dentro da semana (seg-sex) para
+    // exibir como alerta complementar ao "Aviso da Semana" na produção
+    // e no dashboard. Considera também o domingo de produção D-1.
+    const feriadosSemana: Array<{
+      data: string
+      nome: string
+      tipo: string
+      escolas_afetadas: string
+      acao: string
+    }> = []
+    const datasSemana: string[] = [
+      domingoStr,  // domingo de produção (D-1 da segunda)
+      segundaStr,
+      dataISO(addDays(inicio, 1)),  // terça
+      dataISO(addDays(inicio, 2)),  // quarta
+      dataISO(addDays(inicio, 3)),  // quinta
+      dataISO(addDays(inicio, 4)),  // sexta
+    ]
+    const feriadosVistos = new Set<string>()  // dedupe por data+nome
+    for (const d of datasSemana) {
+      const lista = feriadosMap.get(d) || []
+      for (const f of lista) {
+        const key = `${f.data}|${f.nome}`
+        if (feriadosVistos.has(key)) continue
+        feriadosVistos.add(key)
+        // v9.7.5: o tipo FeriadoData (lib) não tem campo `tipo` — buscar
+        // diretamente do registro feriado original (que tem o campo).
+        // Como feriadosMap é tipado como Map<string, FeriadoData[]>,
+        // fazemos cast para acessar o campo extraido do Prisma.
+        const fFull = f as FeriadoData & { tipo?: string }
+        feriadosSemana.push({
+          data: f.data,
+          nome: f.nome,
+          tipo: fFull.tipo || 'NACIONAL',
+          escolas_afetadas: f.escolas_afetadas,
+          acao: f.acao,
+        })
+      }
+    }
+    // Ordenar por data crescente
+    feriadosSemana.sort((a, b) => a.data.localeCompare(b.data))
+
     // v9.5.4: buscar produções extras (instituições avulsas) — usado pela
     // página para injetá-las como ItemProducao nos dias de produção.
     let producaoExtra: any[] = []
@@ -487,6 +529,12 @@ export async function GET(request: Request) {
       // encontrado por numero_semana_iso exato). Se caiu no fallback de
       // date range, não retorna obs (pode ser de outra semana).
       obs: matchExato ? (cardapioFinal?.obs || null) : null,
+      // v9.7.5: id do cardápio da semana (para PATCH do obs via edição inline
+      // na página de produção). Só vem preenchido se matchExato.
+      cardapio_id: matchExato ? (cardapioFinal?.id || null) : null,
+      // v9.7.5: feriados da semana (seg-sex + domingo de produção D-1) —
+      // para exibir como alerta complementar ao "Aviso da Semana".
+      feriados_semana: feriadosSemana,
       dias: diasProducao,
       // v9.5.4: produções extras para a página injetar como ItemProducao
       producaoExtra,
