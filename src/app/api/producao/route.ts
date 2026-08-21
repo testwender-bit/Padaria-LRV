@@ -76,14 +76,22 @@ export async function GET(request: Request) {
     const tipoPao = cardapioFinal?.tipo_pao || 'PADRAO'
     const nomePao = cardapioFinal?.nome_pao || 'Pão Francês'
     const lancheRegular = cardapioFinal?.lanche_regular
+    // v9.8: lancheBifasica não é mais usado para distribuição separada.
+    // Mantido só para compatibilidade com o campo do schema.
     const lancheBifasica = cardapioFinal?.lanche_bifasica
+    // v9.8: modo do lanche da tarde da BIFASICA
+    //   LANCHE (padrão) = mesmo lanche das outras escolas (lanche_regular_id)
+    //   PAO_PADRAO      = pão francês padrão (PfQuantidade PADRAO)
+    //   PAO_PROTEINA    = pão francês proteína (PfQuantidade PROTEINA)
+    const lancheBifasicaModo = (cardapioFinal as any)?.lanche_bifasica_modo || 'LANCHE'
 
     // Buscar distribuição de lanche
-    const lancheDistribuicao = lancheRegular || lancheBifasica
+    // v9.8: sempre usa apenas lancheRegular — a bifásica segue a mesma
+    // distribuição quando está em modo LANCHE. Em modos PAO_*, não usa
+    // lancheDistribuicao (usa PfQuantidade em vez disso).
+    const lancheDistribuicao = lancheRegular
       ? await db.lancheDistribuicao.findMany({
-          where: {
-            lanche_id: { in: [lancheRegular?.id || '', lancheBifasica?.id || ''].filter(Boolean) },
-          },
+          where: { lanche_id: lancheRegular.id },
         })
       : []
 
@@ -413,14 +421,39 @@ export async function GET(request: Request) {
       }
 
       // Lanche: produzido D-0 (mesmo dia)
+      // v9.8: BIFASICA agora segue lanche_bifasica_modo do cardápio da semana:
+      //   - LANCHE: usa mesma distribuição do lanche_regular das outras escolas
+      //   - PAO_PADRAO: usa PfQuantidade do tipo PADRAO (como se fosse PF, mas
+      //     injetado no slot de LANCHE)
+      //   - PAO_PROTEINA: usa PfQuantidade do tipo PROTEINA
       for (const escola of escolas) {
         if (!escola.recebe_lanche) continue
 
-        const lancheId = (escola.categoria === 'BIFASICA' ? lancheBifasica : lancheRegular)?.id
-        if (!lancheId) continue
+        // v9.8: determina quantidade base e unidade conforme o modo
+        let qtdBase = 0
+        let unidadeLanche = 'un'
+        let lancheNomeParaItem = ''
 
-        const distKey = `${lancheId}_${escola.id}_${diaKey}`
-        const qtdBase = lancheDistMap.get(distKey) || 0
+        if (escola.categoria === 'BIFASICA' && (lancheBifasicaModo === 'PAO_PADRAO' || lancheBifasicaModo === 'PAO_PROTEINA')) {
+          // MODO PAO: bifásica usa PfQuantidade do tipo correspondente.
+          // NOTA: esse PF é OUTRO além do PF do café da manhã (que já é
+          // produzido pelo loop PF normal acima). É o pão do lanche da tarde.
+          const tipoPaoBifasica = lancheBifasicaModo === 'PAO_PROTEINA' ? 'PROTEINA' : 'PADRAO'
+          const pfQBifasica = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoBifasica)
+            || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')
+          if (pfQBifasica) {
+            qtdBase = pfQBifasica[diaKey as keyof typeof pfQBifasica] as number
+          }
+          unidadeLanche = 'un'
+          lancheNomeParaItem = `Pão ${tipoPaoBifasica === 'PROTEINA' ? 'Proteína' : 'Padrão'}`
+        } else {
+          // MODO LANCHE (padrão para todas as escolas, inclusive bifásica)
+          const lancheId = lancheRegular?.id
+          if (!lancheId) continue
+          const distKey = `${lancheId}_${escola.id}_${diaKey}`
+          qtdBase = lancheDistMap.get(distKey) || 0
+          unidadeLanche = lancheRegular?.unidade || 'un'
+        }
         // v9.7.3: Removido `if (qtdBase === 0) continue` — agora sempre processa,
         // para que ajustes em células sem distribuição funcionem (criar qtd onde não tinha).
 
@@ -439,7 +472,8 @@ export async function GET(request: Request) {
           busca_propria: escola.busca_propria,
           produto: 'LANCHE',
           quantidade: qtd,
-          unidade: lancheRegular?.unidade || 'un',
+          unidade: unidadeLanche,
+          obs: lancheNomeParaItem || undefined,  // v9.8: se for pão, marca no obs
           dia_entrega: diaKey,
           ajustado: ajustesMap.has(ajusteKey),
         ajuste_motivo: ajustesMetaMap.get(ajusteKey)?.motivo || undefined,
@@ -525,6 +559,8 @@ export async function GET(request: Request) {
       nomePao,
       lancheRegular: lancheRegular?.nome || null,
       lancheBifasica: lancheBifasica?.nome || null,
+      // v9.8: modo do lanche da tarde da BIFASICA (LANCHE | PAO_PADRAO | PAO_PROTEINA)
+      lancheBifasicaModo: matchExato ? lancheBifasicaModo : 'LANCHE',
       // v9.6.7: obs (aviso da semana) — SÓ retorna se matchExato (cardápio
       // encontrado por numero_semana_iso exato). Se caiu no fallback de
       // date range, não retorna obs (pode ser de outra semana).

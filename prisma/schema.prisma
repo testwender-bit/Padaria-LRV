@@ -179,6 +179,13 @@ model CardapioSemestral {
   nome_pao           String  @default("Pão Francês")
   lanche_regular_id  String?
   lanche_bifasica_id String?
+  // v9.8: modo do lanche da tarde da BIFASICA.
+  //   LANCHE       = mesmo lanche das outras escolas (lanche_regular_id)
+  //   PAO_PADRAO   = pão francês padrão (usa PfQuantidade PADRAO da escola)
+  //   PAO_PROTEINA = pão francês proteína (usa PfQuantidade PROTEINA da escola)
+  // O campo lanche_bifasica_id foi mantido para compatibilidade (não usado
+  // na nova lógica), mas o seletor foi removido da UI.
+  lanche_bifasica_modo String @default("LANCHE")
   obs                String?
 
   lanche_regular  Lanche? @relation("CardapioRegular", fields: [lanche_regular_id], references: [id], onDelete: SetNull)

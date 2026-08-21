@@ -1,150 +1,162 @@
-# Patch v9.7.5 — Aviso da Semana editável + Alerta de Feriados + Bugfix
+# Patch v9.8 — Excluir Lanches + Modo Lanche Bifásica (Pão ou Lanche)
 
-## ⚠️ Antes de aplicar
+## ⚠️ Antes de aplicar — ATENÇÃO
 
-1. Faça commit do estado atual: `git add -A && git commit -m "checkpoint pré-v9.7.5"`
-2. Crie branch: `git checkout -b fix/v9.7.5-aviso-feriados-bugfix`
-3. **NÃO precisa rodar `prisma db push`** (não há mudança no schema).
-4. **NÃO precisa rodar seed** (não há mudança em dados).
+Este patch **adiciona um campo no banco de dados** (`lanche_bifasica_modo` em `CardapioSemestral`). Você PRECISA rodar `prisma db push` depois de extrair para sincronizar o banco Supabase com o schema novo.
 
 ## 📋 O que mudou (3 alterações)
 
-### 1. ✏️ Edição do "Aviso da Semana" direto na página de Produção
+### 1. 🗑️ Botão Excluir Lanche (página /lanches)
 
-**Antes**: o aviso só podia ser editado em `/cardapio` (Cardápio Semestral). Aparecia como banner somente-leitura em `/producao` e `/dashboard`.
+**Antes**: só dava para editar ou clonar lanches. Lanches errados ficavam para sempre (ou tinham que ser desativados via edição).
 
-**Agora**: o banner de aviso na página de Produção tem um botão **Editar** (ícone lápis). Clica → abre um diálogo com textarea → salva → atualiza imediatamente. Não precisa mais ir até `/cardapio` para mexer no aviso.
+**Agora**:
+- Cada card de lanche tem um botão vermelho 🗑️ (Trash2)
+- **Clique normal** = soft delete (desativa, preserva histórico de produção)
+- **Shift+clique** = hard delete (exclui definitivamente — só permite se o lanche NÃO estiver em uso em nenhum cardápio semestral)
+- Checkbox "Mostrar inativos" no topo da página — quando ligado, mostra lanches inativos também (para reativar via Editar → marcar "Ativo")
+- Bugfix SD-1: API agora retorna apenas lanches ativos por padrão (antes retornava tudo)
 
-- Se a semana não tem cardápio cadastrado, mostra erro explicando.
-- Deixar vazio remove o banner (salva `null`).
-- O diálogo também mostra os feriados da semana como referência.
+### 2. 🍞 Modo Lanche Bifásica (NOVO!)
 
-### 2. 🚨 Alerta de feriados da semana junto ao aviso
+**Problema relatado**: a bifásica estava recebendo 2 lanches na produção (o lanche das outras escolas + um "pão com manteiga" cadastrado errado como lanche). A distribuição ficava bagunçada.
 
-**Antes**: o sistema já sabia dos feriados (zerava células automaticamente), mas não exibia um aviso visual consolidado.
+**Realidade da bifásica** (confirmada com você):
+- Bifásica **sempre recebe pão francês para o café da manhã** (controlado pelo `tipo_pao` do cardápio da semana — PADRAO, PROTEINA ou SEMPAO)
+- Bifásica **pode ter lanche da tarde** que varia por semana: às vezes é o mesmo lanche das outras escolas (ex: bolacha), às vezes é pão (padrão ou proteína)
 
-**Agora**: sempre que há feriado na semana (seg-sex + domingo de produção D-1), aparece um bloco vermelho junto ao "Aviso da Semana" em:
-- **Dashboard** — banner com lista de feriados (data + nome + ação)
-- **Produção** — mesmo banner, dentro do bloco amarelo do aviso
+**Solução**: novo campo `lanche_bifasica_modo` no cardápio semestral com 3 valores:
 
-Exemplo de exibição:
-```
-⚠️ Aviso da Semana 12
-   Semana com feriado na quinta — produção reduzida.
+| Valor | Significado | Resultado na produção |
+|---|---|---|
+| `LANCHE` (padrão) | Mesmo lanche das outras escolas | Bifásica recebe a quantidade de `LancheDistribuicao` do `lanche_regular_id` |
+| `PAO_PADRAO` | Pão francês padrão como lanche | Bifásica recebe a quantidade do `PfQuantidade` do tipo PADRAO |
+| `PAO_PROTEINA` | Pão francês proteína como lanche | Bifásica recebe a quantidade do `PfQuantidade` do tipo PROTEINA |
 
-🚨 2 feriados na semana:
-   15/05  Independência do Brasil  (zerar tudo)
-   18/05  Feriado Municipal         (sem PF)
-```
+**Na UI**:
+- Página `/cardapio` (Cardápio Semestral): o seletor antigo "Lanche Bifásica" foi substituído por "Modo Lanche Bifásica" com as 3 opções acima.
+- O badge no resumo da semana agora mostra "B: Mesmo lanche das outras escolas" ou "B: Pão Francês Padrão" ou "B: Pão Francês Proteína" (com cor diferente para pão vs lanche).
+- Na produção, itens de lanche que são pão (bifásica em modo PAO_*) aparecem com `obs: "Pão Padrão"` ou `obs: "Pão Proteína"` para fácil identificação.
 
-### 3. 🐛 Bugfix: ajuste de quinta "vazava" para sexta na tabela de PF
+### 3. 🐛 Bugfix: distribuição duplicada de lanche para bifásica
 
-**Sintoma relatado**: ao ajustar a produção de quinta-feira no quadro de Pão Francês, a célula de quinta ficava destacada (amarelo) E a de sexta também — mas sexta não tem produção de PF.
+**Antes**: a API `/api/producao` buscava `LancheDistribuicao` de AMBOS os lanches (`lanche_regular_id` e `lanche_bifasica_id`), e escolas BIFASICA recebiam 2 lanches na produção (o regular + o bifásica).
 
-**Causa raiz** (encontrada e corrigida):
-- PF é produzido D-1 (domingo produz para segunda, segunda para terça, ..., quinta para sexta).
-- Ao clicar em quinta, o sistema salva o ajuste com `dia_semana = 'sexta'` (dia de entrega).
-- Na renderização da coluna sexta, a função `entregaFromProducao('sexta', 'PF')` retornava `'sexta'` como fallback (porque `sexta` não está no mapa `PF_PRODUCAO_PARA_ENTREGA` — PF não é produzido na sexta).
-- Aí ele procurava `${escolaId}_sexta_PF` no mapa de ajustes — e encontrava o ajuste salvo na quinta!
-
-**Correção**: adicionada função `ehDiaProducaoDoProduto(dia, produto)` em `producao-utils.ts`. Agora:
-- A função `getAjusteInfo` retorna `undefined` para dias que não são de produção daquele produto.
-- As células de dias inválidos aparecem como `—` em cinza claro e **não são clicáveis**.
-
-**Resultado visual na tabela de PF**:
-| Escola | Dom | Seg | Ter | Qua | Qui | Sex | Total |
-|---|---|---|---|---|---|---|---|
-| Escola A | 100 | 100 | 100 | 100 | 100● | — | 500 |
-
-Para PCQ (só seg/qua/sex) e Lanche (só seg-sex, sem domingo), mesmo tratamento.
+**Agora**: a API busca apenas a distribuição do `lanche_regular_id`. A bifásica segue a mesma lógica das outras escolas quando em modo LANCHE (1 lanche por escola/dia). Em modos PAO_*, usa `PfQuantidade` (não `LancheDistribuicao`).
 
 ## 📦 Arquivos incluídos no patch
 
 | Arquivo | Mudança |
 |---|---|
-| `src/lib/producao-utils.ts` | + `DIAS_PRODUCAO_POR_PRODUTO` (mapa) e `ehDiaProducaoDoProduto()` (helper) |
-| `src/app/api/producao/route.ts` | + retorna `cardapio_id`, `feriados_semana` na resposta |
-| `src/app/api/cardapio/route.ts` | + método `PATCH` para atualizar apenas `obs` |
-| `src/app/(app)/producao/page.tsx` | + banner com edição inline + alerta de feriados + bugfix das células |
-| `src/app/(app)/dashboard/page.tsx` | + alerta de feriados da semana no banner do aviso |
+| `prisma/schema.prisma` | + campo `lanche_bifasica_modo String @default("LANCHE")` em CardapioSemestral |
+| `src/lib/unit-options.ts` | + constante `LANCHE_BIFASICA_MODOS` (3 opções) |
+| `src/app/api/lanches/route.ts` | + método DELETE (soft/hard) + GET agora filtra ativos por padrão (bugfix SD-1) |
+| `src/app/api/cardapio/route.ts` | POST + PATCH aceitam `lanche_bifasica_modo` com validação |
+| `src/app/api/producao/route.ts` | lógica nova do lanche bifásica + retorna `lancheBifasicaModo` |
+| `src/app/(app)/lanches/page.tsx` | botão Excluir + checkbox "Mostrar inativos" + ajuste de fetch |
+| `src/app/(app)/cardapio/page.tsx` | seletor "Lanche Bifásica" substituído por "Modo Lanche Bifásica" |
+| `scripts/migrar-lanche-bifasica-modo.ts` | script para popular `lanche_bifasica_modo='LANCHE'` em semanas existentes |
 
-**5 arquivos modificados. Nenhum arquivo novo. Nenhuma mudança no banco de dados.**
+**7 arquivos modificados + 1 novo (script de migração). Mudança no schema do banco: SIM.**
 
 ## 🚀 Como aplicar
 
-### Opção A: aplicar via zip (recomendado)
-
-No Codespace, na raiz do projeto:
+### Passo 1: Backup (recomendado)
 
 ```bash
-# 1. Backup de segurança (opcional, mas recomendado)
-git stash || true
+git stash
+git checkout -b fix/v9.8-lanches-bifasica
+```
 
-# 2. Extrair o zip sobre o projeto
-unzip -o patch-v9.7.5-aviso-feriados-bugfix.zip -d .
+### Passo 2: Extrair o patch
 
-# 3. Verificar que os 5 arquivos foram atualizados
+```bash
+unzip -o patch-v9.8-lanches-bifasica.zip
+```
+
+### Passo 3: Verificar arquivos modificados
+
+```bash
 git status
-# Você deve ver:
-#   modified:   src/app/(app)/dashboard/page.tsx
-#   modified:   src/app/(app)/producao/page.tsx
-#   modified:   src/app/api/cardapio/route.ts
-#   modified:   src/app/api/producao/route.ts
-#   modified:   src/lib/producao-utils.ts
+# Deve mostrar 7 modified + 1 untracked (script de migração)
+```
 
-# 4. Testar build
+### Passo 4: Sincronizar banco Supabase com novo schema
+
+```bash
+# Gera o client Prisma com o novo campo
+npx prisma generate
+
+# Sincroniza o banco (adiciona a coluna lanche_bifasica_modo com default 'LANCHE')
+npx prisma db push
+```
+
+⚠️ **Atenção**: `prisma db push` é seguro para adicionar coluna com default — não vai apagar dados. Mas sempre bom ter backup.
+
+### Passo 5: Rodar script de migração (recomendado)
+
+```bash
+npx tsx scripts/migrar-lanche-bifasica-modo.ts
+```
+
+Esse script vai garantir que todas as semanas existentes do cardápio semestral tenham `lanche_bifasica_modo = 'LANCHE'` (mesmo lanche das outras escolas). Idempotente — pode rodar quantas vezes quiser.
+
+### Passo 6: Build + testar
+
+```bash
 npm run build
-# Deve compilar sem erros
-
-# 5. Rodar dev server e testar manualmente
 npm run dev
 ```
 
-### Opção B: aplicar manualmente
-
-Se preferir, copie os 5 arquivos da pasta do patch para os mesmos caminhos no projeto.
-
 ## 🧪 Como testar (smoke test)
 
-Após aplicar, faça estes testes no navegador:
+### Teste 1 — Botão excluir lanche
+1. Vá em **Lanches**
+2. Cada card deve ter um botão vermelho 🗑️
+3. Clique em um lanche → aparece confirmação "Desativar?"
+4. Confirme → toast "Lanche desativado" → lanche some da lista
+5. Marque checkbox "Mostrar inativos" → lanche aparece com badge "Inativo"
+6. Clique em Editar → marque "Ativo" → Salvar → lanche volta para a lista normal
+7. Shift+clique no botão excluir → aparece confirmação "Excluir DEFINITIVAMENTE?" (só permite se não estiver em uso em cardápio)
 
-### Teste 1 — Edição do aviso na Produção
-1. Vá em **Produção** (semana atual).
-2. Se houver aviso da semana, deve aparecer o botão **Editar** (lápis) no canto direito do banner.
-3. Clique → abre diálogo com textarea preenchido com o aviso atual.
-4. Edite → clique em **Salvar Aviso** → deve aparecer toast "Aviso da semana atualizado!".
-5. O banner deve refletir o novo texto imediatamente.
-6. Vá no Dashboard — deve mostrar o mesmo aviso atualizado.
+### Teste 2 — Modo Lanche Bifásica
+1. Vá em **Cardápio** (Cardápio Semestral)
+2. Clique em editar (✏️) alguma semana
+3. O seletor "Lanche Bifásica" foi substituído por **"Modo Lanche Bifásica"**
+4. Teste as 3 opções: "Mesmo lanche das outras escolas", "Pão Francês Padrão", "Pão Francês Proteína"
+5. Salve → o badge no resumo deve mostrar a opção escolhida (com cor diferente para pão)
+6. Vá em **Produção** → tabela Lanche → escolas BIFASICA devem aparecer com:
+   - Quantidade correta conforme o modo escolhido
+   - Se modo = PAO_*, a quantidade vem do PfQuantidade (PADRAO ou PROTEINA)
+   - Se modo = LANCHE, a quantidade vem do LancheDistribuicao do lanche_regular
 
-### Teste 2 — Alerta de feriados
-1. Verifique se há feriados cadastrados para a semana atual em **Feriados**.
-2. Se houver, o banner no Dashboard e na Produção deve mostrar a seção "Feriados na semana:" com a lista.
-3. Se não houver feriados na semana, a seção não deve aparecer.
-
-### Teste 3 — Bugfix do ajuste
-1. Vá em **Produção** → view Semanal → tabela Pão Francês.
-2. A coluna **Sex** deve aparecer como `—` (cinza claro) e **não ser clicável**.
-3. A coluna **Dom** deve ser clicável (é dia de produção de PF para segunda).
-4. Clique em uma célula de quinta → ajuste a quantidade → salve.
-5. **Apenas** a célula de quinta deve ficar amarela com ● — a de sexta não.
-6. Na tabela de **PCQ**, apenas Seg/Qua/Sex devem ser clicáveis. Demais colunas como `—`.
-7. Na tabela de **Lanche**, apenas Seg-Sex devem ser clicáveis. Dom como `—`.
+### Teste 3 — Verificar que não há mais duplicação
+1. Vá em **Produção** → view Semanal → tabela Lanche
+2. Escolas BIFASICA devem ter APENAS 1 linha por dia (não 2 como antes)
+3. A quantidade da bifásica deve ser a mesma das outras escolas (se modo LANCHE) OU a do PfQuantidade correspondente (se modo PAO_*)
 
 ## 🔄 Como reverter
 
 Se algo quebrar:
 
 ```bash
-git checkout -- src/app/\(app\)/dashboard/page.tsx \
-                 src/app/\(app\)/producao/page.tsx \
-                 src/app/api/cardapio/route.ts \
-                 src/app/api/producao/route.ts \
-                 src/lib/producao-utils.ts
+# Reverter código
+git checkout -- src/ prisma/ scripts/
+
+# Reverter banco (REMOVER coluna — só faça se tiver certeza)
+# psql $DATABASE_URL -c "ALTER TABLE \"CardapioSemestral\" DROP COLUMN \"lanche_bifasica_modo\";"
 ```
 
 ## 📝 Notas técnicas
 
-- **Compatibilidade**: 100% compatível com o estado atual do banco. Não requer migração.
-- **API PATCH /api/cardapio**: aceita `{ ano, semana, obs? }` e atualiza apenas os campos fornecidos. Retorna 404 se o cardápio da semana não existir, 400 se faltar campo obrigatório.
-- **API GET /api/producao**: agora retorna 2 campos extras na resposta: `cardapio_id` (string|null) e `feriados_semana` (array). O front antigo ignora esses campos sem quebrar.
-- **A função `ehDiaProducaoDoProduto`** é exportada de `producao-utils.ts` e pode ser reusada em outras views (ex: romaneio, se desejar no futuro).
+- **Compatibilidade**: o campo `lanche_bifasica_id` foi MANTIDO no schema (não removido) para não quebrar referências FK existentes. Ele só não é mais usado pela nova lógica de produção.
+- **Idempotente**: rodar o script de migração várias vezes não tem efeito colateral.
+- **Soft delete por padrão**: preserva histórico de produção (escolas com ajustes antigos continuam funcionando).
+- **Hard delete segura**: recusa excluir lanche que está em uso em cardápio (retorna 409 com mensagem explicativa).
+
+## 🎯 Próximos passos sugeridos
+
+Após aplicar e testar:
+1. Audite os lanches existentes — desative/exclua os que estavam errados (ex: "Pão com Manteiga" que deveria ser PfQuantidade)
+2. Para cada semana do cardápio atual, escolha o modo bifásica correto (provavelmente LANCHE para a maioria das semanas)
+3. Se a bifásica tem PfQuantidade de PROTEINA cadastrada, pode usar modo PAO_PROTEINA nas semanas que quiser pão de proteína como lanche

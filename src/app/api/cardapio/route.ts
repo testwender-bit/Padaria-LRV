@@ -17,6 +17,16 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
+    // v9.8: validação básica do lanche_bifasica_modo (se fornecido)
+    const modosValidos = ['LANCHE', 'PAO_PADRAO', 'PAO_PROTEINA']
+    const modoBifasica = body.lanche_bifasica_modo || 'LANCHE'
+    if (!modosValidos.includes(modoBifasica)) {
+      return NextResponse.json(
+        { error: `lanche_bifasica_modo inválido. Valores aceitos: ${modosValidos.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
     const cardapio = await db.cardapioSemestral.upsert({
       where: { ano_semana: { ano: body.ano, semana: body.semana } },
       update: {
@@ -27,6 +37,8 @@ export async function POST(request: Request) {
         nome_pao: body.nome_pao || 'Pão Francês',
         lanche_regular_id: body.lanche_regular_id,
         lanche_bifasica_id: body.lanche_bifasica_id,
+        // v9.8: novo campo
+        lanche_bifasica_modo: modoBifasica,
         obs: body.obs,
       },
       create: {
@@ -39,6 +51,8 @@ export async function POST(request: Request) {
         nome_pao: body.nome_pao || 'Pão Francês',
         lanche_regular_id: body.lanche_regular_id,
         lanche_bifasica_id: body.lanche_bifasica_id,
+        // v9.8: novo campo
+        lanche_bifasica_modo: modoBifasica,
         obs: body.obs,
       },
     })
@@ -78,6 +92,17 @@ export async function PATCH(request: Request) {
     if (typeof body.obs === 'string') {
       // vazio vira null (banner some da UI)
       dadosAtualizacao.obs = body.obs.trim() === '' ? null : body.obs.trim()
+    }
+    // v9.8: atualizar lanche_bifasica_modo via PATCH também
+    if (typeof body.lanche_bifasica_modo === 'string') {
+      const modosValidos = ['LANCHE', 'PAO_PADRAO', 'PAO_PROTEINA']
+      if (!modosValidos.includes(body.lanche_bifasica_modo)) {
+        return NextResponse.json(
+          { error: `lanche_bifasica_modo inválido. Valores aceitos: ${modosValidos.join(', ')}` },
+          { status: 400 }
+        )
+      }
+      dadosAtualizacao.lanche_bifasica_modo = body.lanche_bifasica_modo
     }
 
     if (Object.keys(dadosAtualizacao).length === 0) {

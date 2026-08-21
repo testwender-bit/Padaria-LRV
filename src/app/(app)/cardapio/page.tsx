@@ -22,7 +22,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { CalendarDays, Plus, Edit2, Save } from 'lucide-react'
-import { TIPOS_PAO } from '@/lib/unit-options'
+import { TIPOS_PAO, LANCHE_BIFASICA_MODOS } from '@/lib/unit-options'
 import { getISOWeek } from 'date-fns'
 import { toast } from 'sonner'
 
@@ -37,6 +37,9 @@ interface CardapioEntry {
   nome_pao: string
   lanche_regular_id: string | null
   lanche_bifasica_id: string | null
+  // v9.8: modo do lanche da tarde da BIFASICA
+  // LANCHE (padrão) | PAO_PADRAO | PAO_PROTEINA
+  lanche_bifasica_modo: string
   obs: string | null
   lanche_regular: { id: string; nome: string } | null
   lanche_bifasica: { id: string; nome: string } | null
@@ -212,20 +215,28 @@ export default function CardapioPage() {
                         </SelectContent>
                       </Select>
                     </div>
+                    {/* v9.8: Modo Lanche Bifásica — substitui o antigo seletor de
+                        "Lanche Bifásica" (que duplicava lanche para escolas
+                        bifásicas). Agora o usuário escolhe entre:
+                        - Mesmo lanche das outras escolas (padrão, recomendado)
+                        - Pão Francês Padrão
+                        - Pão Francês Proteína */}
                     <div>
-                      <Label className="text-xs">Lanche Bifásica</Label>
+                      <Label className="text-xs">Modo Lanche Bifásica</Label>
                       <Select
-                        value={editData.lanche_bifasica_id || '_none'}
-                        onValueChange={(v) => setEditData((prev) => ({ ...prev, lanche_bifasica_id: v === '_none' ? null : v }))}
+                        value={editData.lanche_bifasica_modo || 'LANCHE'}
+                        onValueChange={(v) => setEditData((prev) => ({ ...prev, lanche_bifasica_modo: v }))}
                       >
                         <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="_none">Nenhum</SelectItem>
-                          {lanchesAtivos.map((l) => (
-                            <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>
+                          {LANCHE_BIFASICA_MODOS.map((m) => (
+                            <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Bifásica sempre recebe PF do café da manhã. Aqui define o que vai no slot de lanche da tarde.
+                      </p>
                     </div>
                     {/* v9.6.7: Aviso/observação da semana — aparece no dashboard e produção */}
                     <div className="md:col-span-2">
@@ -269,11 +280,20 @@ export default function CardapioPage() {
                           {entry.lanche_regular.nome}
                         </Badge>
                       )}
-                      {entry.lanche_bifasica && (
-                        <Badge className="bg-purple-100 text-purple-700 text-[10px]">
-                          B: {entry.lanche_bifasica.nome}
-                        </Badge>
-                      )}
+                      {/* v9.8: badge do modo bifásica (substitui o antigo
+                          "B: {lanche_bifasica.nome}" que confundia) */}
+                      {(() => {
+                        const modo = LANCHE_BIFASICA_MODOS.find((m) => m.value === (entry.lanche_bifasica_modo || 'LANCHE'))
+                        if (!modo) return null
+                        const isPao = entry.lanche_bifasica_modo === 'PAO_PADRAO' || entry.lanche_bifasica_modo === 'PAO_PROTEINA'
+                        return (
+                          <Badge className={isPao
+                            ? 'bg-amber-100 text-amber-700 text-[10px]'
+                            : 'bg-purple-100 text-purple-700 text-[10px]'}>
+                            B: {modo.label}
+                          </Badge>
+                        )
+                      })()}
                     </div>
                     <Button
                       size="sm"

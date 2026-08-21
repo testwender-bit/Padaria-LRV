@@ -43,6 +43,20 @@ export const TIPOS_PAO = [
   { value: 'SEMPAO', label: 'Sem Pão' },
 ]
 
+// v9.8: Modos de lanche da BIFASICA.
+// Define O QUE a bifásica recebe no slot de "lanche da tarde" da semana:
+// - LANCHE: mesmo lanche das outras escolas (ex: bolacha caseira). Usa o
+//   lanche_regular_id definido no cardápio da semana.
+// - PAO_PADRAO: pão francês PADRÃO (mesmo do café da manhã, mas como lanche).
+// - PAO_PROTEINA: pão francês PROTEÍNA (lanche com pão de proteína).
+// O pão francês para o café da manhã continua sendo entregue TODOS OS DIAS
+// independentemente deste modo (é o PF da semana, controlado pelo tipo_pao).
+export const LANCHE_BIFASICA_MODOS = [
+  { value: 'LANCHE', label: 'Mesmo lanche das outras escolas' },
+  { value: 'PAO_PADRAO', label: 'Pão Francês Padrão' },
+  { value: 'PAO_PROTEINA', label: 'Pão Francês Proteína' },
+]
+
 export const TIPOS_FERIADO = [
   { value: 'NACIONAL', label: 'Nacional' },
   { value: 'ESTADUAL', label: 'Estadual' },

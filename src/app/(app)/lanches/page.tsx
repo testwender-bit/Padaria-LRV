@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Cookie, Plus, Edit2, Save, Copy } from 'lucide-react'
+import { Cookie, Plus, Edit2, Save, Copy, Trash2 } from 'lucide-react'
 // BUG FIX 5: Import UNIDADES_LANCHE from unit-options, DIAS_SEMANA from date-utils
 import { UNIDADES_LANCHE } from '@/lib/unit-options'
 import { DIAS_SEMANA, DIAS_LABEL_CURTO } from '@/lib/date-utils'
@@ -60,17 +60,20 @@ export default function LanchesPage() {
   const [editingLanche, setEditingLanche] = useState<Lanche | null>(null)
   const [editDistLanche, setEditDistLanche] = useState<string | null>(null)
   const [distData, setDistData] = useState<Record<string, Record<string, number>>>({})
+  // v9.8: mostrar inativos + controlar exclusão
+  const [mostrarInativos, setMostrarInativos] = useState(false)
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/lanches').then((r) => r.json()),
+      // v9.8: usa ?inativos=true quando checkbox ligado
+      fetch(`/api/lanches${mostrarInativos ? '?inativos=true' : ''}`).then((r) => r.json()),
       fetch('/api/escolas').then((r) => r.json()),
     ]).then(([l, e]) => {
       setLanches(Array.isArray(l) ? l : [])
       setEscolas(Array.isArray(e) ? e.filter((es: Escola) => es.recebe_lanche) : [])
       setLoading(false)
     })
-  }, [])
+  }, [mostrarInativos])
 
   async function handleCreate() {
     if (!editLanche?.nome) return
@@ -84,7 +87,7 @@ export default function LanchesPage() {
         toast.success('Lanche criado!')
         setDialogOpen(false)
         setEditLanche(null)
-        const updated = await fetch('/api/lanches').then((r) => r.json())
+        const updated = await fetch(`/api/lanches${mostrarInativos ? '?inativos=true' : ''}`).then((r) => r.json())
         setLanches(Array.isArray(updated) ? updated : [])
       }
     } catch {
@@ -110,7 +113,7 @@ export default function LanchesPage() {
         toast.success('Lanche atualizado!')
         setEditingLanche(null)
         setEditLanche(null)
-        const updated = await fetch('/api/lanches').then((r) => r.json())
+        const updated = await fetch(`/api/lanches${mostrarInativos ? '?inativos=true' : ''}`).then((r) => r.json())
         setLanches(Array.isArray(updated) ? updated : [])
       }
     } catch {
@@ -159,7 +162,7 @@ export default function LanchesPage() {
         toast.success(`${items.length} alteração${items.length > 1 ? 'ões' : ''} salva${items.length > 1 ? 's' : ''}!`)
         setEditDistLanche(null)
         setDistData({})
-        const updated = await fetch('/api/lanches').then((r) => r.json())
+        const updated = await fetch(`/api/lanches${mostrarInativos ? '?inativos=true' : ''}`).then((r) => r.json())
         setLanches(Array.isArray(updated) ? updated : [])
       } else {
         toast.error('Erro ao salvar distribuição')
@@ -202,7 +205,7 @@ export default function LanchesPage() {
       }
 
       toast.success(`Lanche clonado: "${novoLanche.nome}" com ${lanche.distribuicao.length} entradas de distribuição`)
-      const updated = await fetch('/api/lanches').then((r) => r.json())
+      const updated = await fetch(`/api/lanches${mostrarInativos ? '?inativos=true' : ''}`).then((r) => r.json())
       setLanches(Array.isArray(updated) ? updated : [])
     } catch {
       toast.error('Erro ao clonar lanche')
@@ -234,6 +237,35 @@ export default function LanchesPage() {
     })
   }
 
+  // v9.8: excluir lanche (soft delete por padrão, hard delete com shift+click)
+  async function handleDelete(lanche: Lanche, ev?: React.MouseEvent) {
+    const hardDelete = ev?.shiftKey
+    const msg = hardDelete
+      ? `Excluir DEFINITIVAMENTE o lanche "${lanche.nome}"?\n\nIsso vai apagar o lanche e TODAS as distribuições relacionadas (${lanche.distribuicao.length} entradas).\nUse apenas se cadastrou errado e nunca usou em produção.\n\n(Shift+click = hard delete)`
+      : `Desativar o lanche "${lanche.nome}"?\n\nO lanche fica inativo (não aparece mais em novos cardápios) mas o histórico de produção é preservado. Você pode reativar depois marcando "Mostrar inativos".\n\n(Shift+click para exclusão definitiva)`
+    if (!window.confirm(msg)) return
+    try {
+      const res = await fetch(`/api/lanches?id=${lanche.id}${hardDelete ? '&force=true' : ''}`, {
+        method: 'DELETE',
+      })
+      if (res.ok) {
+        const json = await res.json()
+        if (hardDelete) {
+          toast.success(`Lanche "${lanche.nome}" excluído definitivamente`)
+        } else {
+          toast.success(`Lanche "${lanche.nome}" desativado`)
+        }
+        const updated = await fetch(`/api/lanches${mostrarInativos ? '?inativos=true' : ''}`).then((r) => r.json())
+        setLanches(Array.isArray(updated) ? updated : [])
+      } else {
+        const json = await res.json().catch(() => ({}))
+        toast.error(json.error || 'Erro ao excluir lanche')
+      }
+    } catch {
+      toast.error('Erro de conexão')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -248,6 +280,16 @@ export default function LanchesPage() {
         <div>
           <h1 className="text-2xl font-bold text-[#1A3A5C]">Lanches</h1>
           <p className="text-sm text-muted-foreground">Cadastro de lanches e distribuição por escola/dia</p>
+          {/* v9.8: toggle mostrar inativos */}
+          <label className="inline-flex items-center gap-2 mt-2 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={mostrarInativos}
+              onChange={(e) => setMostrarInativos(e.target.checked)}
+              className="rounded"
+            />
+            Mostrar inativos
+          </label>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
@@ -423,6 +465,16 @@ export default function LanchesPage() {
                   {/* v9.4: Clonar lanche (copia nome + distribuição por escola) */}
                   <Button size="sm" variant="outline" onClick={() => handleClone(lanche)} className="text-xs border-purple-200 text-purple-700 hover:bg-purple-50">
                     <Copy className="w-3 h-3 mr-1" /> Clonar
+                  </Button>
+                  {/* v9.8: Excluir (soft delete padrão; Shift+click = hard delete) */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => handleDelete(lanche, e)}
+                    className="text-xs border-red-200 text-red-600 hover:bg-red-50"
+                    title="Clique para desativar (preserva histórico). Shift+click para exclusão definitiva."
+                  >
+                    <Trash2 className="w-3 h-3" />
                   </Button>
                 </div>
               </CardContent>
