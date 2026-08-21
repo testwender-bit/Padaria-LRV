@@ -1,162 +1,120 @@
-# Patch v9.8 — Excluir Lanches + Modo Lanche Bifásica (Pão ou Lanche)
+# Patch v9.8.1 — Bugfix Bifásica: pão vai para PF, não para Lanche
 
-## ⚠️ Antes de aplicar — ATENÇÃO
+## ⚠️ Antes de aplicar
 
-Este patch **adiciona um campo no banco de dados** (`lanche_bifasica_modo` em `CardapioSemestral`). Você PRECISA rodar `prisma db push` depois de extrair para sincronizar o banco Supabase com o schema novo.
+1. Faça backup e crie branch:
+   ```bash
+   git stash
+   git checkout -b fix/v9.8.1-bugfix-bifasica-pao
+   ```
+2. **NÃO precisa de `prisma db push`** (sem mudança no schema).
+3. **NÃO precisa rodar migração** (sem mudança em dados).
 
-## 📋 O que mudou (3 alterações)
+## 📋 O que mudou (1 correção de bug)
 
-### 1. 🗑️ Botão Excluir Lanche (página /lanches)
+### 🐛 Bug da bifásica em modo PAO_* (pão indo para planilha errada)
 
-**Antes**: só dava para editar ou clonar lanches. Lanches errados ficavam para sempre (ou tinham que ser desativados via edição).
+**Sintoma relatado**: quando a bifásica estava em modo `PAO_PADRAO` (pão padrão no lanche da tarde), a quantidade de pão aparecia na **planilha de Lanche** misturada com a bolacha das outras escolas, em vez de ir para a planilha de **Pão Francês**.
 
-**Agora**:
-- Cada card de lanche tem um botão vermelho 🗑️ (Trash2)
-- **Clique normal** = soft delete (desativa, preserva histórico de produção)
-- **Shift+clique** = hard delete (exclui definitivamente — só permite se o lanche NÃO estiver em uso em nenhum cardápio semestral)
-- Checkbox "Mostrar inativos" no topo da página — quando ligado, mostra lanches inativos também (para reativar via Editar → marcar "Ativo")
-- Bugfix SD-1: API agora retorna apenas lanches ativos por padrão (antes retornava tudo)
+**Causa raiz**: na v9.8 eu tinha implementado errado. Em modo `PAO_PADRAO`/`PAO_PROTEINA`, eu criava um item de Lanche com a quantidade do PfQuantidade — quando deveria apenas mudar o tipo de pão na planilha de PF (já que a PfQuantidade da bifásica já inclui o pão do café + pão do lanche quando é PADRAO ou PROTEINA).
 
-### 2. 🍞 Modo Lanche Bifásica (NOVO!)
+**Correção v9.8.1**:
 
-**Problema relatado**: a bifásica estava recebendo 2 lanches na produção (o lanche das outras escolas + um "pão com manteiga" cadastrado errado como lanche). A distribuição ficava bagunçada.
-
-**Realidade da bifásica** (confirmada com você):
-- Bifásica **sempre recebe pão francês para o café da manhã** (controlado pelo `tipo_pao` do cardápio da semana — PADRAO, PROTEINA ou SEMPAO)
-- Bifásica **pode ter lanche da tarde** que varia por semana: às vezes é o mesmo lanche das outras escolas (ex: bolacha), às vezes é pão (padrão ou proteína)
-
-**Solução**: novo campo `lanche_bifasica_modo` no cardápio semestral com 3 valores:
-
-| Valor | Significado | Resultado na produção |
+| Modo Bifásica | Planilha PF | Planilha Lanche |
 |---|---|---|
-| `LANCHE` (padrão) | Mesmo lanche das outras escolas | Bifásica recebe a quantidade de `LancheDistribuicao` do `lanche_regular_id` |
-| `PAO_PADRAO` | Pão francês padrão como lanche | Bifásica recebe a quantidade do `PfQuantidade` do tipo PADRAO |
-| `PAO_PROTEINA` | Pão francês proteína como lanche | Bifásica recebe a quantidade do `PfQuantidade` do tipo PROTEINA |
+| `LANCHE` | Bifásica usa `SEMPAO` (só café da manhã) | Bifásica recebe mesmo lanche das outras escolas |
+| `PAO_PADRAO` | Bifásica usa `PADRAO` (café + lanche) | Bifásica **não recebe nada** na planilha Lanche |
+| `PAO_PROTEINA` | Bifásica usa `PROTEINA` (café + lanche) | Bifásica **não recebe nada** na planilha Lanche |
 
-**Na UI**:
-- Página `/cardapio` (Cardápio Semestral): o seletor antigo "Lanche Bifásica" foi substituído por "Modo Lanche Bifásica" com as 3 opções acima.
-- O badge no resumo da semana agora mostra "B: Mesmo lanche das outras escolas" ou "B: Pão Francês Padrão" ou "B: Pão Francês Proteína" (com cor diferente para pão vs lanche).
-- Na produção, itens de lanche que são pão (bifásica em modo PAO_*) aparecem com `obs: "Pão Padrão"` ou `obs: "Pão Proteína"` para fácil identificação.
-
-### 3. 🐛 Bugfix: distribuição duplicada de lanche para bifásica
-
-**Antes**: a API `/api/producao` buscava `LancheDistribuicao` de AMBOS os lanches (`lanche_regular_id` e `lanche_bifasica_id`), e escolas BIFASICA recebiam 2 lanches na produção (o regular + o bifásica).
-
-**Agora**: a API busca apenas a distribuição do `lanche_regular_id`. A bifásica segue a mesma lógica das outras escolas quando em modo LANCHE (1 lanche por escola/dia). Em modos PAO_*, usa `PfQuantidade` (não `LancheDistribuicao`).
+A `PfQuantidade` cadastrada em **Configurações → Escolas** para a bifásica já representa o total correto do dia conforme o tipo:
+- **PADRAO**: pão com manteiga, pão com doce + café da manhã
+- **PROTEINA**: pão com proteína + café da manhã
+- **SEMPAO**: só café da manhã (quando vai outro tipo de lanche)
 
 ## 📦 Arquivos incluídos no patch
 
 | Arquivo | Mudança |
 |---|---|
-| `prisma/schema.prisma` | + campo `lanche_bifasica_modo String @default("LANCHE")` em CardapioSemestral |
-| `src/lib/unit-options.ts` | + constante `LANCHE_BIFASICA_MODOS` (3 opções) |
-| `src/app/api/lanches/route.ts` | + método DELETE (soft/hard) + GET agora filtra ativos por padrão (bugfix SD-1) |
-| `src/app/api/cardapio/route.ts` | POST + PATCH aceitam `lanche_bifasica_modo` com validação |
-| `src/app/api/producao/route.ts` | lógica nova do lanche bifásica + retorna `lancheBifasicaModo` |
-| `src/app/(app)/lanches/page.tsx` | botão Excluir + checkbox "Mostrar inativos" + ajuste de fetch |
-| `src/app/(app)/cardapio/page.tsx` | seletor "Lanche Bifásica" substituído por "Modo Lanche Bifásica" |
-| `scripts/migrar-lanche-bifasica-modo.ts` | script para popular `lanche_bifasica_modo='LANCHE'` em semanas existentes |
+| `src/lib/producao-utils.ts` | + função `tipoPaoEfetivoEscola()` — encapsula regra do tipo de pão por escola/modo |
+| `src/app/api/producao/route.ts` | Loop de PF agora usa `tipoPaoEfetivoEscola()` (2 loops: domingo e seg-sex). Loop de Lanche agora pula bifásica em modo `PAO_*` (não gera item de lanche). |
 
-**7 arquivos modificados + 1 novo (script de migração). Mudança no schema do banco: SIM.**
+**2 arquivos modificados. Sem mudança no schema. Sem migração.**
 
 ## 🚀 Como aplicar
 
-### Passo 1: Backup (recomendado)
-
 ```bash
-git stash
-git checkout -b fix/v9.8-lanches-bifasica
-```
+# Extrair (na raiz do projeto)
+unzip -o patch-v9.8.1-bugfix-bifasica-pao.zip
 
-### Passo 2: Extrair o patch
-
-```bash
-unzip -o patch-v9.8-lanches-bifasica.zip
-```
-
-### Passo 3: Verificar arquivos modificados
-
-```bash
-git status
-# Deve mostrar 7 modified + 1 untracked (script de migração)
-```
-
-### Passo 4: Sincronizar banco Supabase com novo schema
-
-```bash
-# Gera o client Prisma com o novo campo
-npx prisma generate
-
-# Sincroniza o banco (adiciona a coluna lanche_bifasica_modo com default 'LANCHE')
-npx prisma db push
-```
-
-⚠️ **Atenção**: `prisma db push` é seguro para adicionar coluna com default — não vai apagar dados. Mas sempre bom ter backup.
-
-### Passo 5: Rodar script de migração (recomendado)
-
-```bash
-npx tsx scripts/migrar-lanche-bifasica-modo.ts
-```
-
-Esse script vai garantir que todas as semanas existentes do cardápio semestral tenham `lanche_bifasica_modo = 'LANCHE'` (mesmo lanche das outras escolas). Idempotente — pode rodar quantas vezes quiser.
-
-### Passo 6: Build + testar
-
-```bash
+# Build + testar
 npm run build
 npm run dev
 ```
 
 ## 🧪 Como testar (smoke test)
 
-### Teste 1 — Botão excluir lanche
-1. Vá em **Lanches**
-2. Cada card deve ter um botão vermelho 🗑️
-3. Clique em um lanche → aparece confirmação "Desativar?"
-4. Confirme → toast "Lanche desativado" → lanche some da lista
-5. Marque checkbox "Mostrar inativos" → lanche aparece com badge "Inativo"
-6. Clique em Editar → marque "Ativo" → Salvar → lanche volta para a lista normal
-7. Shift+clique no botão excluir → aparece confirmação "Excluir DEFINITIVAMENTE?" (só permite se não estiver em uso em cardápio)
+### Teste 1 — Bifásica em modo PAO_PADRAO
+1. Vá em **Cardápio** (Cardápio Semestral) → edite a semana atual.
+2. Em **Modo Lanche Bifásica**, escolha **Pão Francês Padrão**. Salve.
+3. Vá em **Produção** → view Semanal.
+4. **Tabela Pão Francês**: a bifásica deve aparecer com a quantidade do PfQuantidade PADRAO (café da manhã + pão do lanche).
+5. **Tabela Lanche**: a bifásica **NÃO deve aparecer** (somente as outras escolas com bolacha).
 
-### Teste 2 — Modo Lanche Bifásica
-1. Vá em **Cardápio** (Cardápio Semestral)
-2. Clique em editar (✏️) alguma semana
-3. O seletor "Lanche Bifásica" foi substituído por **"Modo Lanche Bifásica"**
-4. Teste as 3 opções: "Mesmo lanche das outras escolas", "Pão Francês Padrão", "Pão Francês Proteína"
-5. Salve → o badge no resumo deve mostrar a opção escolhida (com cor diferente para pão)
-6. Vá em **Produção** → tabela Lanche → escolas BIFASICA devem aparecer com:
-   - Quantidade correta conforme o modo escolhido
-   - Se modo = PAO_*, a quantidade vem do PfQuantidade (PADRAO ou PROTEINA)
-   - Se modo = LANCHE, a quantidade vem do LancheDistribuicao do lanche_regular
+### Teste 2 — Bifásica em modo LANCHE
+1. Vá em **Cardápio** → edite a semana.
+2. Em **Modo Lanche Bifásica**, escolha **Mesmo lanche das outras escolas**. Salve.
+3. Vá em **Produção** → view Semanal.
+4. **Tabela Pão Francês**: a bifásica deve aparecer com a quantidade do PfQuantidade **SEMPAO** (só café da manhã — quantidade menor).
+5. **Tabela Lanche**: a bifásica **deve aparecer** com o mesmo lanche das outras escolas (bolacha).
 
-### Teste 3 — Verificar que não há mais duplicação
-1. Vá em **Produção** → view Semanal → tabela Lanche
-2. Escolas BIFASICA devem ter APENAS 1 linha por dia (não 2 como antes)
-3. A quantidade da bifásica deve ser a mesma das outras escolas (se modo LANCHE) OU a do PfQuantidade correspondente (se modo PAO_*)
+### Teste 3 — Bifásica em modo PAO_PROTEINA
+1. Vá em **Cardápio** → edite a semana.
+2. Em **Modo Lanche Bifásica**, escolha **Pão Francês Proteína**. Salve.
+3. Vá em **Produção** → view Semanal.
+4. **Tabela Pão Francês**: a bifásica deve aparecer com a quantidade do PfQuantidade **PROTEINA**.
+5. **Tabela Lanche**: a bifásica **NÃO deve aparecer**.
 
-## 🔄 Como reverter
+### Teste 4 — Escolas com pao_fixo=true (Bombeiros, CRAS)
+1. Vá em **Produção** → view Semanal → tabela Pão Francês.
+2. Bombeiros, CRAS, etc. continuam aparecendo com PADRAO (independente do modo bifásica).
+3. Esse comportamento não mudou — só garantir que não quebrou.
 
-Se algo quebrar:
+## 🔄 Como commitar e voltar para main
+
+Após testar e confirmar que está tudo funcionando:
 
 ```bash
-# Reverter código
-git checkout -- src/ prisma/ scripts/
+# 1. Adicionar todos os arquivos modificados
+git add -A
 
-# Reverter banco (REMOVER coluna — só faça se tiver certeza)
-# psql $DATABASE_URL -c "ALTER TABLE \"CardapioSemestral\" DROP COLUMN \"lanche_bifasica_modo\";"
+# 2. Commitar
+git commit -m "fix(v9.8.1): bifásica modo PAO_* agora afeta PF (não Lanche)"
+
+# 3. Voltar para main
+git checkout main
+
+# 4. Merge do branch
+git merge fix/v9.8.1-bugfix-bifasica-pao
+
+# 5. Enviar para GitHub (Vercel faz deploy automático)
+git push origin main
+
+# 6. Apagar branch local
+git branch -d fix/v9.8.1-bugfix-bifasica-pao
+```
+
+## 🔙 Como reverter
+
+```bash
+git checkout -- src/lib/producao-utils.ts src/app/api/producao/route.ts
 ```
 
 ## 📝 Notas técnicas
 
-- **Compatibilidade**: o campo `lanche_bifasica_id` foi MANTIDO no schema (não removido) para não quebrar referências FK existentes. Ele só não é mais usado pela nova lógica de produção.
-- **Idempotente**: rodar o script de migração várias vezes não tem efeito colateral.
-- **Soft delete por padrão**: preserva histórico de produção (escolas com ajustes antigos continuam funcionando).
-- **Hard delete segura**: recusa excluir lanche que está em uso em cardápio (retorna 409 com mensagem explicativa).
-
-## 🎯 Próximos passos sugeridos
-
-Após aplicar e testar:
-1. Audite os lanches existentes — desative/exclua os que estavam errados (ex: "Pão com Manteiga" que deveria ser PfQuantidade)
-2. Para cada semana do cardápio atual, escolha o modo bifásica correto (provavelmente LANCHE para a maioria das semanas)
-3. Se a bifásica tem PfQuantidade de PROTEINA cadastrada, pode usar modo PAO_PROTEINA nas semanas que quiser pão de proteína como lanche
+- **Sem mudança no banco de dados**: o campo `lanche_bifasica_modo` (adicionado na v9.8) continua funcionando. Esta é apenas uma correção de como o valor é interpretado.
+- **Função `tipoPaoEfetivoEscola()`**: agora centraliza a regra em `src/lib/producao-utils.ts`. Pode ser reusada futuramente em outras views (romaneio, dashboard).
+- **Compatibilidade**: o campo `lanche_bifasica_id` continua mantido no schema para compatibilidade (não é usado pela nova lógica, mas não foi removido para não quebrar FKs).
+- **Comportamento esperado da PfQuantidade da bifásica**:
+  - PADRAO: pão com manteiga + pão com doce + café da manhã (total do dia)
+  - PROTEINA: pão com proteína + café da manhã (total do dia)
+  - SEMPAO: só café da manhã (quando lanche da tarde é outro tipo, ex: bolacha)

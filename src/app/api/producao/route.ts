@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { inicioSemana, numeroSemana, anoSemana, dataISO, DIAS_SEMANA, type DiaSemana } from '@/lib/date-utils'
 import { PCQ_PRODUCAO, type ItemProducao, type ProducaoDia, diaSemanaTexto } from '@/lib/producao-utils'
+import { tipoPaoEfetivoEscola } from '@/lib/producao-utils'
 import { produtoZerado, type FeriadoData } from '@/lib/feriado-utils'
 import { addDays, format } from 'date-fns'
 
@@ -112,10 +113,15 @@ export async function GET(request: Request) {
     const itensPfDomingo: ItemProducao[] = []
     for (const escola of escolas) {
       if (!escola.recebe_pf) continue
-      // v9.5.7: se escola.pao_fixo === true, SEMPRE usa pf_quantidades do tipo PADRAO
-      // (ignora o tipo_pao do cardápio da semana). Garante que Outras Instituições
-      // como Bombeiros, Ambulância, etc. sempre apareçam na produção de PF.
-      const tipoPaoEfetivo = (escola as any).pao_fixo === true ? 'PADRAO' : tipoPao
+      // v9.5.7: pao_fixo=true SEMPRE usa PADRAO (Bombeiros, CRAS, etc).
+      // v9.8.1: BIFASICA usa lanche_bifasica_modo da semana para determinar
+      // o tipo de pão (SEMPAO se for LANCHE, PADRAO/PROTEINA se for PAO_*).
+      const tipoPaoEfetivo = tipoPaoEfetivoEscola(
+        escola.categoria,
+        (escola as any).pao_fixo,
+        tipoPao,
+        lancheBifasicaModo
+      )
       const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEfetivo)
         || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')
       if (!pfQ) continue
@@ -233,8 +239,15 @@ export async function GET(request: Request) {
 
         for (const escola of escolas) {
           if (!escola.recebe_pf) continue
-          // v9.5.7: se escola.pao_fixo === true, SEMPRE usa PADRAO
-          const tipoPaoEfetivo = (escola as any).pao_fixo === true ? 'PADRAO' : tipoPao
+          // v9.5.7: pao_fixo=true SEMPRE usa PADRAO (Bombeiros, CRAS, etc).
+          // v9.8.1: BIFASICA usa lanche_bifasica_modo da semana para determinar
+          // o tipo de pão (SEMPAO se for LANCHE, PADRAO/PROTEINA se for PAO_*).
+          const tipoPaoEfetivo = tipoPaoEfetivoEscola(
+            escola.categoria,
+            (escola as any).pao_fixo,
+            tipoPao,
+            lancheBifasicaModo
+          )
           const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEfetivo)
             || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')
           if (!pfQ) continue
@@ -421,39 +434,26 @@ export async function GET(request: Request) {
       }
 
       // Lanche: produzido D-0 (mesmo dia)
-      // v9.8: BIFASICA agora segue lanche_bifasica_modo do cardápio da semana:
-      //   - LANCHE: usa mesma distribuição do lanche_regular das outras escolas
-      //   - PAO_PADRAO: usa PfQuantidade do tipo PADRAO (como se fosse PF, mas
-      //     injetado no slot de LANCHE)
-      //   - PAO_PROTEINA: usa PfQuantidade do tipo PROTEINA
+      // v9.8.1: BIFASICA em modo PAO_PADRAO ou PAO_PROTEINA **não recebe lanche** —
+      // o lanche da tarde dela é pão, que já está embutido no PfQuantidade do tipo
+      // correspondente (processado no loop de PF acima). Então pulamos a bifásica
+      // nesses modos. BIFASICA em modo LANCHE recebe o mesmo lanche das outras escolas.
       for (const escola of escolas) {
         if (!escola.recebe_lanche) continue
 
-        // v9.8: determina quantidade base e unidade conforme o modo
-        let qtdBase = 0
-        let unidadeLanche = 'un'
-        let lancheNomeParaItem = ''
-
-        if (escola.categoria === 'BIFASICA' && (lancheBifasicaModo === 'PAO_PADRAO' || lancheBifasicaModo === 'PAO_PROTEINA')) {
-          // MODO PAO: bifásica usa PfQuantidade do tipo correspondente.
-          // NOTA: esse PF é OUTRO além do PF do café da manhã (que já é
-          // produzido pelo loop PF normal acima). É o pão do lanche da tarde.
-          const tipoPaoBifasica = lancheBifasicaModo === 'PAO_PROTEINA' ? 'PROTEINA' : 'PADRAO'
-          const pfQBifasica = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoBifasica)
-            || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')
-          if (pfQBifasica) {
-            qtdBase = pfQBifasica[diaKey as keyof typeof pfQBifasica] as number
-          }
-          unidadeLanche = 'un'
-          lancheNomeParaItem = `Pão ${tipoPaoBifasica === 'PROTEINA' ? 'Proteína' : 'Padrão'}`
-        } else {
-          // MODO LANCHE (padrão para todas as escolas, inclusive bifásica)
-          const lancheId = lancheRegular?.id
-          if (!lancheId) continue
-          const distKey = `${lancheId}_${escola.id}_${diaKey}`
-          qtdBase = lancheDistMap.get(distKey) || 0
-          unidadeLanche = lancheRegular?.unidade || 'un'
+        // v9.8.1: bifásica em modo PAO_* não gera item na planilha de Lanche
+        if (escola.categoria === 'BIFASICA' &&
+            (lancheBifasicaModo === 'PAO_PADRAO' || lancheBifasicaModo === 'PAO_PROTEINA')) {
+          continue
         }
+
+        // MODO LANCHE (padrão para todas as escolas, inclusive bifásica)
+        const lancheId = lancheRegular?.id
+        if (!lancheId) continue
+
+        const distKey = `${lancheId}_${escola.id}_${diaKey}`
+        const qtdBase = lancheDistMap.get(distKey) || 0
+        const unidadeLanche = lancheRegular?.unidade || 'un'
         // v9.7.3: Removido `if (qtdBase === 0) continue` — agora sempre processa,
         // para que ajustes em células sem distribuição funcionem (criar qtd onde não tinha).
 
@@ -473,7 +473,6 @@ export async function GET(request: Request) {
           produto: 'LANCHE',
           quantidade: qtd,
           unidade: unidadeLanche,
-          obs: lancheNomeParaItem || undefined,  // v9.8: se for pão, marca no obs
           dia_entrega: diaKey,
           ajustado: ajustesMap.has(ajusteKey),
         ajuste_motivo: ajustesMetaMap.get(ajusteKey)?.motivo || undefined,

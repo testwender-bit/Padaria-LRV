@@ -54,6 +54,37 @@ export function ehDiaProducaoDoProduto(diaProd: string, produto: string): boolea
   return !!dias && dias.includes(diaProd)
 }
 
+// v9.8.1: Determina o tipo_pao EFETIVO de uma escola na semana.
+// Regras:
+// - pao_fixo=true (Bombeiros, CRAS, etc): SEMPRE usa PADRAO, ignorando tudo.
+// - BIFASICA: usa lanche_bifasica_modo da semana:
+//     LANCHE       → SEMPAO (bifásica só recebe pão do café da manhã;
+//                  o lanche da tarde é outro tipo, vai na planilha Lanche)
+//     PAO_PADRAO   → PADRAO (café da manhã + lanche da tarde com pão padrão)
+//     PAO_PROTEINA → PROTEINA (café da manhã + lanche da tarde com pão proteína)
+// - Demais escolas: usa o tipo_pao da semana (PADRAO/PROTEINA/SEMPAO).
+export function tipoPaoEfetivoEscola(
+  categoria: string,
+  paoFixo: boolean | undefined,
+  tipoPaoSemana: string,
+  lancheBifasicaModo: string
+): string {
+  // pao_fixo sempre vence (Bombeiros, CRAS, etc)
+  if (paoFixo === true) return 'PADRAO'
+
+  // BIFASICA: tipo de pão depende do modo lanche bifásica da semana
+  if (categoria === 'BIFASICA') {
+    if (lancheBifasicaModo === 'PAO_PADRAO') return 'PADRAO'
+    if (lancheBifasicaModo === 'PAO_PROTEINA') return 'PROTEINA'
+    // LANCHE (ou qualquer outro valor): bifásica só recebe pão do café da manhã,
+    // então usa SEMPAO (a quantidade cadastrada em SEMPAO é só café da manhã).
+    return 'SEMPAO'
+  }
+
+  // Demais escolas: usa o tipo_pao da semana
+  return tipoPaoSemana
+}
+
 export interface ItemProducao {
   escola_id: string
   escola_nome: string
