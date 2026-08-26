@@ -103,9 +103,14 @@ export async function GET(request: Request) {
       const pf = diasVazios()
       const pcq = diasVazios()
       const lanche = diasVazios()
+      const pf_comp = diasVazios()  // v9.8.4: PF Complemento separado
       const feriado_pf = diasVaziosStr()
       const feriado_pcq = diasVaziosStr()
       const feriado_lanche = diasVaziosStr()
+
+      // v9.8.4: Para creches, o PF Complemento vai agrupado com PCQ na tabela
+      // do motorista. Para demais escolas, comportamento antigo (PF + PF_COMP somados).
+      const isCreche = escola.categoria === 'CRECHE'
 
       // PF + PF Complemento (integrado, sem distinção)
       if (escola.recebe_pf) {
@@ -125,7 +130,9 @@ export async function GET(request: Request) {
         }
       }
 
-      // PCQ + PF Complemento (integrado ao PF)
+      // PCQ + PF Complemento
+      // v9.8.4: para creches, pf_comp vai SEPARADO (não somado em pf) — vai agrupado
+      // na tabela de PCQ do motorista. Para demais escolas, comportamento antigo (somado em pf).
       if (escola.recebe_pcq && escola.pcq_quantidades[0]) {
         const pcqQ = escola.pcq_quantidades[0]
         for (const dia of dias) {
@@ -141,13 +148,19 @@ export async function GET(request: Request) {
             pcq[dia] += qtdFinalPcq
             if (zeradoPcq) feriado_pcq[dia] = feriadoNomePcq
 
-            // PF Complemento — somado ao PF, sem distinção
+            // PF Complemento
             const campoComp = entry.pfComp as keyof typeof pcqQ
             const qtdComp = pcqQ[campoComp] as number
             const ajusteKeyComp = `${escola.id}_${dia}_PF_COMP`
             const { zerado: zeradoComp, feriado: feriadoNomeComp } = produtoZerado(feriadosMap, dataDia, escola.categoria, 'PF_COMP')
             const qtdFinalComp = ajustesMap.has(ajusteKeyComp) ? ajustesMap.get(ajusteKeyComp)! : (zeradoComp ? 0 : qtdComp)
-            pf[dia] += qtdFinalComp
+            if (isCreche) {
+              // v9.8.4: creche — pf_comp vai SEPARADO (para agrupar com PCQ na impressão)
+              pf_comp[dia] = qtdFinalComp
+            } else {
+              // Demais escolas — comportamento antigo: pf_comp somado em pf
+              pf[dia] += qtdFinalComp
+            }
           }
         }
       }
@@ -178,6 +191,7 @@ export async function GET(request: Request) {
         pf,
         pcq,
         lanche,
+        pf_comp,  // v9.8.4
         feriado_pf,
         feriado_pcq,
         feriado_lanche,
@@ -211,12 +225,14 @@ export async function GET(request: Request) {
       const totais_pf = diasVazios()
       const totais_pcq = diasVazios()
       const totais_lanche = diasVazios()
+      const totais_pf_comp = diasVazios()  // v9.8.4
 
       for (const e of escolasDaRota) {
         for (const dia of dias) {
           totais_pf[dia] += e.pf[dia]
           totais_pcq[dia] += e.pcq[dia]
           totais_lanche[dia] += e.lanche[dia]
+          totais_pf_comp[dia] += e.pf_comp[dia]  // v9.8.4
         }
       }
 
@@ -227,6 +243,7 @@ export async function GET(request: Request) {
         totais_pf,
         totais_pcq,
         totais_lanche,
+        totais_pf_comp,  // v9.8.4
         total_pf: somaDias(totais_pf),
         total_pcq: somaDias(totais_pcq),
         total_lanche: somaDias(totais_lanche),

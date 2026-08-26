@@ -14,6 +14,9 @@ export interface EscolaRomaneio {
   pf: Record<DiaSemana, number>
   pcq: Record<DiaSemana, number>
   lanche: Record<DiaSemana, number>
+  // v9.8.4: PF Complemento (pf_comp_segunda/quarta/sexta) separado do PF regular.
+  // Usado para agrupar com PCQ na tabela de PCQ do motorista — só creches.
+  pf_comp: Record<DiaSemana, number>
   feriado_pf: Record<DiaSemana, string>
   feriado_pcq: Record<DiaSemana, string>
   feriado_lanche: Record<DiaSemana, string>
@@ -29,6 +32,8 @@ export interface RomaneioMotorista {
   totais_pf: Record<DiaSemana, number>
   totais_pcq: Record<DiaSemana, number>
   totais_lanche: Record<DiaSemana, number>
+  // v9.8.4: totais de PF Complemento (só creches) por dia
+  totais_pf_comp: Record<DiaSemana, number>
   total_pf: number
   total_pcq: number
   total_lanche: number

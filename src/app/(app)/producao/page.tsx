@@ -704,13 +704,22 @@ export default function ProducaoPage() {
                     <th className="print-col-total">TOTAL</th>
                   </tr></thead>
                   <tbody>
-                    {romaneio.escolas.filter((e) => e.total_pf > 0).map((escola) => (
-                      <tr key={escola.id}>
-                        <td className="print-col-escola">{escola.nome_curto}</td>
-                        {DIAS_SEMANA.map((d) => (<td key={d} className="print-col-dia">{escola.pf[d] > 0 ? escola.pf[d] : '—'}</td>))}
-                        <td className="print-col-total">{escola.total_pf.toLocaleString('pt-BR')}</td>
-                      </tr>
-                    ))}
+                    {romaneio.escolas.filter((e) => e.total_pf > 0).map((escola) => {
+                      // v9.8.4: creches (têm pf_comp) — PF vai agrupado com PCQ, então
+                      // mostro "—" em todos os dias da tabela de PF do motorista
+                      const isCreche = DIAS_SEMANA.some((d) => (escola as any).pf_comp?.[d] > 0)
+                      return (
+                        <tr key={escola.id}>
+                          <td className="print-col-escola">{escola.nome_curto}</td>
+                          {DIAS_SEMANA.map((d) => (
+                            <td key={d} className="print-col-dia">
+                              {isCreche ? '—' : (escola.pf[d] > 0 ? escola.pf[d] : '—')}
+                            </td>
+                          ))}
+                          <td className="print-col-total">{isCreche ? '—' : escola.total_pf.toLocaleString('pt-BR')}</td>
+                        </tr>
+                      )
+                    })}
                     <tr className="print-row-total">
                       <td className="print-col-escola">TOTAL GERAL (UNID.)</td>
                       {DIAS_SEMANA.map((d) => (<td key={d} className="print-col-dia">{romaneio.totais_pf[d] || '—'}</td>))}
@@ -775,16 +784,46 @@ export default function ProducaoPage() {
                           const ob = (b as any).ordem_pcq ?? 0
                           if (oa !== ob) return oa - ob
                           return (a.nome_curto || '').localeCompare(b.nome_curto || '')
-                        }).map((escola) => (
-                          <tr key={escola.id}>
-                            <td className="print-col-escola">{escola.nome_curto}</td>
-                            {DIAS_SEMANA.map((d) => (<td key={d} className="print-col-dia">{escola.pcq[d] > 0 ? escola.pcq[d] : '—'}</td>))}
-                            <td className="print-col-total">{escola.total_pcq.toLocaleString('pt-BR')}</td>
-                          </tr>
-                        ))}
+                        }).map((escola) => {
+                          // v9.8.4: creches (têm pf_comp) — mostro "PCQ + PF XX" nos dias
+                          // com PCQ (seg/qua/sex). Demais dias: "—" como sempre.
+                          const isCreche = DIAS_SEMANA.some((d) => (escola as any).pf_comp?.[d] > 0)
+                          return (
+                            <tr key={escola.id}>
+                              <td className="print-col-escola">{escola.nome_curto}</td>
+                              {DIAS_SEMANA.map((d) => {
+                                if (escola.pcq[d] > 0) {
+                                  if (isCreche && (escola as any).pf_comp?.[d] > 0) {
+                                    // Creche em dia de PCQ com PF Complemento: "40 + PF 25"
+                                    return (
+                                      <td key={d} className="print-col-dia">
+                                        {escola.pcq[d]} + PF {(escola as any).pf_comp[d]}
+                                      </td>
+                                    )
+                                  }
+                                  return <td key={d} className="print-col-dia">{escola.pcq[d]}</td>
+                                }
+                                return <td key={d} className="print-col-dia">—</td>
+                              })}
+                              <td className="print-col-total">{escola.total_pcq.toLocaleString('pt-BR')}</td>
+                            </tr>
+                          )
+                        })}
                         <tr className="print-row-subtotal">
                           <td className="print-col-escola">TOTAL GERAL (FORMAS)</td>
-                          {DIAS_SEMANA.map((d) => (<td key={d} className="print-col-dia">{romaneio.totais_pcq[d] || '—'}</td>))}
+                          {DIAS_SEMANA.map((d) => {
+                            const totalPfCompDia = (romaneio as any).totais_pf_comp?.[d] || 0
+                            if (romaneio.totais_pcq[d] > 0 && totalPfCompDia > 0) {
+                              // v9.8.4: total do dia mostra "PCQ + PF XX" para indicar
+                              // que o motorista leva PCQ + PF agrupado das creches
+                              return (
+                                <td key={d} className="print-col-dia">
+                                  {romaneio.totais_pcq[d]} + PF {totalPfCompDia}
+                                </td>
+                              )
+                            }
+                            return <td key={d} className="print-col-dia">{romaneio.totais_pcq[d] || '—'}</td>
+                          })}
                           <td className="print-col-total">{romaneio.total_pcq.toLocaleString('pt-BR')}</td>
                         </tr>
                       </tbody>
