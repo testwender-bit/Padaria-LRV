@@ -1,89 +1,89 @@
-# Patch v9.8.4 — PCQ dos motoristas: agrupar PF Complemento com PCQ em creches
+# Patch v9.8.6 — Bugfix: romaneio agora respeita lanche_bifasica_modo na tabela de PF
 
 ## ⚠️ Antes de aplicar
 
 1. Faça backup e crie branch:
    ```bash
    git stash
-   git checkout -b fix/v9.8.4-pcq-motorista-creches
+   git checkout -b fix/v9.8.6-romaneio-bifasica-tipo-pao
    ```
 2. **NÃO precisa de `prisma db push`** (sem mudança no schema).
 3. **NÃO precisa rodar migração**.
 
-## 📋 O que mudou (1 funcionalidade)
+## 📋 O que mudou (1 correção de bug)
 
-### 🍞 PCQ dos motoristas: agrupar PF Complemento com PCQ em creches
+### 🐛 Romaneio não respeitava `lanche_bifasica_modo` na tabela de PF
 
-**Contexto**: no romaneio dos motoristas, a tabela de PCQ mostrava apenas as formas de PCQ (seg/qua/sex), separadas da tabela de PF. Os motoristas precisavam olhar 2 tabelas para entregar tudo para as creches.
+**Problema**: a API do romaneio (`/api/romaneio`) estava usando a lógica antiga para determinar o tipo de pão da bifásica:
 
-**Problema**: nas creches, o PF Complemento (pão extra que vai junto com o PCQ, cadastrado em `PcqQuantidade.pf_comp_*`) era somado no PF na tabela de PF do motorista. Isso confundia — o motorista via o pão na tabela de PF, mas ele é entregue junto com o PCQ.
-
-**Solução**: para **creches** (`categoria = 'CRECHE'`) no romaneio dos motoristas:
-
-| Local | Seg | Ter | Qua | Qui | Sex |
-|---|---|---|---|---|---|
-| **Tabela PF** | — | — | — | — | — |
-| **Tabela PCQ** | `40 + PF 25` | — | `40 + PF 25` | — | `40 + PF 25` |
-
-Onde `40` = PCQ (formas) e `25` = PF Complemento (unidades, puxado de `pf_comp_segunda/quarta/sexta`).
-
-**Para demais escolas** (REGULAR, INTEGRAL, BIFASICA, etc.): **nada muda** — continuam com PF e PCQ separados nas suas tabelas, exatamente como antes.
-
-### Exemplo visual
-
-**ANTES** (romaneio do motorista José):
-
-Tabela de PF:
-```
-ESCOLA           | Seg | Ter | Qua | Qui | Sex | TOTAL
-Creche A         | 125 | 100 | 125 | 100 | 125 | 575   ← (100 PF + 25 PF_COMP somados)
-Escola B         | 50  | 50  | 50  | 50  | 50  | 250
-TOTAL            | 175 | 150 | 175 | 150 | 175 | 825
+```ts
+// ERRADO (romaneio antes do patch):
+const tipoPaoEfetivo = (escola as any).pao_fixo === true ? 'PADRAO' : tipoPao
 ```
 
-Tabela de PCQ:
-```
-ESCOLA           | Seg | Ter | Qua | Qui | Sex | TOTAL
-Creche A         | 40  | —   | 40  | —   | 40  | 120
-Escola B         | 10  | —   | 10  | —   | 10  | 30
-TOTAL            | 50  | —   | 50  | —   | 50  | 150
+Isso ignora o `lanche_bifasica_modo` da semana. Consequência: quando a semana tem `tipo_pao = SEMPAO` (porque as demais escolas estão sem pão) mas a bifásica está em modo `PAO_PADRAO`, o romaneio buscava a `PfQuantidade` **SEMPAO** (só café da manhã) em vez de **PADRAO** (que tem o valor na quinta-feira).
+
+**Resultado do bug**: a bifásica não aparecia na tabela de PF do motorista com o pão da quinta-feira, mesmo o usuário tendo configurado a `PfQuantidade` PADRAO com o valor correto.
+
+**Correção**: a API do romaneio agora usa a função `tipoPaoEfetivoEscola()` (igual à API de produção já fazia desde a v9.8.1):
+
+```ts
+// CORRETO (depois do patch):
+const tipoPaoEfetivo = tipoPaoEfetivoEscola(
+  escola.categoria,
+  (escola as any).pao_fixo,
+  tipoPao,
+  lancheBifasicaModo
+)
 ```
 
-**DEPOIS** (v9.8.4):
+A função `tipoPaoEfetivoEscola()` respeita o `lanche_bifasica_modo`:
+- `LANCHE` → bifásica usa `SEMPAO` (só café da manhã)
+- `PAO_PADRAO` → bifásica usa `PADRAO` (café + pão do lanche)
+- `PAO_PROTEINA` → bifásica usa `PROTEINA` (café + pão proteína do lanche)
+- `NENHUM` → bifásica usa `SEMPAO` (só café da manhã)
 
-Tabela de PF:
-```
-ESCOLA           | Seg | Ter | Qua | Qui | Sex | TOTAL
-Creche A         | —   | —   | —   | —   | —   | —    ← (PF vai agrupado em PCQ)
-Escola B         | 50  | 50  | 50  | 50  | 50  | 250
-TOTAL            | 50  | 50  | 50  | 50  | 50  | 250  ← (não inclui creches)
-```
+### Cenário corrigido
 
-Tabela de PCQ:
-```
-ESCOLA           | Seg       | Ter | Qua       | Qui | Sex       | TOTAL
-Creche A         | 40 + PF 25| —   | 40 + PF 25| —   | 40 + PF 25| 120
-Escola B         | 10        | —   | 10        | —   | 10        | 30
-TOTAL            | 50 + PF 25| —   | 50 + PF 25| —   | 50 + PF 25| 150
-```
+**Configuração do usuário**:
+- Semana com `tipo_pao = SEMPAO` (demais escolas sem pão)
+- Bifásica com `lanche_bifasica_modo = PAO_PADRAO`
+- `PfQuantidade` PADRAO da bifásica: quinta = valor, demais dias = 0
 
-O motorista agora leva **os 2 pães juntos** para as creches em seg/qua/sex, sem risco de esquecer o PF Complemento.
+**ANTES do patch** (bug):
+- Romaneio buscava `PfQuantidade` SEMPAO → quinta = 0
+- Bifásica NÃO aparecia na tabela de PF do motorista (total_pf = 0)
 
-## 📦 Arquivos incluídos no patch
+**DEPOIS do patch** (correto):
+- Romaneio busca `PfQuantidade` PADRAO → quinta = valor
+- Bifásica aparece na tabela de PF do motorista com o valor na quinta ✅
+- Bifásica também aparece na tabela de PCQ com `40 + PF 25` em seg/qua/sex (PCQ + PF Complemento) ✅
+
+### Regra completa da bifásica no romaneio (após patch)
+
+| Cenário | Tabela PF | Tabela PCQ |
+|---|---|---|
+| Modo `LANCHE` | `—` (usa SEMPAO, só café, não mostra aqui) | `—` (sem PCQ) |
+| Modo `PAO_PADRAO` (sem pão na quinta) | `—` (PADRAO tem 0 em todos os dias) | `40 + PF 25` em seg/qua/sex |
+| Modo `PAO_PADRAO` (com pão na quinta) | ✅ valor na quinta, `—` nos demais | `40 + PF 25` em seg/qua/sex |
+| Modo `PAO_PROTEINA` | similar ao PAO_PADRAO mas com PROTEINA | `40 + PF 25` em seg/qua/sex |
+| Modo `NENHUM` | `—` (usa SEMPAO) | `—` (sem PCQ) |
+
+**Resumo**: a bifásica aparece na tabela de PF **só quando tem pão extra** (configurado na `PfQuantidade` PADRAO/PROTEINA). O PF Complemento nunca aparece na tabela de PF (vai agrupado em PCQ).
+
+## 📦 Arquivo incluído no patch
 
 | Arquivo | Mudança |
 |---|---|
-| `src/lib/romaneio-utils.ts` | + campo `pf_comp` em `EscolaRomaneio` + `totais_pf_comp` em `RomaneioMotorista` |
-| `src/app/api/romaneio/route.ts` | Para creches, `pf_comp` vai SEPARADO de `pf` (não somado). Demais escolas: comportamento antigo. |
-| `src/app/(app)/producao/page.tsx` | Tabela PF do motorista: creches mostram `—` em todos os dias. Tabela PCQ do motorista: creches mostram `40 + PF 25` em seg/qua/sex. |
+| `src/app/api/romaneio/route.ts` | Importa `tipoPaoEfetivoEscola` de `producao-utils`. Busca `lancheBifasicaModo` do cardápio. Usa `tipoPaoEfetivoEscola()` no loop de PF (em vez da lógica antiga `pao_fixo ? PADRAO : tipoPao`). |
 
-**3 arquivos modificados. Sem mudança no schema. Sem migração.**
+**1 arquivo modificado. Sem mudança no schema. Sem migração.**
 
 ## 🚀 Como aplicar
 
 ```bash
 # Extrair (na raiz do projeto)
-unzip -o patch-v984.zip
+unzip -o patch-v986.zip
 
 # Build + testar
 npm run build
@@ -92,61 +92,67 @@ npm run dev
 
 ## 🧪 Como testar (smoke test)
 
-### Teste 1 — Tabela de PF do motorista (creches)
-1. Vá em **Produção** → clique **Imprimir** (ou Ctrl+P)
-2. Navegue até as páginas de **Romaneio por Motorista** (após as páginas de produção)
-3. Na página **ROTA X — PÃO FRANCÊS**:
-   - ✅ Escolas REGULAR/INTEGRAL/BIFASICA continuam aparecendo com PF normal
-   - ✅ Creches aparecem com `—` em todos os dias (Seg a Sex)
-   - ✅ Total geral da tabela de PF NÃO inclui o PF das creches (porque vai agrupado em PCQ)
+### Teste 1 — Bifásica com pão na quinta (cenário principal)
+1. Configure uma semana com:
+   - `tipo_pao = SEMPAO` (em /cardapio)
+   - `lanche_bifasica_modo = PAO_PADRAO` (em /cardapio)
+2. Configure a bifásica em /configuracoes:
+   - `PfQuantidade` PADRAO: quinta = valor (ex: 30), demais = 0
+   - `PfQuantidade` SEMPAO: seg/qua/sex = valor do café da manhã
+   - `PcqQuantidade`: prod_segunda/quarta/sexta = 40, pf_comp_* = 25
+3. Vá em **Produção** → clique **Imprimir**
+4. Na página **ROTA X — PÃO FRANCÊS**:
+   - ✅ Bifásica aparece com `—` em seg/ter/qua/sex
+   - ✅ Bifásica aparece com o **valor na quinta** (ex: 30)
+5. Na página **ROTA X — PCQ E LANCHES**:
+   - ✅ Bifásica aparece com `40 + PF 25` em seg/qua/sex
+   - ✅ Bifásica aparece com `—` em ter/qui
 
-### Teste 2 — Tabela de PCQ do motorista (creches)
-1. Na mesma impressão, navegue até **ROTA X — PCQ E LANCHES**
-2. Na seção **PCQ — PÃO DE CACHORRO QUENTE**:
-   - ✅ Creches mostram `40 + PF 25` em Seg/Qua/Sex (onde 40 = PCQ e 25 = PF Complemento)
-   - ✅ Creches mostram `—` em Ter/Qui (sem PCQ nem PF agrupado)
-   - ✅ Demais escolas (REGULAR, etc.) continuam mostrando só o PCQ
-   - ✅ Linha de total geral também mostra `50 + PF 25` em seg/qua/sex quando tem creches
+### Teste 2 — Bifásica sem pão na quinta (modo LANCHE)
+1. Configure uma semana com:
+   - `tipo_pao = PADRAO` (demais escolas com pão)
+   - `lanche_bifasica_modo = LANCHE` (bifásica só café da manhã)
+2. Vá em **Produção** → **Imprimir**
+3. Na tabela de PF do motorista:
+   - ✅ Bifásica aparece com `—` em todos os dias (usa SEMPAO, só café)
 
-### Teste 3 — Página de Produção principal (não-romaneio)
-1. Na tela de Produção (não impressão), as tabelas de PF/PCQ/Lanche continuam normais
-2. As creches continuam aparecendo com PF e PCQ separados (a mudança é SÓ no romaneio dos motoristas)
+### Teste 3 — Creches (não deve mudar)
+1. Verifique que as creches continuam aparecendo com `—` na tabela de PF
+2. E com `40 + PF 25` na tabela de PCQ
+3. (Comportamento do patch v9.8.4/v9.8.5 mantido)
 
 ## 🔄 Como commitar e voltar para main
 
 ```bash
-# 1. Adicionar arquivos modificados
+# 1. Adicionar arquivo modificado
 git add -A
 
 # 2. Commitar
-git commit -m "feat(v9.8.4): romaneio motorista agrupa PF Complemento com PCQ em creches"
+git commit -m "fix(v9.8.6): romaneio respeita lanche_bifasica_modo na tabela de PF"
 
 # 3. Voltar para main
 git checkout main
 
 # 4. Merge do branch
-git merge fix/v9.8.4-pcq-motorista-creches
+git merge fix/v9.8.6-romaneio-bifasica-tipo-pao
 
 # 5. Enviar para GitHub
 git push origin main
 
 # 6. Apagar branch local
-git branch -d fix/v9.8.4-pcq-motorista-creches
+git branch -d fix/v9.8.6-romaneio-bifasica-tipo-pao
 ```
 
 ## 🔙 Como reverter
 
 ```bash
-git checkout -- src/lib/romaneio-utils.ts \
-                 src/app/api/romaneio/route.ts \
-                 src/app/\(app\)/producao/page.tsx
+git checkout -- src/app/api/romaneio/route.ts
 ```
 
 ## 📝 Notas técnicas
 
-- **Mudança só na impressão dos romaneios**: a tela de Produção (tabelas principais) e a planilha de produção continuam idênticas. Só muda o que aparece na impressão das páginas "ROTA X — PÃO FRANCÊS" e "ROTA X — PCQ E LANCHES".
-- **Apenas creches**: escolas com `categoria = 'CRECHE'` recebem o novo comportamento. Demais categorias (REGULAR, INTEGRAL, BIFASICA, etc.) continuam com PF e PCQ separados, como antes.
-- **Como detectamos creche na UI**: usamos a heurística "se `pf_comp[dia] > 0` para algum dia, é creche". Isso é verdade porque só creches têm `pf_comp_*` preenchido (em `PcqQuantidade`).
-- **Total geral da tabela de PF do motorista**: agora NÃO inclui o PF Complemento das creches (porque vai agrupado em PCQ). É esperado que o total diminua em relação ao anterior.
-- **Total geral da tabela de PCQ do motorista**: mostra `XX + PF YY` em dias com creches, para o motorista saber que leva ambos juntos.
-- **Formato da célula agrupada**: `40 + PF 25` — compacto, uma linha, fácil de ler rapidamente (Opção B que você escolheu).
+- **Causa raiz**: a API do romaneio foi esquecida na v9.8.1 (quando atualizamos a API de produção para usar `tipoPaoEfetivoEscola`). O romaneio continuava usando a lógica antiga `pao_fixo ? PADRAO : tipoPao`, que ignora o `lanche_bifasica_modo`.
+- **Sintoma**: bifásica não aparecia na tabela de PF do motorista quando a semana tinha `tipo_pao ≠ PADRAO` (ex: SEMPAO), mesmo com `lanche_bifasica_modo = PAO_PADRAO` e `PfQuantidade` PADRAO configurada.
+- **Correção**: usar a mesma função `tipoPaoEfetivoEscola()` que a API de produção já usa. Isso garante consistência entre produção e romaneio.
+- **Sem mudança na UI**: a tabela de PF do motorista já mostrava `escola.pf[d]` para bifásicas (não `—`). O problema era que `escola.pf[d]` vinha errado da API. Agora vem correto.
+- **Compatibilidade**: patch v9.8.6 substitui o v9.8.5 (não precisa aplicar os 2, só este já inclui tudo).

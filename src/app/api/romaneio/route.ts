@@ -4,6 +4,7 @@ import { inicioSemana, numeroSemana, anoSemana, dataISO, type DiaSemana, DIAS_SE
 import type { EscolaRomaneio, RomaneioMotorista } from '@/lib/romaneio-utils'
 import { diasVazios, diasVaziosStr, somaDias } from '@/lib/romaneio-utils'
 import { produtoZerado, type FeriadoData } from '@/lib/feriado-utils'
+import { tipoPaoEfetivoEscola } from '@/lib/producao-utils'  // v9.8.6
 import { addDays } from 'date-fns'
 
 export async function GET(request: Request) {
@@ -52,6 +53,10 @@ export async function GET(request: Request) {
     const tipoPao = cardapioFinal?.tipo_pao || 'PADRAO'
     const lancheRegular = cardapioFinal?.lanche_regular
     const lancheBifasica = cardapioFinal?.lanche_bifasica
+    // v9.8.6: modo do lanche da tarde da BIFASICA — necessário para que a
+    // bifásica use o tipo correto de PfQuantidade (PADRAO/PROTEINA/SEMPAO)
+    // no romaneio, igual à API de produção.
+    const lancheBifasicaModo = (cardapioFinal as any)?.lanche_bifasica_modo || 'LANCHE'
 
     // BUG FIX 1: Build feriados map for proper checking
     const feriadosMap = new Map<string, FeriadoData[]>()
@@ -110,12 +115,23 @@ export async function GET(request: Request) {
 
       // v9.8.4: Para creches, o PF Complemento vai agrupado com PCQ na tabela
       // do motorista. Para demais escolas, comportamento antigo (PF + PF_COMP somados).
+      // v9.8.5: Bifásicas também têm pf_comp separado (vai agrupado em PCQ), MAS
+      // continuam aparecendo na tabela de PF com seu PF regular do café da manhã.
       const isCreche = escola.categoria === 'CRECHE'
+      const isBifasica = escola.categoria === 'BIFASICA'
+      const temPfCompSeparado = isCreche || isBifasica
 
       // PF + PF Complemento (integrado, sem distinção)
       if (escola.recebe_pf) {
-        // v9.5.7: se escola.pao_fixo === true, SEMPRE usa PADRAO
-        const tipoPaoEfetivo = (escola as any).pao_fixo === true ? 'PADRAO' : tipoPao
+        // v9.8.6: usar tipoPaoEfetivoEscola() — respeita lanche_bifasica_modo
+        // para que a bifásica use o tipo correto de PfQuantidade (PADRAO/PROTEINA
+        // quando está em modo PAO_*, mesmo se tipo_pao da semana for outro).
+        const tipoPaoEfetivo = tipoPaoEfetivoEscola(
+          escola.categoria,
+          (escola as any).pao_fixo,
+          tipoPao,
+          lancheBifasicaModo
+        )
         const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEfetivo)
           || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')
         if (pfQ) {
@@ -154,8 +170,9 @@ export async function GET(request: Request) {
             const ajusteKeyComp = `${escola.id}_${dia}_PF_COMP`
             const { zerado: zeradoComp, feriado: feriadoNomeComp } = produtoZerado(feriadosMap, dataDia, escola.categoria, 'PF_COMP')
             const qtdFinalComp = ajustesMap.has(ajusteKeyComp) ? ajustesMap.get(ajusteKeyComp)! : (zeradoComp ? 0 : qtdComp)
-            if (isCreche) {
-              // v9.8.4: creche — pf_comp vai SEPARADO (para agrupar com PCQ na impressão)
+            if (temPfCompSeparado) {
+              // v9.8.4/v9.8.5: creche OU bifásica — pf_comp vai SEPARADO
+              // (para agrupar com PCQ na impressão do motorista)
               pf_comp[dia] = qtdFinalComp
             } else {
               // Demais escolas — comportamento antigo: pf_comp somado em pf
@@ -188,6 +205,7 @@ export async function GET(request: Request) {
         rota: escola.rota,
         ordem_rota: escola.ordem_rota ?? 0,  // v9.5.2
         ordem_pcq: (escola as any).ordem_pcq ?? 0,  // v9.6.5
+        categoria: escola.categoria,  // v9.8.5
         pf,
         pcq,
         lanche,
