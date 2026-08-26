@@ -1,120 +1,90 @@
-# Patch v9.8.1 — Bugfix Bifásica: pão vai para PF, não para Lanche
+# Patch v9.8.3 — Correção da fonte das páginas de Lanches na impressão
 
 ## ⚠️ Antes de aplicar
 
 1. Faça backup e crie branch:
    ```bash
    git stash
-   git checkout -b fix/v9.8.1-bugfix-bifasica-pao
+   git checkout -b fix/v9.8.3-fonte-lanches
    ```
 2. **NÃO precisa de `prisma db push`** (sem mudança no schema).
-3. **NÃO precisa rodar migração** (sem mudança em dados).
+3. **NÃO precisa rodar migração**.
 
-## 📋 O que mudou (1 correção de bug)
+## 📋 O que mudou (1 correção)
 
-### 🐛 Bug da bifásica em modo PAO_* (pão indo para planilha errada)
+### 🐛 Fonte das páginas de Lanches na impressão continuava pequena
 
-**Sintoma relatado**: quando a bifásica estava em modo `PAO_PADRAO` (pão padrão no lanche da tarde), a quantidade de pão aparecia na **planilha de Lanche** misturada com a bolacha das outras escolas, em vez de ir para a planilha de **Pão Francês**.
+**Problema**: no patch v9.8.2 eu aumentei as fontes do `print.css`, mas as tabelas de Lanche (tanto a página de produção de Lanches quanto a página de Lanches no romaneio dos motoristas) tinham `fontSize` inline (`7pt` e `8pt`) que **sobrescreviam** o CSS. Resultado: a fonte do lanche continuou pequena.
 
-**Causa raiz**: na v9.8 eu tinha implementado errado. Em modo `PAO_PADRAO`/`PAO_PROTEINA`, eu criava um item de Lanche com a quantidade do PfQuantidade — quando deveria apenas mudar o tipo de pão na planilha de PF (já que a PfQuantidade da bifásica já inclui o pão do café + pão do lanche quando é PADRAO ou PROTEINA).
+**Correção**: aumentei os font-sizes inline proporcionalmente (~30%):
 
-**Correção v9.8.1**:
-
-| Modo Bifásica | Planilha PF | Planilha Lanche |
+| Elemento | Antes | Agora |
 |---|---|---|
-| `LANCHE` | Bifásica usa `SEMPAO` (só café da manhã) | Bifásica recebe mesmo lanche das outras escolas |
-| `PAO_PADRAO` | Bifásica usa `PADRAO` (café + lanche) | Bifásica **não recebe nada** na planilha Lanche |
-| `PAO_PROTEINA` | Bifásica usa `PROTEINA` (café + lanche) | Bifásica **não recebe nada** na planilha Lanche |
+| Cabeçalho "DIA / ESCOLA" e "QUANTIDADE" | 7pt | **9pt** |
+| Linha de dia destacada (■ SEGUNDA, etc) | 8pt | **10.5pt** |
+| Células de escola/quantidade | 8pt | **10.5pt** |
 
-A `PfQuantidade` cadastrada em **Configurações → Escolas** para a bifásica já representa o total correto do dia conforme o tipo:
-- **PADRAO**: pão com manteiga, pão com doce + café da manhã
-- **PROTEINA**: pão com proteína + café da manhã
-- **SEMPAO**: só café da manhã (quando vai outro tipo de lanche)
+**Locais afetados** (4 ocorrências de `7pt` + 8 ocorrências de `8pt` no arquivo):
+- Página de produção de Lanches (impressão)
+- Página de romaneio por motorista — seção Lanches
 
-## 📦 Arquivos incluídos no patch
+## 📦 Arquivo incluído no patch
 
 | Arquivo | Mudança |
 |---|---|
-| `src/lib/producao-utils.ts` | + função `tipoPaoEfetivoEscola()` — encapsula regra do tipo de pão por escola/modo |
-| `src/app/api/producao/route.ts` | Loop de PF agora usa `tipoPaoEfetivoEscola()` (2 loops: domingo e seg-sex). Loop de Lanche agora pula bifásica em modo `PAO_*` (não gera item de lanche). |
+| `src/app/(app)/producao/page.tsx` | `fontSize: '7pt'` → `'9pt'` (4 ocorrências) e `fontSize: '8pt'` → `'10.5pt'` (8 ocorrências) |
 
-**2 arquivos modificados. Sem mudança no schema. Sem migração.**
+**1 arquivo modificado. Sem mudança no schema. Sem migração.**
 
 ## 🚀 Como aplicar
 
 ```bash
 # Extrair (na raiz do projeto)
-unzip -o patch-v9.8.1-bugfix-bifasica-pao.zip
+unzip -o patch-v983.zip
 
 # Build + testar
 npm run build
 npm run dev
 ```
 
-## 🧪 Como testar (smoke test)
+## 🧪 Como testar
 
-### Teste 1 — Bifásica em modo PAO_PADRAO
-1. Vá em **Cardápio** (Cardápio Semestral) → edite a semana atual.
-2. Em **Modo Lanche Bifásica**, escolha **Pão Francês Padrão**. Salve.
-3. Vá em **Produção** → view Semanal.
-4. **Tabela Pão Francês**: a bifásica deve aparecer com a quantidade do PfQuantidade PADRAO (café da manhã + pão do lanche).
-5. **Tabela Lanche**: a bifásica **NÃO deve aparecer** (somente as outras escolas com bolacha).
-
-### Teste 2 — Bifásica em modo LANCHE
-1. Vá em **Cardápio** → edite a semana.
-2. Em **Modo Lanche Bifásica**, escolha **Mesmo lanche das outras escolas**. Salve.
-3. Vá em **Produção** → view Semanal.
-4. **Tabela Pão Francês**: a bifásica deve aparecer com a quantidade do PfQuantidade **SEMPAO** (só café da manhã — quantidade menor).
-5. **Tabela Lanche**: a bifásica **deve aparecer** com o mesmo lanche das outras escolas (bolacha).
-
-### Teste 3 — Bifásica em modo PAO_PROTEINA
-1. Vá em **Cardápio** → edite a semana.
-2. Em **Modo Lanche Bifásica**, escolha **Pão Francês Proteína**. Salve.
-3. Vá em **Produção** → view Semanal.
-4. **Tabela Pão Francês**: a bifásica deve aparecer com a quantidade do PfQuantidade **PROTEINA**.
-5. **Tabela Lanche**: a bifásica **NÃO deve aparecer**.
-
-### Teste 4 — Escolas com pao_fixo=true (Bombeiros, CRAS)
-1. Vá em **Produção** → view Semanal → tabela Pão Francês.
-2. Bombeiros, CRAS, etc. continuam aparecendo com PADRAO (independente do modo bifásica).
-3. Esse comportamento não mudou — só garantir que não quebrou.
+1. Vá em **Produção** → clique **Imprimir** (ou Ctrl+P)
+2. Na preview, navegue até a página de **Lanches** (após PCQ)
+3. ✅ Fonte deve estar visivelmente maior (compatível com a fonte do PF e PCQ)
+4. Vá até as páginas de **Romaneio por Motorista** que têm Lanches
+5. ✅ Fonte da tabela de lanches também deve estar maior
 
 ## 🔄 Como commitar e voltar para main
 
-Após testar e confirmar que está tudo funcionando:
-
 ```bash
-# 1. Adicionar todos os arquivos modificados
+# 1. Adicionar arquivo modificado
 git add -A
 
 # 2. Commitar
-git commit -m "fix(v9.8.1): bifásica modo PAO_* agora afeta PF (não Lanche)"
+git commit -m "fix(v9.8.3): fonte das páginas de lanches na impressão"
 
 # 3. Voltar para main
 git checkout main
 
 # 4. Merge do branch
-git merge fix/v9.8.1-bugfix-bifasica-pao
+git merge fix/v9.8.3-fonte-lanches
 
-# 5. Enviar para GitHub (Vercel faz deploy automático)
+# 5. Enviar para GitHub
 git push origin main
 
 # 6. Apagar branch local
-git branch -d fix/v9.8.1-bugfix-bifasica-pao
+git branch -d fix/v9.8.3-fonte-lanches
 ```
 
 ## 🔙 Como reverter
 
 ```bash
-git checkout -- src/lib/producao-utils.ts src/app/api/producao/route.ts
+git checkout -- src/app/\(app\)/producao/page.tsx
 ```
 
 ## 📝 Notas técnicas
 
-- **Sem mudança no banco de dados**: o campo `lanche_bifasica_modo` (adicionado na v9.8) continua funcionando. Esta é apenas uma correção de como o valor é interpretado.
-- **Função `tipoPaoEfetivoEscola()`**: agora centraliza a regra em `src/lib/producao-utils.ts`. Pode ser reusada futuramente em outras views (romaneio, dashboard).
-- **Compatibilidade**: o campo `lanche_bifasica_id` continua mantido no schema para compatibilidade (não é usado pela nova lógica, mas não foi removido para não quebrar FKs).
-- **Comportamento esperado da PfQuantidade da bifásica**:
-  - PADRAO: pão com manteiga + pão com doce + café da manhã (total do dia)
-  - PROTEINA: pão com proteína + café da manhã (total do dia)
-  - SEMPAO: só café da manhã (quando lanche da tarde é outro tipo, ex: bolacha)
+- **Causa raiz**: o React permite `style={{ fontSize: '7pt' }}` que vira CSS inline. CSS inline tem prioridade sobre classes do `print.css`. Por isso o aumento do `print.css` no v9.8.2 não afetou as tabelas de lanche.
+- **Solução aplicada**: aumentar os valores inline diretamente. Para o futuro, seria melhor remover os font-sizes inline e usar classes do `print.css` (mas isso é uma refatoração maior, fica para o plano de polimento FASE 4).
+- **Próxima mudança pendente**: a mudança do PCQ nos romaneios dos motoristas (tirar Ter/Qui, agrupar PF+PCQ para creches) está em análise — aguardando confirmação das 4 perguntas enviadas no chat.

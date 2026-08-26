@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json()
     // v9.8: validação básica do lanche_bifasica_modo (se fornecido)
-    const modosValidos = ['LANCHE', 'PAO_PADRAO', 'PAO_PROTEINA']
+    const modosValidos = ['LANCHE', 'PAO_PADRAO', 'PAO_PROTEINA', 'NENHUM']
     const modoBifasica = body.lanche_bifasica_modo || 'LANCHE'
     if (!modosValidos.includes(modoBifasica)) {
       return NextResponse.json(
@@ -95,7 +95,7 @@ export async function PATCH(request: Request) {
     }
     // v9.8: atualizar lanche_bifasica_modo via PATCH também
     if (typeof body.lanche_bifasica_modo === 'string') {
-      const modosValidos = ['LANCHE', 'PAO_PADRAO', 'PAO_PROTEINA']
+      const modosValidos = ['LANCHE', 'PAO_PADRAO', 'PAO_PROTEINA', 'NENHUM']
       if (!modosValidos.includes(body.lanche_bifasica_modo)) {
         return NextResponse.json(
           { error: `lanche_bifasica_modo inválido. Valores aceitos: ${modosValidos.join(', ')}` },

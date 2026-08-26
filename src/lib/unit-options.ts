@@ -49,12 +49,16 @@ export const TIPOS_PAO = [
 //   lanche_regular_id definido no cardápio da semana.
 // - PAO_PADRAO: pão francês PADRÃO (mesmo do café da manhã, mas como lanche).
 // - PAO_PROTEINA: pão francês PROTEÍNA (lanche com pão de proteína).
+// - NENHUM: bifásica faz preparação na escola nesse dia — não recebe pão
+//   nem lanche da padaria. Planilha PF usa SEMPAO; planilha Lanche não
+//   recebe item para a bifásica.
 // O pão francês para o café da manhã continua sendo entregue TODOS OS DIAS
 // independentemente deste modo (é o PF da semana, controlado pelo tipo_pao).
 export const LANCHE_BIFASICA_MODOS = [
   { value: 'LANCHE', label: 'Mesmo lanche das outras escolas' },
   { value: 'PAO_PADRAO', label: 'Pão Francês Padrão' },
   { value: 'PAO_PROTEINA', label: 'Pão Francês Proteína' },
+  { value: 'NENHUM', label: 'Nenhum (preparação na escola)' },
 ]
 
 export const TIPOS_FERIADO = [

@@ -434,16 +434,19 @@ export async function GET(request: Request) {
       }
 
       // Lanche: produzido D-0 (mesmo dia)
-      // v9.8.1: BIFASICA em modo PAO_PADRAO ou PAO_PROTEINA **não recebe lanche** —
-      // o lanche da tarde dela é pão, que já está embutido no PfQuantidade do tipo
-      // correspondente (processado no loop de PF acima). Então pulamos a bifásica
-      // nesses modos. BIFASICA em modo LANCHE recebe o mesmo lanche das outras escolas.
+      // v9.8.1: BIFASICA em modo PAO_PADRAO, PAO_PROTEINA ou NENHUM **não recebe
+      // lanche** — o lanche da tarde dela é pão (já embutido no PfQuantidade do
+      // tipo correspondente, processado no loop de PF acima) ou é preparação na
+      // escola (não recebe nada da padaria). BIFASICA em modo LANCHE recebe o
+      // mesmo lanche das outras escolas.
       for (const escola of escolas) {
         if (!escola.recebe_lanche) continue
 
-        // v9.8.1: bifásica em modo PAO_* não gera item na planilha de Lanche
+        // v9.8.1/v9.8.2: bifásica em modo PAO_* ou NENHUM não gera item na planilha de Lanche
         if (escola.categoria === 'BIFASICA' &&
-            (lancheBifasicaModo === 'PAO_PADRAO' || lancheBifasicaModo === 'PAO_PROTEINA')) {
+            (lancheBifasicaModo === 'PAO_PADRAO' ||
+             lancheBifasicaModo === 'PAO_PROTEINA' ||
+             lancheBifasicaModo === 'NENHUM')) {
           continue
         }
 

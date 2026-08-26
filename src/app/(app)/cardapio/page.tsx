@@ -286,10 +286,13 @@ export default function CardapioPage() {
                         const modo = LANCHE_BIFASICA_MODOS.find((m) => m.value === (entry.lanche_bifasica_modo || 'LANCHE'))
                         if (!modo) return null
                         const isPao = entry.lanche_bifasica_modo === 'PAO_PADRAO' || entry.lanche_bifasica_modo === 'PAO_PROTEINA'
+                        const isNenhum = entry.lanche_bifasica_modo === 'NENHUM'
                         return (
-                          <Badge className={isPao
-                            ? 'bg-amber-100 text-amber-700 text-[10px]'
-                            : 'bg-purple-100 text-purple-700 text-[10px]'}>
+                          <Badge className={isNenhum
+                            ? 'bg-gray-200 text-gray-700 text-[10px]'
+                            : isPao
+                              ? 'bg-amber-100 text-amber-700 text-[10px]'
+                              : 'bg-purple-100 text-purple-700 text-[10px]'}>
                             B: {modo.label}
                           </Badge>
                         )

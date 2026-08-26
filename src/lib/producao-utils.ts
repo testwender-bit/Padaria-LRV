@@ -62,6 +62,7 @@ export function ehDiaProducaoDoProduto(diaProd: string, produto: string): boolea
 //                  o lanche da tarde é outro tipo, vai na planilha Lanche)
 //     PAO_PADRAO   → PADRAO (café da manhã + lanche da tarde com pão padrão)
 //     PAO_PROTEINA → PROTEINA (café da manhã + lanche da tarde com pão proteína)
+//     NENHUM       → SEMPAO (bifásica faz preparação na escola — só café da manhã)
 // - Demais escolas: usa o tipo_pao da semana (PADRAO/PROTEINA/SEMPAO).
 export function tipoPaoEfetivoEscola(
   categoria: string,
@@ -76,7 +77,7 @@ export function tipoPaoEfetivoEscola(
   if (categoria === 'BIFASICA') {
     if (lancheBifasicaModo === 'PAO_PADRAO') return 'PADRAO'
     if (lancheBifasicaModo === 'PAO_PROTEINA') return 'PROTEINA'
-    // LANCHE (ou qualquer outro valor): bifásica só recebe pão do café da manhã,
+    // LANCHE ou NENHUM: bifásica só recebe pão do café da manhã,
     // então usa SEMPAO (a quantidade cadastrada em SEMPAO é só café da manhã).
     return 'SEMPAO'
   }
