@@ -149,6 +149,8 @@ export async function GET(request: Request) {
       // PCQ + PF Complemento
       // v9.8.4: para creches, pf_comp vai SEPARADO (não somado em pf) — vai agrupado
       // na tabela de PCQ do motorista. Para demais escolas, comportamento antigo (somado em pf).
+      // v9.8.7: se o PCQ for zerado (por ajuste ou feriado), o PF Complemento também
+      // deve ser zerado — não faz sentido o motorista levar "0 + PF 25" (PF Comp sem PCQ).
       if (escola.recebe_pcq && escola.pcq_quantidades[0]) {
         const pcqQ = escola.pcq_quantidades[0]
         for (const dia of dias) {
@@ -169,7 +171,13 @@ export async function GET(request: Request) {
             const qtdComp = pcqQ[campoComp] as number
             const ajusteKeyComp = `${escola.id}_${dia}_PF_COMP`
             const { zerado: zeradoComp, feriado: feriadoNomeComp } = produtoZerado(feriadosMap, dataDia, escola.categoria, 'PF_COMP')
-            const qtdFinalComp = ajustesMap.has(ajusteKeyComp) ? ajustesMap.get(ajusteKeyComp)! : (zeradoComp ? 0 : qtdComp)
+            let qtdFinalComp = ajustesMap.has(ajusteKeyComp) ? ajustesMap.get(ajusteKeyComp)! : (zeradoComp ? 0 : qtdComp)
+            // v9.8.7: se o PCQ foi zerado (por ajuste manual ou feriado), o PF
+            // Complemento também deve ser zerado. O pf_comp só faz sentido se
+            // o PCQ for entregue (são agrupados visualmente como "40 + PF 25").
+            if (qtdFinalPcq === 0) {
+              qtdFinalComp = 0
+            }
             if (temPfCompSeparado) {
               // v9.8.4/v9.8.5: creche OU bifásica — pf_comp vai SEPARADO
               // (para agrupar com PCQ na impressão do motorista)

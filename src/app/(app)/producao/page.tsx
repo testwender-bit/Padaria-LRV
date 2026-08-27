@@ -174,8 +174,10 @@ export default function ProducaoPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ano: data.ano,
-          semana: data.semana,
+          // v9.8.7: usar cardapio_id (mais confiável que ano+semana, que
+          // vinham errados — API de produção retorna semana ISO 1-52, não
+          // semana letiva 1-22 que é a chave única no banco).
+          cardapio_id: data.cardapio_id,
           obs: avisoEditando,
         }),
       })
@@ -705,9 +707,11 @@ export default function ProducaoPage() {
                   </tr></thead>
                   <tbody>
                     {romaneio.escolas.filter((e) => e.total_pf > 0).map((escola) => {
-                      // v9.8.4: creches (têm pf_comp) — PF vai agrupado com PCQ, então
-                      // mostro "—" em todos os dias da tabela de PF do motorista
-                      const isCreche = DIAS_SEMANA.some((d) => (escola as any).pf_comp?.[d] > 0)
+                      // v9.8.4/v9.8.5: creches (têm pf_comp) — PF vai agrupado com PCQ,
+                      // mostro "—" em todos os dias da tabela de PF do motorista.
+                      // Bifásicas também têm pf_comp agrupado em PCQ, MAS continuam
+                      // aparecendo na tabela de PF com seu PF regular do café da manhã.
+                      const isCreche = escola.categoria === 'CRECHE'
                       return (
                         <tr key={escola.id}>
                           <td className="print-col-escola">{escola.nome_curto}</td>
@@ -785,16 +789,17 @@ export default function ProducaoPage() {
                           if (oa !== ob) return oa - ob
                           return (a.nome_curto || '').localeCompare(b.nome_curto || '')
                         }).map((escola) => {
-                          // v9.8.4: creches (têm pf_comp) — mostro "PCQ + PF XX" nos dias
-                          // com PCQ (seg/qua/sex). Demais dias: "—" como sempre.
-                          const isCreche = DIAS_SEMANA.some((d) => (escola as any).pf_comp?.[d] > 0)
+                          // v9.8.4/v9.8.5: creches E bifásicas têm pf_comp agrupado em PCQ.
+                          // Mostro "PCQ + PF XX" nos dias com PCQ (seg/qua/sex).
+                          // Demais dias: "—" como sempre.
+                          const temPfCompAgrupado = escola.categoria === 'CRECHE' || escola.categoria === 'BIFASICA'
                           return (
                             <tr key={escola.id}>
                               <td className="print-col-escola">{escola.nome_curto}</td>
                               {DIAS_SEMANA.map((d) => {
                                 if (escola.pcq[d] > 0) {
-                                  if (isCreche && (escola as any).pf_comp?.[d] > 0) {
-                                    // Creche em dia de PCQ com PF Complemento: "40 + PF 25"
+                                  if (temPfCompAgrupado && (escola as any).pf_comp?.[d] > 0) {
+                                    // Creche/Bifásica em dia de PCQ com PF Complemento: "40 + PF 25"
                                     return (
                                       <td key={d} className="print-col-dia">
                                         {escola.pcq[d]} + PF {(escola as any).pf_comp[d]}

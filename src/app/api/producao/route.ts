@@ -181,7 +181,17 @@ export async function GET(request: Request) {
         }
       }
 
-      const qtd = ajustesMap.has(ajusteKey) ? ajustesMap.get(ajusteKey)! : (zeradoComp ? 0 : qtdComp)
+      let qtd = ajustesMap.has(ajusteKey) ? ajustesMap.get(ajusteKey)! : (zeradoComp ? 0 : qtdComp)
+
+      // v9.8.7: se o PCQ foi zerado (por ajuste manual ou feriado), o PF
+      // Complemento também deve ser zerado. O pf_comp só faz sentido se
+      // o PCQ for entregue (são agrupados visualmente como "40 + PF 25").
+      const ajusteKeyPcqDom = `${escola.id}_segunda_PCQ`
+      const { zerado: zeradoPcqSeg } = produtoZerado(feriadosMap, segundaStr, escola.categoria, 'PCQ')
+      const pcqZeradoSeg = (ajustesMap.has(ajusteKeyPcqDom) && ajustesMap.get(ajusteKeyPcqDom) === 0) || zeradoPcqSeg
+      if (pcqZeradoSeg) {
+        qtd = 0
+      }
 
       itensPfDomingo.push({
         escola_id: escola.id,
@@ -405,7 +415,17 @@ export async function GET(request: Request) {
             }
           }
 
-          const qtd = ajustesMap.has(ajusteKey) ? ajustesMap.get(ajusteKey)! : (zeradoComp ? 0 : qtdComp)
+          let qtd = ajustesMap.has(ajusteKey) ? ajustesMap.get(ajusteKey)! : (zeradoComp ? 0 : qtdComp)
+
+          // v9.8.7: se o PCQ foi zerado (por ajuste manual ou feriado), o PF
+          // Complemento também deve ser zerado. O pf_comp só faz sentido se
+          // o PCQ for entregue (são agrupados visualmente como "40 + PF 25").
+          const ajusteKeyPcq = `${escola.id}_${entregaDia}_PCQ`
+          const { zerado: zeradoPcq } = produtoZerado(feriadosMap, dataEntregaComp, escola.categoria, 'PCQ')
+          const pcqZerado = (ajustesMap.has(ajusteKeyPcq) && ajustesMap.get(ajusteKeyPcq) === 0) || zeradoPcq
+          if (pcqZerado) {
+            qtd = 0
+          }
 
           // PF_COMP vai para itensPf como PF (sem sinalizar complemento)
           // v9.5.8: dia_entrega indica o dia real de entrega (seg/qua/sex),

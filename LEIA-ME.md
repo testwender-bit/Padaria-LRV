@@ -1,89 +1,58 @@
-# Patch v9.8.6 — Bugfix: romaneio agora respeita lanche_bifasica_modo na tabela de PF
+# Patch v9.8.7 — Bugfix: PF Complemento zerado + editar aviso da semana
 
 ## ⚠️ Antes de aplicar
 
 1. Faça backup e crie branch:
    ```bash
    git stash
-   git checkout -b fix/v9.8.6-romaneio-bifasica-tipo-pao
+   git checkout -b fix/v9.8.7-pf-comp-zerado-aviso
    ```
 2. **NÃO precisa de `prisma db push`** (sem mudança no schema).
 3. **NÃO precisa rodar migração**.
 
-## 📋 O que mudou (1 correção de bug)
+## 📋 O que mudou (2 correções de bugs)
 
-### 🐛 Romaneio não respeitava `lanche_bifasica_modo` na tabela de PF
+### 🐛 Bug 1: PF Complemento zerado manualmente ainda aparece na impressão
 
-**Problema**: a API do romaneio (`/api/romaneio`) estava usando a lógica antiga para determinar o tipo de pão da bifásica:
+**Problema**: quando o usuário zerava o PCQ de uma creche/bifásica (via ajuste manual na semana), o **PF Complemento continuava aparecendo** na impressão do romaneio ("0 + PF 25"). Isso acontecia porque o PCQ e o PF Complemento são campos separados no banco — zerar um não afeta o outro.
 
-```ts
-// ERRADO (romaneio antes do patch):
-const tipoPaoEfetivo = (escola as any).pao_fixo === true ? 'PADRAO' : tipoPao
-```
+**Causa raiz**: o PF Complemento é puxado de `PcqQuantidade.pf_comp_*` (cadastro da escola), e o ajuste manual só afeta o PCQ (`produto: 'PCQ'`). O PF Complemento (`produto: 'PF_COMP'`) tem seu próprio ajuste separado, que o usuário não consegue editar pela UI.
 
-Isso ignora o `lanche_bifasica_modo` da semana. Consequência: quando a semana tem `tipo_pao = SEMPAO` (porque as demais escolas estão sem pão) mas a bifásica está em modo `PAO_PADRAO`, o romaneio buscava a `PfQuantidade` **SEMPAO** (só café da manhã) em vez de **PADRAO** (que tem o valor na quinta-feira).
+**Correção**: se o PCQ for zerado (por ajuste manual OU feriado), o PF Complemento também deve ser zerado. Não faz sentido o motorista levar "0 + PF 25" — se não tem PCQ, não tem o que agrupar.
 
-**Resultado do bug**: a bifásica não aparecia na tabela de PF do motorista com o pão da quinta-feira, mesmo o usuário tendo configurado a `PfQuantidade` PADRAO com o valor correto.
+**Onde foi corrigido**:
+- `src/app/api/romaneio/route.ts` — loop de PCQ: se `qtdFinalPcq === 0`, força `qtdFinalComp = 0`
+- `src/app/api/producao/route.ts` — bloco PF Complemento (domingo): se PCQ da segunda foi zerado, força PF Comp = 0
+- `src/app/api/producao/route.ts` — bloco PF Complemento (seg-sex): se PCQ do dia de entrega foi zerado, força PF Comp = 0
 
-**Correção**: a API do romaneio agora usa a função `tipoPaoEfetivoEscola()` (igual à API de produção já fazia desde a v9.8.1):
+### 🐛 Bug 2: "Cardápio da semana X não encontrado" ao editar aviso
 
-```ts
-// CORRETO (depois do patch):
-const tipoPaoEfetivo = tipoPaoEfetivoEscola(
-  escola.categoria,
-  (escola as any).pao_fixo,
-  tipoPao,
-  lancheBifasicaModo
-)
-```
+**Problema**: ao clicar no botão Editar do "Aviso da Semana" na página de Produção e tentar salvar, aparecia erro "Cardápio da semana X não encontrado".
 
-A função `tipoPaoEfetivoEscola()` respeita o `lanche_bifasica_modo`:
-- `LANCHE` → bifásica usa `SEMPAO` (só café da manhã)
-- `PAO_PADRAO` → bifásica usa `PADRAO` (café + pão do lanche)
-- `PAO_PROTEINA` → bifásica usa `PROTEINA` (café + pão proteína do lanche)
-- `NENHUM` → bifásica usa `SEMPAO` (só café da manhã)
+**Causa raiz**: a API de produção retorna `semana` = **número ISO** (1-52) e `ano` = ano ISO. Mas o PATCH `/api/cardapio` buscava por `ano_semana: { ano, semana }` que usa `semana` = **semana letiva** (1-22, cadastrada no cardápio semestral). São coisas diferentes — quando o usuário mandava `semana: 35` (ISO), o banco não encontrava porque lá está `semana: 5` (letiva).
 
-### Cenário corrigido
+**Correção**: o PATCH agora aceita `cardapio_id` como alternativa a `ano+semana`. A página de produção passa a enviar `cardapio_id` (que a API de produção já retorna desde a v9.7.5, e é o ID direto do registro no banco — mais confiável).
 
-**Configuração do usuário**:
-- Semana com `tipo_pao = SEMPAO` (demais escolas sem pão)
-- Bifásica com `lanche_bifasica_modo = PAO_PADRAO`
-- `PfQuantidade` PADRAO da bifásica: quinta = valor, demais dias = 0
+**Onde foi corrigido**:
+- `src/app/api/cardapio/route.ts` — PATCH aceita `cardapio_id` (preferencial) ou `ano+semana` (fallback)
+- `src/app/(app)/producao/page.tsx` — `handleSaveAviso` envia `cardapio_id` em vez de `ano+semana`
 
-**ANTES do patch** (bug):
-- Romaneio buscava `PfQuantidade` SEMPAO → quinta = 0
-- Bifásica NÃO aparecia na tabela de PF do motorista (total_pf = 0)
-
-**DEPOIS do patch** (correto):
-- Romaneio busca `PfQuantidade` PADRAO → quinta = valor
-- Bifásica aparece na tabela de PF do motorista com o valor na quinta ✅
-- Bifásica também aparece na tabela de PCQ com `40 + PF 25` em seg/qua/sex (PCQ + PF Complemento) ✅
-
-### Regra completa da bifásica no romaneio (após patch)
-
-| Cenário | Tabela PF | Tabela PCQ |
-|---|---|---|
-| Modo `LANCHE` | `—` (usa SEMPAO, só café, não mostra aqui) | `—` (sem PCQ) |
-| Modo `PAO_PADRAO` (sem pão na quinta) | `—` (PADRAO tem 0 em todos os dias) | `40 + PF 25` em seg/qua/sex |
-| Modo `PAO_PADRAO` (com pão na quinta) | ✅ valor na quinta, `—` nos demais | `40 + PF 25` em seg/qua/sex |
-| Modo `PAO_PROTEINA` | similar ao PAO_PADRAO mas com PROTEINA | `40 + PF 25` em seg/qua/sex |
-| Modo `NENHUM` | `—` (usa SEMPAO) | `—` (sem PCQ) |
-
-**Resumo**: a bifásica aparece na tabela de PF **só quando tem pão extra** (configurado na `PfQuantidade` PADRAO/PROTEINA). O PF Complemento nunca aparece na tabela de PF (vai agrupado em PCQ).
-
-## 📦 Arquivo incluído no patch
+## 📦 Arquivos incluídos no patch
 
 | Arquivo | Mudança |
 |---|---|
-| `src/app/api/romaneio/route.ts` | Importa `tipoPaoEfetivoEscola` de `producao-utils`. Busca `lancheBifasicaModo` do cardápio. Usa `tipoPaoEfetivoEscola()` no loop de PF (em vez da lógica antiga `pao_fixo ? PADRAO : tipoPao`). |
+| `src/app/api/romaneio/route.ts` | Se PCQ for 0 (ajuste/feriado), força PF Comp = 0 |
+| `src/app/api/producao/route.ts` | Mesma lógica nos 2 blocos de PF Complemento (domingo + seg-sex) |
+| `src/app/api/cardapio/route.ts` | PATCH aceita `cardapio_id` como alternativa a `ano+semana` |
+| `src/app/(app)/producao/page.tsx` | `handleSaveAviso` envia `cardapio_id` em vez de `ano+semana` |
 
-**1 arquivo modificado. Sem mudança no schema. Sem migração.**
+**4 arquivos modificados. Sem mudança no schema. Sem migração.**
 
 ## 🚀 Como aplicar
 
 ```bash
 # Extrair (na raiz do projeto)
-unzip -o patch-v986.zip
+unzip -o patch-v987.zip
 
 # Build + testar
 npm run build
@@ -92,67 +61,67 @@ npm run dev
 
 ## 🧪 Como testar (smoke test)
 
-### Teste 1 — Bifásica com pão na quinta (cenário principal)
-1. Configure uma semana com:
-   - `tipo_pao = SEMPAO` (em /cardapio)
-   - `lanche_bifasica_modo = PAO_PADRAO` (em /cardapio)
-2. Configure a bifásica em /configuracoes:
-   - `PfQuantidade` PADRAO: quinta = valor (ex: 30), demais = 0
-   - `PfQuantidade` SEMPAO: seg/qua/sex = valor do café da manhã
-   - `PcqQuantidade`: prod_segunda/quarta/sexta = 40, pf_comp_* = 25
-3. Vá em **Produção** → clique **Imprimir**
-4. Na página **ROTA X — PÃO FRANCÊS**:
-   - ✅ Bifásica aparece com `—` em seg/ter/qua/sex
-   - ✅ Bifásica aparece com o **valor na quinta** (ex: 30)
-5. Na página **ROTA X — PCQ E LANCHES**:
-   - ✅ Bifásica aparece com `40 + PF 25` em seg/qua/sex
-   - ✅ Bifásica aparece com `—` em ter/qui
+### Teste 1 — PF Complemento zerado junto com PCQ
+1. Vá em **Produção** → view Semanal → tabela PCQ
+2. Clique numa célula de PCQ de uma creche ou bifásica (ex: Segunda, valor 40)
+3. Zere a quantidade (digite 0) e salve com um motivo
+4. Vá em **Imprimir** → navegue até o romaneio do motorista
+5. Na tabela de PCQ:
+   - ✅ A creche/bifásica deve mostrar `—` na segunda (PCQ zerado)
+   - ✅ NÃO deve aparecer "0 + PF 25" (PF Comp também zerado)
+6. Na tabela de PF:
+   - ✅ Creche continua mostrando `—` (como antes)
+   - ✅ Bifásica continua mostrando PF do café da manhã (se tiver)
 
-### Teste 2 — Bifásica sem pão na quinta (modo LANCHE)
-1. Configure uma semana com:
-   - `tipo_pao = PADRAO` (demais escolas com pão)
-   - `lanche_bifasica_modo = LANCHE` (bifásica só café da manhã)
+### Teste 2 — Editar aviso da semana
+1. Vá em **Produção** → clique no botão **Editar** (lápis) do banner "Aviso da Semana"
+2. Digite um novo texto no diálogo
+3. Clique em **Salvar Aviso**
+4. ✅ Deve aparecer toast "Aviso da semana atualizado!"
+5. ✅ O banner deve refletir o novo texto imediatamente
+6. ✅ Sem erro "Cardápio da semana X não encontrado"
+
+### Teste 3 — PCQ com feriado (não deve mostrar PF Comp)
+1. Cadastre um feriado na terça-feira com ação "zerar PCQ"
 2. Vá em **Produção** → **Imprimir**
-3. Na tabela de PF do motorista:
-   - ✅ Bifásica aparece com `—` em todos os dias (usa SEMPAO, só café)
-
-### Teste 3 — Creches (não deve mudar)
-1. Verifique que as creches continuam aparecendo com `—` na tabela de PF
-2. E com `40 + PF 25` na tabela de PCQ
-3. (Comportamento do patch v9.8.4/v9.8.5 mantido)
+3. Na tabela de PCQ do motorista:
+   - ✅ Terça: mostra `—` (feriado zerou PCQ)
+   - ✅ NÃO mostra "0 + PF 25" (PF Comp também zerado pelo feriado)
 
 ## 🔄 Como commitar e voltar para main
 
 ```bash
-# 1. Adicionar arquivo modificado
+# 1. Adicionar arquivos modificados
 git add -A
 
 # 2. Commitar
-git commit -m "fix(v9.8.6): romaneio respeita lanche_bifasica_modo na tabela de PF"
+git commit -m "fix(v9.8.7): PF Comp zerado junto com PCQ + editar aviso via cardapio_id"
 
 # 3. Voltar para main
 git checkout main
 
 # 4. Merge do branch
-git merge fix/v9.8.6-romaneio-bifasica-tipo-pao
+git merge fix/v9.8.7-pf-comp-zerado-aviso
 
 # 5. Enviar para GitHub
 git push origin main
 
 # 6. Apagar branch local
-git branch -d fix/v9.8.6-romaneio-bifasica-tipo-pao
+git branch -d fix/v9.8.7-pf-comp-zerado-aviso
 ```
 
 ## 🔙 Como reverter
 
 ```bash
-git checkout -- src/app/api/romaneio/route.ts
+git checkout -- src/app/api/romaneio/route.ts \
+                 src/app/api/producao/route.ts \
+                 src/app/api/cardapio/route.ts \
+                 src/app/\(app\)/producao/page.tsx
 ```
 
 ## 📝 Notas técnicas
 
-- **Causa raiz**: a API do romaneio foi esquecida na v9.8.1 (quando atualizamos a API de produção para usar `tipoPaoEfetivoEscola`). O romaneio continuava usando a lógica antiga `pao_fixo ? PADRAO : tipoPao`, que ignora o `lanche_bifasica_modo`.
-- **Sintoma**: bifásica não aparecia na tabela de PF do motorista quando a semana tinha `tipo_pao ≠ PADRAO` (ex: SEMPAO), mesmo com `lanche_bifasica_modo = PAO_PADRAO` e `PfQuantidade` PADRAO configurada.
-- **Correção**: usar a mesma função `tipoPaoEfetivoEscola()` que a API de produção já usa. Isso garante consistência entre produção e romaneio.
-- **Sem mudança na UI**: a tabela de PF do motorista já mostrava `escola.pf[d]` para bifásicas (não `—`). O problema era que `escola.pf[d]` vinha errado da API. Agora vem correto.
-- **Compatibilidade**: patch v9.8.6 substitui o v9.8.5 (não precisa aplicar os 2, só este já inclui tudo).
+- **Bug 1 — PF Complemento**: a regra é "se PCQ = 0, PF Comp = 0". Isso se aplica a creches E bifásicas (que têm pf_comp agrupado). Para demais escolas, o pf_comp é somado ao PF regular, então se PCQ for 0, o pf_comp também é zerado (não soma 0 no PF).
+- **Bug 2 — Aviso da semana**: o `cardapio_id` é retornado pela API de produção desde a v9.7.5, mas não estava sendo usado. Agora é a forma preferencial de identificar o cardápio no PATCH.
+- **Compatibilidade**: o PATCH ainda aceita `ano+semana` como fallback (para compatibilidade com qualquer outro caller que use esse formato). Mas `cardapio_id` é mais confiável.
+- **Sem mudança na UI**: a correção do Bug 1 é transparente para o usuário — ele continua zerando o PCQ normalmente, e o sistema automaticamente zera o PF Comp junto.

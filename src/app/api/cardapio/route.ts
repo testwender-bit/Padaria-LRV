@@ -65,24 +65,30 @@ export async function POST(request: Request) {
 
 // v9.7.5: PATCH para atualizar campos parciais do cardápio semestral.
 // Usado pela edição inline do "Aviso da Semana" (obs) na página de Produção.
-// Recebe { ano, semana, obs? } e atualiza apenas os campos fornecidos.
+// Recebe { cardapio_id?, ano?, semana?, obs?, lanche_bifasica_modo? }.
+// v9.8.7: aceita cardapio_id como alternativa a ano+semana. O cardapio_id
+// é mais confiável porque ano+semana da API de produção retornam o número
+// ISO da semana (1-52), não a semana letiva (1-22) que é a chave única.
 export async function PATCH(request: Request) {
   try {
     const body = await request.json()
-    if (!body.ano || !body.semana) {
-      return NextResponse.json(
-        { error: 'Campos obrigatórios: ano, semana' },
-        { status: 400 }
-      )
+
+    // Busca o cardápio existente — pode ser por cardapio_id (preferencial)
+    // ou por ano+semana (chave composta ano_semana).
+    let existente
+    if (body.cardapio_id) {
+      existente = await db.cardapioSemestral.findUnique({
+        where: { id: body.cardapio_id },
+      })
+    } else if (body.ano && body.semana) {
+      existente = await db.cardapioSemestral.findUnique({
+        where: { ano_semana: { ano: body.ano, semana: body.semana } },
+      })
     }
 
-    // Busca o cardápio existente
-    const existente = await db.cardapioSemestral.findUnique({
-      where: { ano_semana: { ano: body.ano, semana: body.semana } },
-    })
     if (!existente) {
       return NextResponse.json(
-        { error: `Cardápio da semana ${body.semana}/${body.ano} não encontrado` },
+        { error: `Cardápio não encontrado (cardapio_id=${body.cardapio_id || 'não fornecido'}, ano=${body.ano || '?'}, semana=${body.semana || '?'})` },
         { status: 404 }
       )
     }
