@@ -11,11 +11,15 @@ export interface EscolaRomaneio {
   rota?: string
   ordem_rota?: number  // v9.5.2: para ordenação dentro da rota (PF)
   ordem_pcq?: number   // v9.6.5: ordenação específica para PCQ no romaneio
+  // v9.8.5: categoria da escola (REGULAR, INTEGRAL, BIFASICA, CRECHE, etc).
+  // Usado para diferenciar creches (PF só agrupado em PCQ) de bifásicas
+  // (PF regular na tabela PF + PF Complemento agrupado em PCQ).
+  categoria?: string
   pf: Record<DiaSemana, number>
   pcq: Record<DiaSemana, number>
   lanche: Record<DiaSemana, number>
   // v9.8.4: PF Complemento (pf_comp_segunda/quarta/sexta) separado do PF regular.
-  // Usado para agrupar com PCQ na tabela de PCQ do motorista — só creches.
+  // Usado para agrupar com PCQ na tabela de PCQ do motorista — só creches e bifásicas.
   pf_comp: Record<DiaSemana, number>
   feriado_pf: Record<DiaSemana, string>
   feriado_pcq: Record<DiaSemana, string>

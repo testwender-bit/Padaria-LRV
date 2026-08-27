@@ -1,127 +1,110 @@
-# Patch v9.8.7 — Bugfix: PF Complemento zerado + editar aviso da semana
+# Patch v9.8.8 — CONSOLIDADO: corrige erro de build na Vercel
 
-## ⚠️ Antes de aplicar
+## 🚨 Problema
 
-1. Faça backup e crie branch:
-   ```bash
-   git stash
-   git checkout -b fix/v9.8.7-pf-comp-zerado-aviso
-   ```
-2. **NÃO precisa de `prisma db push`** (sem mudança no schema).
-3. **NÃO precisa rodar migração**.
+A Vercel retornou erro de build:
+```
+./src/app/(app)/producao/page.tsx:714:47
+Type error: Property 'categoria' does not exist on type 'EscolaRomaneio'.
+```
 
-## 📋 O que mudou (2 correções de bugs)
+## 🔍 Causa
 
-### 🐛 Bug 1: PF Complemento zerado manualmente ainda aparece na impressão
+O campo `categoria` foi adicionado em `EscolaRomaneio` no patch v9.8.5, mas o arquivo `src/lib/romaneio-utils.ts` não foi incluído nos patches v9.8.6, v9.8.7 — só as APIs e páginas foram atualizadas. Resultado: no seu Codespace, o `romaneio-utils.ts` está desatualizado (não tem `categoria`), mas a página `producao/page.tsx` (v9.8.7) tenta acessar `escola.categoria` → erro de tipo.
 
-**Problema**: quando o usuário zerava o PCQ de uma creche/bifásica (via ajuste manual na semana), o **PF Complemento continuava aparecendo** na impressão do romaneio ("0 + PF 25"). Isso acontecia porque o PCQ e o PF Complemento são campos separados no banco — zerar um não afeta o outro.
+## ✅ Solução
 
-**Causa raiz**: o PF Complemento é puxado de `PcqQuantidade.pf_comp_*` (cadastro da escola), e o ajuste manual só afeta o PCQ (`produto: 'PCQ'`). O PF Complemento (`produto: 'PF_COMP'`) tem seu próprio ajuste separado, que o usuário não consegue editar pela UI.
+Este patch é **CONSOLIDADO** — inclui TODOS os arquivos relevantes das versões v9.8.0 até v9.8.7, garantindo que tudo esteja sincronizado. Aplicar este patch zera qualquer inconsistência.
 
-**Correção**: se o PCQ for zerado (por ajuste manual OU feriado), o PF Complemento também deve ser zerado. Não faz sentido o motorista levar "0 + PF 25" — se não tem PCQ, não tem o que agrupar.
+## 📦 Arquivos incluídos (10 arquivos)
 
-**Onde foi corrigido**:
-- `src/app/api/romaneio/route.ts` — loop de PCQ: se `qtdFinalPcq === 0`, força `qtdFinalComp = 0`
-- `src/app/api/producao/route.ts` — bloco PF Complemento (domingo): se PCQ da segunda foi zerado, força PF Comp = 0
-- `src/app/api/producao/route.ts` — bloco PF Complemento (seg-sex): se PCQ do dia de entrega foi zerado, força PF Comp = 0
-
-### 🐛 Bug 2: "Cardápio da semana X não encontrado" ao editar aviso
-
-**Problema**: ao clicar no botão Editar do "Aviso da Semana" na página de Produção e tentar salvar, aparecia erro "Cardápio da semana X não encontrado".
-
-**Causa raiz**: a API de produção retorna `semana` = **número ISO** (1-52) e `ano` = ano ISO. Mas o PATCH `/api/cardapio` buscava por `ano_semana: { ano, semana }` que usa `semana` = **semana letiva** (1-22, cadastrada no cardápio semestral). São coisas diferentes — quando o usuário mandava `semana: 35` (ISO), o banco não encontrava porque lá está `semana: 5` (letiva).
-
-**Correção**: o PATCH agora aceita `cardapio_id` como alternativa a `ano+semana`. A página de produção passa a enviar `cardapio_id` (que a API de produção já retorna desde a v9.7.5, e é o ID direto do registro no banco — mais confiável).
-
-**Onde foi corrigido**:
-- `src/app/api/cardapio/route.ts` — PATCH aceita `cardapio_id` (preferencial) ou `ano+semana` (fallback)
-- `src/app/(app)/producao/page.tsx` — `handleSaveAviso` envia `cardapio_id` em vez de `ano+semana`
-
-## 📦 Arquivos incluídos no patch
-
-| Arquivo | Mudança |
+| Arquivo | Função |
 |---|---|
-| `src/app/api/romaneio/route.ts` | Se PCQ for 0 (ajuste/feriado), força PF Comp = 0 |
-| `src/app/api/producao/route.ts` | Mesma lógica nos 2 blocos de PF Complemento (domingo + seg-sex) |
-| `src/app/api/cardapio/route.ts` | PATCH aceita `cardapio_id` como alternativa a `ano+semana` |
-| `src/app/(app)/producao/page.tsx` | `handleSaveAviso` envia `cardapio_id` em vez de `ano+semana` |
-
-**4 arquivos modificados. Sem mudança no schema. Sem migração.**
+| `prisma/schema.prisma` | Campo `lanche_bifasica_modo` (v9.8) |
+| `src/lib/unit-options.ts` | Constante `LANCHE_BIFASICA_MODOS` com 4 modos (v9.8/v9.8.2) |
+| `src/lib/producao-utils.ts` | `tipoPaoEfetivoEscola()` + `ehDiaProducaoDoProduto()` (v9.8.1/v9.8.2) |
+| `src/lib/romaneio-utils.ts` | **CAMPO `categoria` + `pf_comp` + `totais_pf_comp`** (v9.8.4/v9.8.5) ← o que faltava |
+| `src/app/api/cardapio/route.ts` | POST/PATCH aceitam `lanche_bifasica_modo` e `cardapio_id` (v9.8/v9.8.7) |
+| `src/app/api/producao/route.ts` | Lógica bifásica + PF Comp zerado com PCQ + feriados_semana (v9.8.x) |
+| `src/app/api/romaneio/route.ts` | `tipoPaoEfetivoEscola()` + pf_comp separado p/ creches/bifásicas (v9.8.5/v9.8.6/v9.8.7) |
+| `src/app/(app)/cardapio/page.tsx` | Seletor Modo Lanche Bifásica com 4 opções (v9.8/v9.8.2) |
+| `src/app/(app)/producao/page.tsx` | Edição aviso + bifásica tabela + PCQ agrupado + fonte maior (v9.8.x) |
+| `src/app/print.css` | Fonte ~30% maior + margens reduzidas (v9.8.2) |
 
 ## 🚀 Como aplicar
 
 ```bash
-# Extrair (na raiz do projeto)
-unzip -o patch-v987.zip
+# 1. Backup + branch
+git stash
+git checkout -b fix/v9.8.8-consolidado
 
-# Build + testar
+# 2. Extrair (sobrescreve todos os arquivos)
+unzip -o patch-v988.zip
+
+# 3. Sincronizar banco (NÃO precisa se já aplicou v9.8 antes — só confirma)
+npx prisma generate
+# Só rode prisma db push se NUNCA aplicou v9.8 antes:
+# npx prisma db push
+
+# 4. Se NUNCA rodou migração do lanche_bifasica_modo, rode UMA vez:
+# npx tsx scripts/migrar-lanche-bifasica-modo.ts
+
+# 5. Build + testar
 npm run build
 npm run dev
 ```
 
-## 🧪 Como testar (smoke test)
+## 🧪 Como testar
 
-### Teste 1 — PF Complemento zerado junto com PCQ
-1. Vá em **Produção** → view Semanal → tabela PCQ
-2. Clique numa célula de PCQ de uma creche ou bifásica (ex: Segunda, valor 40)
-3. Zere a quantidade (digite 0) e salve com um motivo
-4. Vá em **Imprimir** → navegue até o romaneio do motorista
-5. Na tabela de PCQ:
-   - ✅ A creche/bifásica deve mostrar `—` na segunda (PCQ zerado)
-   - ✅ NÃO deve aparecer "0 + PF 25" (PF Comp também zerado)
-6. Na tabela de PF:
-   - ✅ Creche continua mostrando `—` (como antes)
-   - ✅ Bifásica continua mostrando PF do café da manhã (se tiver)
+Após aplicar, faça um smoke test rápido:
 
-### Teste 2 — Editar aviso da semana
-1. Vá em **Produção** → clique no botão **Editar** (lápis) do banner "Aviso da Semana"
-2. Digite um novo texto no diálogo
-3. Clique em **Salvar Aviso**
-4. ✅ Deve aparecer toast "Aviso da semana atualizado!"
-5. ✅ O banner deve refletir o novo texto imediatamente
-6. ✅ Sem erro "Cardápio da semana X não encontrado"
-
-### Teste 3 — PCQ com feriado (não deve mostrar PF Comp)
-1. Cadastre um feriado na terça-feira com ação "zerar PCQ"
-2. Vá em **Produção** → **Imprimir**
-3. Na tabela de PCQ do motorista:
-   - ✅ Terça: mostra `—` (feriado zerou PCQ)
-   - ✅ NÃO mostra "0 + PF 25" (PF Comp também zerado pelo feriado)
+1. **Build passa** — `npm run build` deve compilar sem erros
+2. **Produção carrega** — `/producao` mostra tabelas PF/PCQ/Lanche normalmente
+3. **Imprimir funciona** — clique Imprimir, gera PDF com fontes maiores
+4. **Editar aviso** — clique no lápis do "Aviso da Semana" → salva sem erro
+5. **Modo bifásica** — `/cardapio` → editar semana → seletor tem 4 opções (LANCHE/PAO_PADRAO/PAO_PROTEINA/NENHUM)
+6. **Romaneio motorista** — bifásicas e creches aparecem com `40 + PF 25` na tabela de PCQ
+7. **PCQ zerado** — zere PCQ de uma creche → na impressão, não aparece "0 + PF 25"
 
 ## 🔄 Como commitar e voltar para main
 
 ```bash
-# 1. Adicionar arquivos modificados
+# 1. Adicionar todos os arquivos
 git add -A
 
 # 2. Commitar
-git commit -m "fix(v9.8.7): PF Comp zerado junto com PCQ + editar aviso via cardapio_id"
+git commit -m "fix(v9.8.8): consolidar todos os patches v9.8.x para corrigir build Vercel"
 
 # 3. Voltar para main
 git checkout main
 
 # 4. Merge do branch
-git merge fix/v9.8.7-pf-comp-zerado-aviso
+git merge fix/v9.8.8-consolidado
 
-# 5. Enviar para GitHub
+# 5. Enviar para GitHub (Vercel faz deploy automático)
 git push origin main
 
 # 6. Apagar branch local
-git branch -d fix/v9.8.7-pf-comp-zerado-aviso
+git branch -d fix/v9.8.8-consolidado
 ```
 
-## 🔙 Como reverter
+## 📝 Resumo do que cada versão incluiu
 
-```bash
-git checkout -- src/app/api/romaneio/route.ts \
-                 src/app/api/producao/route.ts \
-                 src/app/api/cardapio/route.ts \
-                 src/app/\(app\)/producao/page.tsx
-```
+| Versão | O que adicionou |
+|---|---|
+| v9.8.0 | Modo Lanche Bifásica (LANCHE/PAO_PADRAO/PAO_PROTEINA) + botão excluir lanches |
+| v9.8.1 | Bugfix: bifásica modo PAO_* afeta PF (não Lanche) |
+| v9.8.2 | Modo NENHUM + fonte maior na impressão + sem aviso na impressão |
+| v9.8.3 | Fonte das tabelas de lanches na impressão |
+| v9.8.4 | Romaneio motorista: agrupa PF Complemento com PCQ em creches |
+| v9.8.5 | Estende agrupamento para bifásicas |
+| v9.8.6 | Romaneio respeita `lanche_bifasica_modo` na tabela de PF |
+| v9.8.7 | PF Comp zerado junto com PCQ + editar aviso via `cardapio_id` |
+| **v9.8.8** | **CONSOLIDADO** — garante que todos os arquivos estão sincronizados |
 
-## 📝 Notas técnicas
+## ⚠️ Notas importantes
 
-- **Bug 1 — PF Complemento**: a regra é "se PCQ = 0, PF Comp = 0". Isso se aplica a creches E bifásicas (que têm pf_comp agrupado). Para demais escolas, o pf_comp é somado ao PF regular, então se PCQ for 0, o pf_comp também é zerado (não soma 0 no PF).
-- **Bug 2 — Aviso da semana**: o `cardapio_id` é retornado pela API de produção desde a v9.7.5, mas não estava sendo usado. Agora é a forma preferencial de identificar o cardápio no PATCH.
-- **Compatibilidade**: o PATCH ainda aceita `ano+semana` como fallback (para compatibilidade com qualquer outro caller que use esse formato). Mas `cardapio_id` é mais confiável.
-- **Sem mudança na UI**: a correção do Bug 1 é transparente para o usuário — ele continua zerando o PCQ normalmente, e o sistema automaticamente zera o PF Comp junto.
+- **Não pule este patch** se aplicou apenas alguns dos v9.8.x anteriores. Este patch sobrescreve todos os arquivos com a versão final correta.
+- **Sem mudança nova no banco** — se você já rodou `prisma db push` em alguma versão v9.8.x anterior, não precisa rodar de novo.
+- **Script de migração** — só rode `npx tsx scripts/migrar-lanche-bifasica-modo.ts` se NUNCA tiver rodado antes (é idempotente, pode rodar de novo sem problema).
+- **Após aplicar, faça commit e push** para a Vercel fazer deploy automaticamente.
