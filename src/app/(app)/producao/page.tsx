@@ -917,11 +917,22 @@ export default function ProducaoPage() {
       </div>
 
       {/* v9.7.5: Aviso da semana (vem do cardápio semestral) + alerta de feriados */}
-      {(data.obs || (data.feriados_semana && data.feriados_semana.length > 0)) && (
+      {/* v9.9.0: o banner agora também aparece quando NÃO há aviso (desde que a
+          semana tenha cardápio cadastrado), com placeholder "Nenhum aviso" e
+          botão para ADICIONAR direto daqui — antes o botão de edição só existia
+          quando o aviso já tinha sido criado em /cardapio. */}
+      {(data.cardapio_id || data.obs || (data.feriados_semana && data.feriados_semana.length > 0)) && (
         <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 print:hidden">
           <div className="flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0 space-y-2">
+              {/* v9.9.0: placeholder quando não há aviso nem feriado na semana */}
+              {!data.obs && !(data.feriados_semana && data.feriados_semana.length > 0) && (
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Aviso da Semana {data.semana}</p>
+                  <p className="text-sm text-amber-600/80 italic">Nenhum aviso cadastrado para esta semana.</p>
+                </div>
+              )}
               {data.obs && (
                 <div>
                   <p className="text-sm font-semibold text-amber-800">Aviso da Semana {data.semana}</p>
@@ -958,12 +969,13 @@ export default function ProducaoPage() {
               )}
             </div>
             {/* v9.7.5: botão editar aviso da semana */}
+            {/* v9.9.0: título dinâmico — "Adicionar" quando não há aviso ainda */}
             <Button
               size="sm"
               variant="ghost"
               className="text-amber-700 hover:bg-amber-100 hover:text-amber-900 h-8"
               onClick={abrirEdicaoAviso}
-              title="Editar aviso da semana"
+              title={data.obs ? 'Editar aviso da semana' : 'Adicionar aviso da semana'}
             >
               <Edit2 className="w-3.5 h-3.5" />
             </Button>

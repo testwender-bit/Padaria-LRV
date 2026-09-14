@@ -26,6 +26,14 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
+    // v9.9.0: validação do lanche_interior_modo (mesmos valores do bifásico)
+    const modoInterior = body.lanche_interior_modo || 'LANCHE'
+    if (!modosValidos.includes(modoInterior)) {
+      return NextResponse.json(
+        { error: `lanche_interior_modo inválido. Valores aceitos: ${modosValidos.join(', ')}` },
+        { status: 400 }
+      )
+    }
 
     const cardapio = await db.cardapioSemestral.upsert({
       where: { ano_semana: { ano: body.ano, semana: body.semana } },
@@ -39,6 +47,8 @@ export async function POST(request: Request) {
         lanche_bifasica_id: body.lanche_bifasica_id,
         // v9.8: novo campo
         lanche_bifasica_modo: modoBifasica,
+        // v9.9.0: modo do lanche da escola INTERIOR especial
+        lanche_interior_modo: modoInterior,
         obs: body.obs,
       },
       create: {
@@ -53,6 +63,8 @@ export async function POST(request: Request) {
         lanche_bifasica_id: body.lanche_bifasica_id,
         // v9.8: novo campo
         lanche_bifasica_modo: modoBifasica,
+        // v9.9.0: modo do lanche da escola INTERIOR especial
+        lanche_interior_modo: modoInterior,
         obs: body.obs,
       },
     })
@@ -109,6 +121,17 @@ export async function PATCH(request: Request) {
         )
       }
       dadosAtualizacao.lanche_bifasica_modo = body.lanche_bifasica_modo
+    }
+    // v9.9.0: atualizar lanche_interior_modo via PATCH (mesmos valores do bifásico)
+    if (typeof body.lanche_interior_modo === 'string') {
+      const modosValidos = ['LANCHE', 'PAO_PADRAO', 'PAO_PROTEINA', 'NENHUM']
+      if (!modosValidos.includes(body.lanche_interior_modo)) {
+        return NextResponse.json(
+          { error: `lanche_interior_modo inválido. Valores aceitos: ${modosValidos.join(', ')}` },
+          { status: 400 }
+        )
+      }
+      dadosAtualizacao.lanche_interior_modo = body.lanche_interior_modo
     }
 
     if (Object.keys(dadosAtualizacao).length === 0) {

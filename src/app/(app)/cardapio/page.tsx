@@ -22,7 +22,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { CalendarDays, Plus, Edit2, Save } from 'lucide-react'
-import { TIPOS_PAO, LANCHE_BIFASICA_MODOS } from '@/lib/unit-options'
+import { TIPOS_PAO, LANCHE_BIFASICA_MODOS, LANCHE_INTERIOR_MODOS } from '@/lib/unit-options'
 import { getISOWeek } from 'date-fns'
 import { toast } from 'sonner'
 
@@ -40,6 +40,9 @@ interface CardapioEntry {
   // v9.8: modo do lanche da tarde da BIFASICA
   // LANCHE (padrão) | PAO_PADRAO | PAO_PROTEINA
   lanche_bifasica_modo: string
+  // v9.9.0: modo do lanche da escola INTERIOR marcada como especial
+  // LANCHE (padrão) | PAO_PADRAO | PAO_PROTEINA | NENHUM
+  lanche_interior_modo: string
   obs: string | null
   lanche_regular: { id: string; nome: string } | null
   lanche_bifasica: { id: string; nome: string } | null
@@ -238,6 +241,27 @@ export default function CardapioPage() {
                         Bifásica sempre recebe PF do café da manhã. Aqui define o que vai no slot de lanche da tarde.
                       </p>
                     </div>
+                    {/* v9.9.0: Modo Lanche Interior — espelho do Modo Lanche Bifásica, mas
+                        para a escola do Interior marcada como "Interior Especial" em
+                        /configuracoes (flag interior_especial). Só afeta a escola flagada;
+                        demais escolas do Interior seguem o cardápio normal. */}
+                    <div>
+                      <Label className="text-xs">Modo Lanche Interior</Label>
+                      <Select
+                        value={editData.lanche_interior_modo || 'LANCHE'}
+                        onValueChange={(v) => setEditData((prev) => ({ ...prev, lanche_interior_modo: v }))}
+                      >
+                        <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {LANCHE_INTERIOR_MODOS.map((m) => (
+                            <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Vale APENAS para a escola do Interior marcada como "Interior Especial" nas Configurações.
+                      </p>
+                    </div>
                     {/* v9.6.7: Aviso/observação da semana — aparece no dashboard e produção */}
                     <div className="md:col-span-2">
                       <Label className="text-xs">Aviso da Semana (observação)</Label>
@@ -294,6 +318,22 @@ export default function CardapioPage() {
                               ? 'bg-amber-100 text-amber-700 text-[10px]'
                               : 'bg-purple-100 text-purple-700 text-[10px]'}>
                             B: {modo.label}
+                          </Badge>
+                        )
+                      })()}
+                      {/* v9.9.0: badge do modo interior especial (espelho do bifásico) */}
+                      {(() => {
+                        const modoI = LANCHE_INTERIOR_MODOS.find((m) => m.value === (entry.lanche_interior_modo || 'LANCHE'))
+                        if (!modoI) return null
+                        const isPaoI = entry.lanche_interior_modo === 'PAO_PADRAO' || entry.lanche_interior_modo === 'PAO_PROTEINA'
+                        const isNenhumI = entry.lanche_interior_modo === 'NENHUM'
+                        return (
+                          <Badge className={isNenhumI
+                            ? 'bg-gray-200 text-gray-700 text-[10px]'
+                            : isPaoI
+                              ? 'bg-amber-100 text-amber-700 text-[10px]'
+                              : 'bg-teal-100 text-teal-700 text-[10px]'}>
+                            I: {modoI.label}
                           </Badge>
                         )
                       })()}

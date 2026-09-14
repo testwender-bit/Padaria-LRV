@@ -63,27 +63,71 @@ export function ehDiaProducaoDoProduto(diaProd: string, produto: string): boolea
 //     PAO_PADRAO   → PADRAO (café da manhã + lanche da tarde com pão padrão)
 //     PAO_PROTEINA → PROTEINA (café da manhã + lanche da tarde com pão proteína)
 //     NENHUM       → SEMPAO (bifásica faz preparação na escola — só café da manhã)
+// - v9.9.0: escola INTERIOR marcada como "especial" (interior_especial=true
+//   na escola) segue a MESMA lógica da bifásica, mas usando o
+//   lanche_interior_modo da semana. Demais escolas do Interior seguem o
+//   tipo_pao da semana normalmente.
 // - Demais escolas: usa o tipo_pao da semana (PADRAO/PROTEINA/SEMPAO).
+// Nota: os novos parâmetros são OPCIONAIS para manter compatibilidade com
+// chamadas antigas que passam apenas 4 argumentos.
 export function tipoPaoEfetivoEscola(
   categoria: string,
   paoFixo: boolean | undefined,
   tipoPaoSemana: string,
-  lancheBifasicaModo: string
+  lancheBifasicaModo: string,
+  // v9.9.0: flag da escola (interior_especial) + modo da semana
+  interiorEspecial?: boolean,
+  lancheInteriorModo?: string
 ): string {
   // pao_fixo sempre vence (Bombeiros, CRAS, etc)
   if (paoFixo === true) return 'PADRAO'
 
-  // BIFASICA: tipo de pão depende do modo lanche bifásica da semana
-  if (categoria === 'BIFASICA') {
-    if (lancheBifasicaModo === 'PAO_PADRAO') return 'PADRAO'
-    if (lancheBifasicaModo === 'PAO_PROTEINA') return 'PROTEINA'
-    // LANCHE ou NENHUM: bifásica só recebe pão do café da manhã,
+  const isBifasica = categoria === 'BIFASICA'
+  // v9.9.0: interior especial — só se NÃO for bifásica (bifásica tem prioridade
+  // e usa o próprio modo; uma escola não deve ter as duas flags ao mesmo tempo)
+  const isInteriorEspecial = !isBifasica && interiorEspecial === true
+
+  // BIFASICA ou INTERIOR ESPECIAL: tipo de pão depende do modo lanche da semana
+  if (isBifasica || isInteriorEspecial) {
+    const modo = isInteriorEspecial ? (lancheInteriorModo || 'LANCHE') : lancheBifasicaModo
+    if (modo === 'PAO_PADRAO') return 'PADRAO'
+    if (modo === 'PAO_PROTEINA') return 'PROTEINA'
+    // LANCHE ou NENHUM: escola só recebe pão do café da manhã,
     // então usa SEMPAO (a quantidade cadastrada em SEMPAO é só café da manhã).
     return 'SEMPAO'
   }
 
   // Demais escolas: usa o tipo_pao da semana
   return tipoPaoSemana
+}
+
+// v9.9.0: Modo de lanche EFETIVO de uma escola na semana.
+// - BIFASICA: usa lanche_bifasica_modo da semana
+// - INTERIOR especial (interior_especial=true): usa lanche_interior_modo da semana
+// - Demais escolas: 'LANCHE' (mesmo lanche de todo mundo)
+export function modoLancheEfetivoEscola(
+  categoria: string,
+  interiorEspecial: boolean | undefined,
+  lancheBifasicaModo: string,
+  lancheInteriorModo: string
+): string {
+  if (categoria === 'BIFASICA') return lancheBifasicaModo || 'LANCHE'
+  if (interiorEspecial === true) return lancheInteriorModo || 'LANCHE'
+  return 'LANCHE'
+}
+
+// v9.9.0: true quando a escola NÃO deve receber item na planilha de Lanche
+// (está em modo PAO_PADRAO, PAO_PROTEINA ou NENHUM — o lanche dela é pão
+// francês já embutido no PfQuantidade do tipo correspondente, ou preparação
+// na escola). Aplica à bifásica E à escola do Interior especial.
+export function escolaPulaLanche(
+  categoria: string,
+  interiorEspecial: boolean | undefined,
+  lancheBifasicaModo: string,
+  lancheInteriorModo: string
+): boolean {
+  const modo = modoLancheEfetivoEscola(categoria, interiorEspecial, lancheBifasicaModo, lancheInteriorModo)
+  return modo === 'PAO_PADRAO' || modo === 'PAO_PROTEINA' || modo === 'NENHUM'
 }
 
 export interface ItemProducao {

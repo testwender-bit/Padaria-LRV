@@ -83,6 +83,11 @@ model Escola {
   // v9.5: marca escolas que recebem pão francês em quantidade fixa
   // (não segue a tabela padrão seg/ter/qua/qui/sex)
   pao_fixo      Boolean  @default(false)
+  // v9.9.0: marca UMA escola do Interior com modo de lanche especial.
+  // Comporta-se como BIFASICA no cardápio: segue o lanche_interior_modo da
+  // semana (mesmo lanche das outras escolas, pão francês padrão/proteína,
+  // ou nenhum). Escolas do Interior SEM esta flag seguem o cardápio normal.
+  interior_especial Boolean @default(false)
 
   // ── NOVOS CAMPOS: lista de compras / cardápio ──
   segmento        String  @default("REGULAR")  // CRECHE, PRE_ESCOLA, FUND_INICIAL, FUND_FINAL, REGULAR, INTEGRAL
@@ -186,6 +191,13 @@ model CardapioSemestral {
   // O campo lanche_bifasica_id foi mantido para compatibilidade (não usado
   // na nova lógica), mas o seletor foi removido da UI.
   lanche_bifasica_modo String @default("LANCHE")
+  // v9.9.0: modo do lanche da escola INTERIOR marcada como especial
+  // (interior_especial=true na escola). Valores idênticos ao bifásico:
+  //   LANCHE       = mesmo lanche das outras escolas (lanche_regular_id)
+  //   PAO_PADRAO   = pão francês padrão (usa PfQuantidade PADRAO da escola)
+  //   PAO_PROTEINA = pão francês proteína (usa PfQuantidade PROTEINA da escola)
+  //   NENHUM       = preparação na escola (não recebe pão nem lanche da padaria)
+  lanche_interior_modo String @default("LANCHE")
   obs                String?
 
   lanche_regular  Lanche? @relation("CardapioRegular", fields: [lanche_regular_id], references: [id], onDelete: SetNull)

@@ -22,9 +22,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Settings, Plus, Edit2, Save, Trash2, School, Wheat, Package, X, ListOrdered } from 'lucide-react'
+// v9.9.0: Cookie para a aba Lanches; LanchesManager é o antigo conteúdo de /lanches
+import { Settings, Plus, Edit2, Save, Trash2, School, Wheat, Package, X, ListOrdered, Cookie } from 'lucide-react'
 import { CATEGORIAS_ESCOLA, ROTAS, TIPOS_PAO } from '@/lib/unit-options'
 import { DIAS_SEMANA, DIAS_LABEL_CURTO } from '@/lib/date-utils'
+import LanchesManager from '@/components/lanches-manager'
 import { toast } from 'sonner'
 
 interface Escola {
@@ -46,6 +48,9 @@ interface Escola {
   // independente do cardápio da semana (útil para Outras Instituições como
   // Bombeiros, Ambulância, etc. que recebem PF toda semana).
   pao_fixo: boolean
+  // v9.9.0: escola do Interior com modo de lanche especial (comporta-se como
+  // bifásica: segue o "Modo Lanche Interior" definido no Cardápio Semestral)
+  interior_especial: boolean
   pf_quantidades: {
     id: string
     tipo_pao: string
@@ -79,6 +84,15 @@ export default function ConfiguracoesPage() {
   const [addTipoPao, setAddTipoPao] = useState<string>('PROTEINA')
   const [editEscolaDialogOpen, setEditEscolaDialogOpen] = useState(false)
   const [editEscolaId, setEditEscolaId] = useState<string | null>(null)
+  // v9.9.0: aba ativa das Configurações (suporta ?tab=lanches vindo do redirect
+  // da antiga página /lanches)
+  const [tabAtiva, setTabAtiva] = useState<string>('escolas')
+
+  useEffect(() => {
+    // v9.9.0: lê ?tab= da URL uma única vez no mount (ex: /configuracoes?tab=lanches)
+    const t = new URLSearchParams(window.location.search).get('tab')
+    if (t) setTabAtiva(t)
+  }, [])
 
   useEffect(() => {
     fetch('/api/escolas')
@@ -376,6 +390,27 @@ export default function ConfiguracoesPage() {
                   </div>
                 </label>
               </div>
+              {/* v9.9.0: Interior Especial — escola do Interior com modo de lanche
+                  especial (comporta-se como bifásica no cardápio) */}
+              <div className="p-3 bg-teal-50 border border-teal-200 rounded-md">
+                <label className="flex items-start gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editEscola.interior_especial === true}
+                    onChange={(e) => setEditEscola((prev) => ({ ...prev, interior_especial: e.target.checked }))}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <div className="font-medium text-teal-900">Interior Especial (modo lanche como bifásica)</div>
+                    <div className="text-xs text-teal-700 mt-0.5">
+                      Marque APENAS na escola do Interior escolhida para o modo especial. Ela passa a seguir o
+                      &quot;Modo Lanche Interior&quot; definido no Cardápio Semestral (mesmo lanche das outras
+                      escolas, pão francês padrão/proteína, ou nenhum). Demais escolas do Interior continuam
+                      seguindo o cardápio normal.
+                    </div>
+                  </div>
+                </label>
+              </div>
               <Button onClick={handleCreateEscola} className="w-full bg-[#1A3A5C]">Criar Escola</Button>
             </div>
           </DialogContent>
@@ -460,6 +495,27 @@ export default function ConfiguracoesPage() {
                   </div>
                 </label>
               </div>
+              {/* v9.9.0: Interior Especial — escola do Interior com modo de lanche
+                  especial (comporta-se como bifásica no cardápio) */}
+              <div className="p-3 bg-teal-50 border border-teal-200 rounded-md">
+                <label className="flex items-start gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editEscola.interior_especial === true}
+                    onChange={(e) => setEditEscola((prev) => ({ ...prev, interior_especial: e.target.checked }))}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <div className="font-medium text-teal-900">Interior Especial (modo lanche como bifásica)</div>
+                    <div className="text-xs text-teal-700 mt-0.5">
+                      Marque APENAS na escola do Interior escolhida para o modo especial. Ela passa a seguir o
+                      &quot;Modo Lanche Interior&quot; definido no Cardápio Semestral (mesmo lanche das outras
+                      escolas, pão francês padrão/proteína, ou nenhum). Demais escolas do Interior continuam
+                      seguindo o cardápio normal.
+                    </div>
+                  </div>
+                </label>
+              </div>
               <div>
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={editEscola.ativo !== false} onChange={(e) => setEditEscola((prev) => ({ ...prev, ativo: e.target.checked }))} />
@@ -472,7 +528,8 @@ export default function ConfiguracoesPage() {
         </Dialog>
       </div>
 
-      <Tabs defaultValue="escolas">
+      {/* v9.9.0: Tabs controlado — suporta ?tab=lanches vindo do redirect de /lanches */}
+      <Tabs value={tabAtiva} onValueChange={setTabAtiva}>
         <TabsList className="bg-amber-50/50">
           <TabsTrigger value="escolas" className="data-[state=active]:bg-[#1A3A5C] data-[state=active]:text-white">
             <School className="w-3 h-3 mr-1" /> Escolas
@@ -482,6 +539,10 @@ export default function ConfiguracoesPage() {
           </TabsTrigger>
           <TabsTrigger value="pcq" className="data-[state=active]:bg-[#1A3A5C] data-[state=active]:text-white">
             <Package className="w-3 h-3 mr-1" /> PCQ
+          </TabsTrigger>
+          {/* v9.9.0: aba Lanches — gestão movida da antiga página /lanches */}
+          <TabsTrigger value="lanches" className="data-[state=active]:bg-[#1A3A5C] data-[state=active]:text-white">
+            <Cookie className="w-3 h-3 mr-1" /> Lanches
           </TabsTrigger>
         </TabsList>
 
@@ -541,6 +602,8 @@ export default function ConfiguracoesPage() {
                           obs: escola.obs,
                           // v9.5.7: carrega pao_fixo para o checkbox
                           pao_fixo: (escola as any).pao_fixo === true,
+                          // v9.9.0: carrega interior_especial para o checkbox
+                          interior_especial: (escola as any).interior_especial === true,
                         })
                         setEditEscolaDialogOpen(true)
                       }}
@@ -824,6 +887,11 @@ export default function ConfiguracoesPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* v9.9.0: aba Lanches — conteúdo extraído de /lanches (lógica inalterada) */}
+        <TabsContent value="lanches" className="mt-4">
+          <LanchesManager />
         </TabsContent>
       </Tabs>
     </div>

@@ -6,7 +6,7 @@
 
 import { db } from '@/lib/db'
 import { inicioSemana, numeroSemana, anoSemana, dataISO, DIAS_SEMANA, type DiaSemana } from '@/lib/date-utils'
-import { PCQ_PRODUCAO, diaSemanaTexto } from '@/lib/producao-utils'
+import { PCQ_PRODUCAO, diaSemanaTexto, tipoPaoEfetivoEscola, escolaPulaLanche } from '@/lib/producao-utils'
 import { produtoZerado, type FeriadoData } from '@/lib/feriado-utils'
 import { addDays, format } from 'date-fns'
 
@@ -107,6 +107,11 @@ export async function calcularTotaisSemana(dataRef: string): Promise<TotaisSeman
   const nomePao = cardapioFinal?.nome_pao || 'Pão Francês'
   const lancheRegular = cardapioFinal?.lanche_regular
   const lancheBifasica = cardapioFinal?.lanche_bifasica
+  // v9.9.0: modos de lanche da semana (bifásica e interior especial).
+  // Necessários para que as escolas bifásica/interior-especial usem o tipo
+  // de pão e o lanche corretos, IGUAL à /api/producao.
+  const lancheBifasicaModo = (cardapioFinal as any)?.lanche_bifasica_modo || 'LANCHE'
+  const lancheInteriorModo = (cardapioFinal as any)?.lanche_interior_modo || 'LANCHE'
 
   // Fetch lanche distribution
   const lancheDistribuicao = lancheRegular || lancheBifasica
@@ -138,7 +143,19 @@ export async function calcularTotaisSemana(dataRef: string): Promise<TotaisSeman
 
   for (const escola of escolas) {
     if (!escola.recebe_pf) continue
-    const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPao)
+    // v9.9.0: usar tipoPaoEfetivoEscola() — alinha com /api/producao: bifásica
+    // e interior especial usam o tipo de pão do modo da semana (SEMPAO quando
+    // modo LANCHE/NENHUM), e pao_fixo força PADRAO. Fallback PADRAO igual à produção.
+    const tipoPaoEfetivo = tipoPaoEfetivoEscola(
+      escola.categoria,
+      (escola as any).pao_fixo,
+      tipoPao,
+      lancheBifasicaModo,
+      (escola as any).interior_especial === true,
+      lancheInteriorModo
+    )
+    const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEfetivo)
+      || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')
     if (!pfQ) continue
 
     const { zerado } = produtoZerado(feriadosMap, segundaStr, escola.categoria, 'PF')
@@ -175,7 +192,17 @@ export async function calcularTotaisSemana(dataRef: string): Promise<TotaisSeman
 
       for (const escola of escolas) {
         if (!escola.recebe_pf) continue
-        const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPao)
+        // v9.9.0: usar tipoPaoEfetivoEscola() — alinha com /api/producao (ver domingo)
+        const tipoPaoEfetivo = tipoPaoEfetivoEscola(
+          escola.categoria,
+          (escola as any).pao_fixo,
+          tipoPao,
+          lancheBifasicaModo,
+          (escola as any).interior_especial === true,
+          lancheInteriorModo
+        )
+        const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEfetivo)
+          || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')
         if (!pfQ) continue
 
         const { zerado } = produtoZerado(feriadosMap, dataEntrega, escola.categoria, 'PF')
@@ -249,10 +276,16 @@ export async function calcularTotaisSemana(dataRef: string): Promise<TotaisSeman
     }
 
     // Lanche: produzido D-0 (mesmo dia)
+    // v9.9.0: alinhado com /api/producao — bifásica e interior especial só
+    // recebem o lanche quando o modo da semana é LANCHE, usando a distribuição
+    // do lancheRegular (lanche_bifasica_id é legado).
     for (const escola of escolas) {
       if (!escola.recebe_lanche) continue
 
-      const lancheId = (escola.categoria === 'BIFASICA' ? lancheBifasica : lancheRegular)?.id
+      // v9.8.1/v9.9.0: bifásica e interior especial em modo PAO_*/NENHUM não recebem lanche
+      if (escolaPulaLanche(escola.categoria, (escola as any).interior_especial, lancheBifasicaModo, lancheInteriorModo)) continue
+
+      const lancheId = lancheRegular?.id
       if (!lancheId) continue
 
       const distKey = `${lancheId}_${escola.id}_${diaKey}`

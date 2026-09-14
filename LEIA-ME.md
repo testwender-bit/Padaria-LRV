@@ -1,110 +1,146 @@
-# Patch v9.8.8 — CONSOLIDADO: corrige erro de build na Vercel
+# Patch v9.9.0 — Modo Lanche Interior + Lanches em Configurações + Aviso editável na Produção
 
-## 🚨 Problema
+## 🎯 O que este patch faz (3 funcionalidades)
 
-A Vercel retornou erro de build:
-```
-./src/app/(app)/producao/page.tsx:714:47
-Type error: Property 'categoria' does not exist on type 'EscolaRomaneio'.
-```
+### 1️⃣ Aviso da Semana editável direto da Produção (mesmo quando vazio)
+**Antes:** se a semana não tinha aviso, a caixa nem aparecia na Produção — era preciso ir em
+/Cardapio, editar a semana e digitar o aviso lá.
+**Agora:** a caixa "Aviso da Semana" aparece SEMPRE que a semana tem cardápio cadastrado.
+Quando não há aviso, mostra "Nenhum aviso cadastrado para esta semana." com o botão ✏️
+para **adicionar** direto da Produção (o dialog já existente de salvar/editar é o mesmo).
+- Se a semana não tem cardápio cadastrado (matchExato falso), o banner continua oculto
+  e o botão avisa "Semana sem cardápio cadastrado" — comportamento seguro mantido.
 
-## 🔍 Causa
+### 2️⃣ Lanches movido para dentro de Configurações (ABA "Lanches")
+- O menu principal não tem mais o item "Lanches".
+- A gestão completa de lanches (cadastro, distribuição escola×dia, clonar, excluir,
+  mostrar inativos) agora é a **4ª aba** da página **/configuracoes** (junto com
+  Escolas, PF e PCQ), onde já ficam as demais configurações de quantidade.
+- A rota antiga **/lanches continua existindo** e redireciona para
+  `/configuracoes?tab=lanches` — nenhum link antigo quebra.
+- **ZERO risco de perda de dados:** é apenas reorganização de interface. Os dados
+  continuam nas mesmas tabelas (`Lanche`, `LancheDistribuicao`) e as mesmas APIs
+  (`/api/lanches`, `/api/lanches/distribuicao`) são usadas sem nenhuma mudança.
 
-O campo `categoria` foi adicionado em `EscolaRomaneio` no patch v9.8.5, mas o arquivo `src/lib/romaneio-utils.ts` não foi incluído nos patches v9.8.6, v9.8.7 — só as APIs e páginas foram atualizadas. Resultado: no seu Codespace, o `romaneio-utils.ts` está desatualizado (não tem `categoria`), mas a página `producao/page.tsx` (v9.8.7) tenta acessar `escola.categoria` → erro de tipo.
+### 3️⃣ Modo Lanche Interior (espelho completo do Modo Lanche Bifásica)
+Funciona EXATAMENTE como a bifásica, mas para **uma escola do Interior que você escolher**:
 
-## ✅ Solução
+**a) Flag na escola (Configurações → aba Escolas):**
+- Novo checkbox verde-água **"Interior Especial (modo lanche como bifásica)"** no formulário
+  de criar/editar escola. Marque APENAS na escola do Interior escolhida.
+- Demais escolas do Interior continuam seguindo o cardápio normal (não são afetadas).
 
-Este patch é **CONSOLIDADO** — inclui TODOS os arquivos relevantes das versões v9.8.0 até v9.8.7, garantindo que tudo esteja sincronizado. Aplicar este patch zera qualquer inconsistência.
+**b) Seletor no Cardápio Semestral (/cardapio):**
+- Novo campo **"Modo Lanche Interior"** ao editar cada semana, com as mesmas 4 opções do
+  bifásico: Mesmo lanche das outras escolas (LANCHE) / Pão Francês Padrão / Pão Francês
+  Proteína / Nenhum (preparação na escola).
+- Badge "I: ..." ao lado do badge "B: ..." na listagem (verde-água quando LANCHE).
 
-## 📦 Arquivos incluídos (10 arquivos)
+**c) Produção/Romaneio/Custos puxam corretamente (mesma lógica da bifásica):**
+- `tipoPaoEfetivoEscola()` agora também considera a flag: modo PAO_PADRAO → PF PADRAO;
+  PAO_PROTEINA → PF PROTEINA; LANCHE ou NENHUM → SEMPAO (quantidades de café da manhã).
+- Planilha de Lanche: escola interior especial em modo PAO_*/NENHUM **não recebe item**
+  na planilha de lanches (igual bifásica); em modo LANCHE recebe o mesmo lanche de todos.
+- Romaneio: mesmo comportamento; além disso, se a escola tiver PF Complemento (pf_comp)
+  cadastrado, ele é agrupado com o PCQ na impressão do motorista (como creches/bifásicas).
+- Controle de Estoque (previsão de insumos): alinhado com a produção (antes usava o
+  tipo de pão da semana para TODAS as escolas — agora usa o tipo efetivo igual à
+  /api/producao; isso também corrige a divergência antiga do cálculo para bifásicas).
+- ⚠️ Igual à bifásica: para a escola deixar de receber o PF "normal" do dia, cadastre as
+  quantidades de café da manhã dela no tipo **SEMPAO** (aba PF das Configurações) — o
+  sistema usa SEMPAO quando o modo é LANCHE/NENHUM. Em modo PAO_PADRAO/PAO_PROTEINA,
+  as quantidades saem dos tipos PADRAO/PROTEINA dela.
 
-| Arquivo | Função |
+## 📦 Arquivos incluídos (17)
+
+| Arquivo | Mudança |
 |---|---|
-| `prisma/schema.prisma` | Campo `lanche_bifasica_modo` (v9.8) |
-| `src/lib/unit-options.ts` | Constante `LANCHE_BIFASICA_MODOS` com 4 modos (v9.8/v9.8.2) |
-| `src/lib/producao-utils.ts` | `tipoPaoEfetivoEscola()` + `ehDiaProducaoDoProduto()` (v9.8.1/v9.8.2) |
-| `src/lib/romaneio-utils.ts` | **CAMPO `categoria` + `pf_comp` + `totais_pf_comp`** (v9.8.4/v9.8.5) ← o que faltava |
-| `src/app/api/cardapio/route.ts` | POST/PATCH aceitam `lanche_bifasica_modo` e `cardapio_id` (v9.8/v9.8.7) |
-| `src/app/api/producao/route.ts` | Lógica bifásica + PF Comp zerado com PCQ + feriados_semana (v9.8.x) |
-| `src/app/api/romaneio/route.ts` | `tipoPaoEfetivoEscola()` + pf_comp separado p/ creches/bifásicas (v9.8.5/v9.8.6/v9.8.7) |
-| `src/app/(app)/cardapio/page.tsx` | Seletor Modo Lanche Bifásica com 4 opções (v9.8/v9.8.2) |
-| `src/app/(app)/producao/page.tsx` | Edição aviso + bifásica tabela + PCQ agrupado + fonte maior (v9.8.x) |
-| `src/app/print.css` | Fonte ~30% maior + margens reduzidas (v9.8.2) |
+| `prisma/schema.prisma` | `Escola.interior_especial` + `CardapioSemestral.lanche_interior_modo` |
+| `src/lib/unit-options.ts` | Constante `LANCHE_INTERIOR_MODOS` |
+| `src/lib/producao-utils.ts` | `tipoPaoEfetivoEscola()` com interior + novos helpers `modoLancheEfetivoEscola()` / `escolaPulaLanche()` |
+| `src/lib/custo-utils.ts` | Previsão de insumos alinhada com a produção (tipo efetivo + modos) |
+| `src/lib/menu-config.ts` | Item "Lanches" removido do menu principal |
+| `src/app/api/cardapio/route.ts` | POST/PATCH aceitam `lanche_interior_modo` (validado) |
+| `src/app/api/escolas/route.ts` | POST/PUT persistem `interior_especial` |
+| `src/app/api/producao/route.ts` | Motor de cálculo respeita modo interior + retorna `lancheInteriorModo` |
+| `src/app/api/romaneio/route.ts` | Romaneio respeita modo interior + pf_comp agrupado + lanche alinhado com produção |
+| `src/app/(app)/cardapio/page.tsx` | Seletor "Modo Lanche Interior" + badge "I:" |
+| `src/app/(app)/producao/page.tsx` | Aviso da Semana: banner com botão adicionar/editar sempre visível (quando há cardápio) |
+| `src/app/(app)/configuracoes/page.tsx` | Aba "Lanches" + checkbox "Interior Especial" (criar e editar escola) |
+| `src/app/(app)/lanches/page.tsx` | Agora só redireciona para `/configuracoes?tab=lanches` |
+| `src/components/lanches-manager.tsx` | **NOVO** — conteúdo de /lanches extraído como componente (lógica idêntica) |
+| `scripts/migrar-lanche-interior-modo.ts` | **NOVO** — migração idempotente do novo campo |
+| `scripts/test-interior-modo-v990.ts` | **NOVO** — 20 testes da lógica (opcional, só para conferir) |
+| `LEIA-ME.md` | Este arquivo |
 
 ## 🚀 Como aplicar
 
 ```bash
 # 1. Backup + branch
 git stash
-git checkout -b fix/v9.8.8-consolidado
+git checkout -b feat/v9.9.0-modo-interior
 
 # 2. Extrair (sobrescreve todos os arquivos)
-unzip -o patch-v988.zip
+unzip -o patch-v990.zip
 
-# 3. Sincronizar banco (NÃO precisa se já aplicou v9.8 antes — só confirma)
+# 3. Sincronizar o banco (OBRIGATÓRIO — schema mudou)
 npx prisma generate
-# Só rode prisma db push se NUNCA aplicou v9.8 antes:
-# npx prisma db push
+npx prisma db push
 
-# 4. Se NUNCA rodou migração do lanche_bifasica_modo, rode UMA vez:
-# npx tsx scripts/migrar-lanche-bifasica-modo.ts
+# 4. Migração de dados (roda UMA vez — é idempotente, não faz mal rodar de novo)
+npx tsx scripts/migrar-lanche-interior-modo.ts
 
 # 5. Build + testar
 npm run build
 npm run dev
 ```
 
-## 🧪 Como testar
+> 💡 `prisma db push` já preenche o default `LANCHE` nas semanas existentes na maioria
+> dos casos; o script de migração é uma garantia extra (não altera nada se estiver ok).
 
-Após aplicar, faça um smoke test rápido:
+## 🧪 Como testar (checklist)
 
-1. **Build passa** — `npm run build` deve compilar sem erros
-2. **Produção carrega** — `/producao` mostra tabelas PF/PCQ/Lanche normalmente
-3. **Imprimir funciona** — clique Imprimir, gera PDF com fontes maiores
-4. **Editar aviso** — clique no lápis do "Aviso da Semana" → salva sem erro
-5. **Modo bifásica** — `/cardapio` → editar semana → seletor tem 4 opções (LANCHE/PAO_PADRAO/PAO_PROTEINA/NENHUM)
-6. **Romaneio motorista** — bifásicas e creches aparecem com `40 + PF 25` na tabela de PCQ
-7. **PCQ zerado** — zere PCQ de uma creche → na impressão, não aparece "0 + PF 25"
+1. **Build passa** — `npm run build` sem erros de tipo.
+2. **Aviso pela Produção:** em /producao numa semana SEM aviso → a caixa âmbar aparece com
+   "Nenhum aviso cadastrado" → clique ✏️ → digite → Salvar → banner aparece. Confira que
+   também aparece em /dashboard e que a edição continua funcionando.
+3. **Lanches em Configurações:** menu lateral não mostra mais "Lanches"; /configuracoes tem
+   a aba "Lanches" com os cartões e a matriz de distribuição funcionando. Acesse
+   manualmente /lanches → deve redirecionar para a aba.
+4. **Modo Interior:**
+   - /configuracoes → editar a escola do Interior desejada → marcar "Interior Especial" → salvar.
+   - /cardapio → editar uma semana → escolher "Modo Lanche Interior" = Pão Francês Padrão → salvar.
+   - /producao nessa semana → a escola flagada aparece na planilha de PF (tipo PADRAO) e
+     **some** da planilha de Lanches. Troque para "Mesmo lanche" → ela volta ao lanche normal
+     e o PF dela usa o tipo SEMPAO (café da manhã).
+   - /romaneio nessa semana → mesma consistência; se a escola tiver pf_comp, aparece
+     agrupado com o PCQ ("X + PF Y") na impressão.
+   - Escolas do Interior NÃO flagadas não mudam nada.
+5. **Estoque:** /custos → o custo estimado da semana considera a escola flagada conforme
+   o modo (pão em PAO_*, lanche em LANCHE).
 
 ## 🔄 Como commitar e voltar para main
 
 ```bash
-# 1. Adicionar todos os arquivos
 git add -A
-
-# 2. Commitar
-git commit -m "fix(v9.8.8): consolidar todos os patches v9.8.x para corrigir build Vercel"
-
-# 3. Voltar para main
+git commit -m "feat(v9.9.0): modo lanche interior (espelho bifasica) + lanches em configuracoes + aviso editavel na producao"
 git checkout main
-
-# 4. Merge do branch
-git merge fix/v9.8.8-consolidado
-
-# 5. Enviar para GitHub (Vercel faz deploy automático)
+git merge feat/v9.9.0-modo-interior
 git push origin main
-
-# 6. Apagar branch local
-git branch -d fix/v9.8.8-consolidado
+git branch -d feat/v9.9.0-modo-interior
 ```
 
-## 📝 Resumo do que cada versão incluiu
+## 📝 Notas técnicas
 
-| Versão | O que adicionou |
-|---|---|
-| v9.8.0 | Modo Lanche Bifásica (LANCHE/PAO_PADRAO/PAO_PROTEINA) + botão excluir lanches |
-| v9.8.1 | Bugfix: bifásica modo PAO_* afeta PF (não Lanche) |
-| v9.8.2 | Modo NENHUM + fonte maior na impressão + sem aviso na impressão |
-| v9.8.3 | Fonte das tabelas de lanches na impressão |
-| v9.8.4 | Romaneio motorista: agrupa PF Complemento com PCQ em creches |
-| v9.8.5 | Estende agrupamento para bifásicas |
-| v9.8.6 | Romaneio respeita `lanche_bifasica_modo` na tabela de PF |
-| v9.8.7 | PF Comp zerado junto com PCQ + editar aviso via `cardapio_id` |
-| **v9.8.8** | **CONSOLIDADO** — garante que todos os arquivos estão sincronizados |
-
-## ⚠️ Notas importantes
-
-- **Não pule este patch** se aplicou apenas alguns dos v9.8.x anteriores. Este patch sobrescreve todos os arquivos com a versão final correta.
-- **Sem mudança nova no banco** — se você já rodou `prisma db push` em alguma versão v9.8.x anterior, não precisa rodar de novo.
-- **Script de migração** — só rode `npx tsx scripts/migrar-lanche-bifasica-modo.ts` se NUNCA tiver rodado antes (é idempotente, pode rodar de novo sem problema).
-- **Após aplicar, faça commit e push** para a Vercel fazer deploy automaticamente.
+- Campos novos no banco: `Escola.interior_especial` (Boolean, default false) e
+  `CardapioSemestral.lanche_interior_modo` (String, default "LANCHE"). Ambos com default —
+  nenhuma informação existente é tocada.
+- `tipoPaoEfetivoEscola()` ganhou 2 parâmetros OPCIONAIS no fim (interiorEspecial,
+  lancheInteriorModo) — chamadas antigas com 4 argumentos continuam compilando.
+- Alinhamento romaneio×produção: o romaneio agora usa o `lancheRegular` para bifásicas
+  em modo LANCHE (igual à produção desde a v9.8) — elimina a divergência antiga; o campo
+  `lanche_bifasica_id` segue existindo no banco (legado, inalterado).
+- No Controle de Estoque, o PF de bifásicas agora também respeita o tipo efetivo
+  (SEMPAO em modo LANCHE), com fallback PADRAO igual à produção — as estimativas ficam
+  mais precisas; pode haver pequena variação nos valores estimados (é a correção).
+- Nenhuma rota de API mudou de assinatura; tudo é retrocompatível.

@@ -44,6 +44,9 @@ export async function POST(request: Request) {
         obs: body.obs,
         // v9.5.7: pao_fixo — sempre usar quantidade padrão de PF
         pao_fixo: body.pao_fixo === true,
+        // v9.9.0: interior_especial — escola do Interior com modo lanche especial
+        // (comporta-se como bifásica no cardápio)
+        interior_especial: body.interior_especial === true,
         // ── Novos campos v6 ──
         segmento: body.segmento || 'REGULAR',
         alunos_parcial: body.alunos_parcial || 0,
@@ -107,6 +110,9 @@ export async function PUT(request: Request) {
         obs: body.obs,
         // v9.5.7: pao_fixo — sempre usar quantidade padrão de PF
         pao_fixo: body.pao_fixo,
+        // v9.9.0: interior_especial — escola do Interior com modo lanche especial
+        // (undefined = não altera — importante para o "Renumerar" que não envia este campo)
+        interior_especial: body.interior_especial,
         // ── Novos campos v6 ──
         segmento: body.segmento,
         alunos_parcial: body.alunos_parcial,

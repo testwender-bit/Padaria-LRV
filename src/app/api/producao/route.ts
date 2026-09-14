@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { inicioSemana, numeroSemana, anoSemana, dataISO, DIAS_SEMANA, type DiaSemana } from '@/lib/date-utils'
 import { PCQ_PRODUCAO, type ItemProducao, type ProducaoDia, diaSemanaTexto } from '@/lib/producao-utils'
-import { tipoPaoEfetivoEscola } from '@/lib/producao-utils'
+import { tipoPaoEfetivoEscola, escolaPulaLanche } from '@/lib/producao-utils'
 import { produtoZerado, type FeriadoData } from '@/lib/feriado-utils'
 import { addDays, format } from 'date-fns'
 
@@ -85,6 +85,9 @@ export async function GET(request: Request) {
     //   PAO_PADRAO      = pão francês padrão (PfQuantidade PADRAO)
     //   PAO_PROTEINA    = pão francês proteína (PfQuantidade PROTEINA)
     const lancheBifasicaModo = (cardapioFinal as any)?.lanche_bifasica_modo || 'LANCHE'
+    // v9.9.0: modo do lanche da escola INTERIOR marcada como especial
+    // (flag interior_especial na escola). Mesma semântica do bifásico.
+    const lancheInteriorModo = (cardapioFinal as any)?.lanche_interior_modo || 'LANCHE'
 
     // Buscar distribuição de lanche
     // v9.8: sempre usa apenas lancheRegular — a bifásica segue a mesma
@@ -116,11 +119,14 @@ export async function GET(request: Request) {
       // v9.5.7: pao_fixo=true SEMPRE usa PADRAO (Bombeiros, CRAS, etc).
       // v9.8.1: BIFASICA usa lanche_bifasica_modo da semana para determinar
       // o tipo de pão (SEMPAO se for LANCHE, PADRAO/PROTEINA se for PAO_*).
+      // v9.9.0: escola INTERIOR especial segue a MESMA lógica com lanche_interior_modo.
       const tipoPaoEfetivo = tipoPaoEfetivoEscola(
         escola.categoria,
         (escola as any).pao_fixo,
         tipoPao,
-        lancheBifasicaModo
+        lancheBifasicaModo,
+        (escola as any).interior_especial === true,
+        lancheInteriorModo
       )
       const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEfetivo)
         || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')
@@ -252,11 +258,14 @@ export async function GET(request: Request) {
           // v9.5.7: pao_fixo=true SEMPRE usa PADRAO (Bombeiros, CRAS, etc).
           // v9.8.1: BIFASICA usa lanche_bifasica_modo da semana para determinar
           // o tipo de pão (SEMPAO se for LANCHE, PADRAO/PROTEINA se for PAO_*).
+          // v9.9.0: escola INTERIOR especial segue a MESMA lógica com lanche_interior_modo.
           const tipoPaoEfetivo = tipoPaoEfetivoEscola(
             escola.categoria,
             (escola as any).pao_fixo,
             tipoPao,
-            lancheBifasicaModo
+            lancheBifasicaModo,
+            (escola as any).interior_especial === true,
+            lancheInteriorModo
           )
           const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEfetivo)
             || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')
@@ -459,14 +468,14 @@ export async function GET(request: Request) {
       // tipo correspondente, processado no loop de PF acima) ou é preparação na
       // escola (não recebe nada da padaria). BIFASICA em modo LANCHE recebe o
       // mesmo lanche das outras escolas.
+      // v9.9.0: escola INTERIOR marcada como especial segue a MESMA regra,
+      // usando o lanche_interior_modo da semana (escolaPulaLanche cobre as duas).
       for (const escola of escolas) {
         if (!escola.recebe_lanche) continue
 
         // v9.8.1/v9.8.2: bifásica em modo PAO_* ou NENHUM não gera item na planilha de Lanche
-        if (escola.categoria === 'BIFASICA' &&
-            (lancheBifasicaModo === 'PAO_PADRAO' ||
-             lancheBifasicaModo === 'PAO_PROTEINA' ||
-             lancheBifasicaModo === 'NENHUM')) {
+        // v9.9.0: interior especial em modo PAO_* ou NENHUM também não gera
+        if (escolaPulaLanche(escola.categoria, (escola as any).interior_especial, lancheBifasicaModo, lancheInteriorModo)) {
           continue
         }
 
@@ -583,6 +592,8 @@ export async function GET(request: Request) {
       lancheBifasica: lancheBifasica?.nome || null,
       // v9.8: modo do lanche da tarde da BIFASICA (LANCHE | PAO_PADRAO | PAO_PROTEINA)
       lancheBifasicaModo: matchExato ? lancheBifasicaModo : 'LANCHE',
+      // v9.9.0: modo do lanche da escola INTERIOR especial (espelho da bifásica)
+      lancheInteriorModo: matchExato ? lancheInteriorModo : 'LANCHE',
       // v9.6.7: obs (aviso da semana) — SÓ retorna se matchExato (cardápio
       // encontrado por numero_semana_iso exato). Se caiu no fallback de
       // date range, não retorna obs (pode ser de outra semana).

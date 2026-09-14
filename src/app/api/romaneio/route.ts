@@ -4,7 +4,7 @@ import { inicioSemana, numeroSemana, anoSemana, dataISO, type DiaSemana, DIAS_SE
 import type { EscolaRomaneio, RomaneioMotorista } from '@/lib/romaneio-utils'
 import { diasVazios, diasVaziosStr, somaDias } from '@/lib/romaneio-utils'
 import { produtoZerado, type FeriadoData } from '@/lib/feriado-utils'
-import { tipoPaoEfetivoEscola } from '@/lib/producao-utils'  // v9.8.6
+import { tipoPaoEfetivoEscola, escolaPulaLanche } from '@/lib/producao-utils'  // v9.8.6 / v9.9.0
 import { addDays } from 'date-fns'
 
 export async function GET(request: Request) {
@@ -57,6 +57,9 @@ export async function GET(request: Request) {
     // bifásica use o tipo correto de PfQuantidade (PADRAO/PROTEINA/SEMPAO)
     // no romaneio, igual à API de produção.
     const lancheBifasicaModo = (cardapioFinal as any)?.lanche_bifasica_modo || 'LANCHE'
+    // v9.9.0: modo do lanche da escola INTERIOR marcada como especial
+    // (flag interior_especial na escola). Mesma semântica do bifásico.
+    const lancheInteriorModo = (cardapioFinal as any)?.lanche_interior_modo || 'LANCHE'
 
     // BUG FIX 1: Build feriados map for proper checking
     const feriadosMap = new Map<string, FeriadoData[]>()
@@ -117,20 +120,26 @@ export async function GET(request: Request) {
       // do motorista. Para demais escolas, comportamento antigo (PF + PF_COMP somados).
       // v9.8.5: Bifásicas também têm pf_comp separado (vai agrupado em PCQ), MAS
       // continuam aparecendo na tabela de PF com seu PF regular do café da manhã.
+      // v9.9.0: escola INTERIOR marcada como especial também agrupa pf_comp com
+      // PCQ (comportamento espelhado da bifásica).
       const isCreche = escola.categoria === 'CRECHE'
       const isBifasica = escola.categoria === 'BIFASICA'
-      const temPfCompSeparado = isCreche || isBifasica
+      const isInteriorEspecial = (escola as any).interior_especial === true && !isBifasica
+      const temPfCompSeparado = isCreche || isBifasica || isInteriorEspecial
 
       // PF + PF Complemento (integrado, sem distinção)
       if (escola.recebe_pf) {
         // v9.8.6: usar tipoPaoEfetivoEscola() — respeita lanche_bifasica_modo
         // para que a bifásica use o tipo correto de PfQuantidade (PADRAO/PROTEINA
         // quando está em modo PAO_*, mesmo se tipo_pao da semana for outro).
+        // v9.9.0: escola INTERIOR especial segue a mesma lógica com lanche_interior_modo.
         const tipoPaoEfetivo = tipoPaoEfetivoEscola(
           escola.categoria,
           (escola as any).pao_fixo,
           tipoPao,
-          lancheBifasicaModo
+          lancheBifasicaModo,
+          (escola as any).interior_especial === true,
+          lancheInteriorModo
         )
         const pfQ = escola.pf_quantidades.find((q) => q.tipo_pao === tipoPaoEfetivo)
           || escola.pf_quantidades.find((q) => q.tipo_pao === 'PADRAO')
@@ -191,17 +200,25 @@ export async function GET(request: Request) {
       }
 
       // Lanche
+      // v9.9.0: alinhado com /api/producao (v9.8) — bifásica e interior especial
+      // só recebem o lanche quando o modo da semana é LANCHE, e usam a
+      // distribuição do lancheRegular (o campo lanche_bifasica_id é legado e
+      // não é mais usado na distribuição desde a v9.8). Isso elimina a
+      // divergência antiga entre produção e romaneio para bifásicas.
       if (escola.recebe_lanche) {
-        const lancheId = (escola.categoria === 'BIFASICA' ? lancheBifasica : lancheRegular)?.id
-        if (lancheId) {
-          for (const dia of dias) {
-            const dataDia = diaDates[dia]
-            const distKey = `${lancheId}_${escola.id}_${dia}`
-            const qtdBase = lancheDistMap.get(distKey) || 0
-            const ajusteKey = `${escola.id}_${dia}_LANCHE`
-            const { zerado, feriado: feriadoNome } = produtoZerado(feriadosMap, dataDia, escola.categoria, 'LANCHE')
-            lanche[dia] = ajustesMap.has(ajusteKey) ? ajustesMap.get(ajusteKey)! : (zerado ? 0 : qtdBase)
-            if (zerado) feriado_lanche[dia] = feriadoNome
+        // v9.8.1/v9.9.0: bifásica e interior especial em modo PAO_*/NENHUM não recebem lanche
+        if (!escolaPulaLanche(escola.categoria, (escola as any).interior_especial, lancheBifasicaModo, lancheInteriorModo)) {
+          const lancheId = lancheRegular?.id
+          if (lancheId) {
+            for (const dia of dias) {
+              const dataDia = diaDates[dia]
+              const distKey = `${lancheId}_${escola.id}_${dia}`
+              const qtdBase = lancheDistMap.get(distKey) || 0
+              const ajusteKey = `${escola.id}_${dia}_LANCHE`
+              const { zerado, feriado: feriadoNome } = produtoZerado(feriadosMap, dataDia, escola.categoria, 'LANCHE')
+              lanche[dia] = ajustesMap.has(ajusteKey) ? ajustesMap.get(ajusteKey)! : (zerado ? 0 : qtdBase)
+              if (zerado) feriado_lanche[dia] = feriadoNome
+            }
           }
         }
       }

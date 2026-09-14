@@ -61,6 +61,18 @@ export const LANCHE_BIFASICA_MODOS = [
   { value: 'NENHUM', label: 'Nenhum (preparação na escola)' },
 ]
 
+// v9.9.0: Modos de lanche da escola INTERIOR marcada como "Interior Especial"
+// (flag interior_especial na escola, em /configuracoes). Espelha EXATAMENTE
+// o comportamento do LANCHE_BIFASICA_MODOS — mesma semântica, mesma tabela
+// de valores, mas aplicado APENAS à escola do Interior que tiver a flag
+// ligada. Demais escolas do Interior seguem o cardápio normal.
+export const LANCHE_INTERIOR_MODOS = [
+  { value: 'LANCHE', label: 'Mesmo lanche das outras escolas' },
+  { value: 'PAO_PADRAO', label: 'Pão Francês Padrão' },
+  { value: 'PAO_PROTEINA', label: 'Pão Francês Proteína' },
+  { value: 'NENHUM', label: 'Nenhum (preparação na escola)' },
+]
+
 export const TIPOS_FERIADO = [
   { value: 'NACIONAL', label: 'Nacional' },
   { value: 'ESTADUAL', label: 'Estadual' },
