@@ -27,7 +27,7 @@ import Link from 'next/link'
 import { formatarData, numeroSemana, anoSemana, inicioSemana, fimSemana, formatarPeriodoSemana, dataISO, DIAS_SEMANA, DIAS_LABEL_CURTO, DIAS_PRODUCAO, DIAS_LABEL_CURTO_PRODUCAO, type DiaSemana, type DiaProducao } from '@/lib/date-utils'
 import type { ProducaoDia, ItemProducao } from '@/lib/producao-utils'
 import { PF_PRODUCAO_PARA_ENTREGA, ehDiaProducaoDoProduto } from '@/lib/producao-utils'
-// v9.9.1: legenda discreta do PCQ para unidades Busca Própria — 1 forma = 60 pães
+// v9.9.1: legenda discreta do PCQ para — 1 forma = 50 pães
 import { ehBuscaPropria, legendaPcqPaes, FORMA_PCQ_PAES } from '@/lib/producao-utils'
 import { consolidarProducaoSemana } from '@/lib/producao-semana-utils'
 import type { RomaneioMotorista } from '@/lib/romaneio-utils'
@@ -391,7 +391,7 @@ export default function ProducaoPage() {
   const escolasLanche = consolidado.escolas.filter(e => e.total_lanche > 0 || (e as any).recebe_lanche === true).sort(sortEscolas)
 
   // v9.9.1: existem unidades Busca Própria com PCQ nesta semana? Usado para
-  // exibir a nota de legenda "(N) = pães · 1 forma = 60 pães" na tela e na
+  // exibir a nota de legenda "(N) = pães · 1 forma = 50 pães" na tela e na
   // impressão da página PCQ.
   const temBuscaPropriaPCQ = escolasPCQ.some((e) => ehBuscaPropria(e) && e.total_pcq > 0)
 
@@ -597,7 +597,7 @@ export default function ProducaoPage() {
             {/* v9.9.1: nota de legenda — só quando há unidade Busca Própria com PCQ */}
             {temBuscaPropriaPCQ && (
               <div style={{ fontSize: '7.5pt', color: '#777', marginTop: '1mm', fontStyle: 'italic' }}>
-                Legenda: (N) = pães de cachorro quente — 1 forma = {FORMA_PCQ_PAES} pães (unidades Busca Própria).
+                Legenda: (N) = pães de cachorro quente — 1 forma = {FORMA_PCQ_PAES} pães.
               </div>
             )}
 

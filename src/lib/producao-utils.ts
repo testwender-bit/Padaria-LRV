@@ -22,10 +22,10 @@ export const PCQ_PRODUCAO = {
 } as const
 
 // v9.9.1: Conversão do PCQ (pão de cachorro quente).
-// 1 forma inteira = 60 pães de cachorro quente. Usado na legenda discreta
+// 1 forma inteira = 50 pães de cachorro quente. Usado na legenda discreta
 // "(N)" exibida ao lado da quantidade das unidades Busca Própria
-// (ex.: "Bombeiro 1 (60)" = 1 forma = 60 pães).
-export const FORMA_PCQ_PAES = 60
+// (ex.: "Bombeiro 1 (50)" = 1 forma = 50 pães).
+export const FORMA_PCQ_PAES = 50
 
 // v9.9.1: true quando a unidade é "Busca Própria" (retira no balcão).
 // Considera os dois sinais que existem no sistema:
@@ -37,7 +37,7 @@ export function ehBuscaPropria(escola: { rota?: string | null; busca_propria?: b
 }
 
 // v9.9.1: Formata a conversão formas → pães para a legenda discreta.
-// Ex.: 1 → "(60)", 0.5 → "(30)", 1.5 → "(90)", 2 → "(120)"
+// Ex.: 1 → "(50)", 0.5 → "(25)", 1.5 → "(75)", 2 → "(100)"
 export function legendaPcqPaes(qtdFormas: number): string {
   const paes = qtdFormas * FORMA_PCQ_PAES
   const texto = Number.isInteger(paes)
