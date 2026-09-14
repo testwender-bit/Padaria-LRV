@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { inicioSemana, numeroSemana, anoSemana, dataISO, DIAS_SEMANA, type DiaSemana } from '@/lib/date-utils'
 import { PCQ_PRODUCAO, type ItemProducao, type ProducaoDia, diaSemanaTexto } from '@/lib/producao-utils'
 import { tipoPaoEfetivoEscola, escolaPulaLanche } from '@/lib/producao-utils'
+// v9.9.2: arredondarFormas — elimina resíduo binário no total de PCQ do dia
+import { arredondarFormas } from '@/lib/producao-utils'
 import { produtoZerado, type FeriadoData } from '@/lib/feriado-utils'
 import { addDays, format } from 'date-fns'
 
@@ -523,7 +525,11 @@ export async function GET(request: Request) {
         itens_pcq: itensPcq,
         itens_lanche: itensLanche,
         total_pf: itensPf.reduce((s, it) => s + it.quantidade, 0),
-        total_pcq: itensPcq.reduce((s, it) => s + it.quantidade, 0),
+        // v9.9.2: PCQ tem quantidades fracionárias (0.1, 0.2 formas das unidades
+        // Busca Própria) — o reduce acumula resíduo binário (ex.: 50.20000000000001).
+        // Arredonda para 2 casas para totais limpos (consumidores: view Por Dia,
+        // dashboard e snapshot do Histórico).
+        total_pcq: arredondarFormas(itensPcq.reduce((s, it) => s + it.quantidade, 0)),
         total_lanche: itensLanche.reduce((s, it) => s + it.quantidade, 0),
       })
     }

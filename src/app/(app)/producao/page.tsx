@@ -27,8 +27,9 @@ import Link from 'next/link'
 import { formatarData, numeroSemana, anoSemana, inicioSemana, fimSemana, formatarPeriodoSemana, dataISO, DIAS_SEMANA, DIAS_LABEL_CURTO, DIAS_PRODUCAO, DIAS_LABEL_CURTO_PRODUCAO, type DiaSemana, type DiaProducao } from '@/lib/date-utils'
 import type { ProducaoDia, ItemProducao } from '@/lib/producao-utils'
 import { PF_PRODUCAO_PARA_ENTREGA, ehDiaProducaoDoProduto } from '@/lib/producao-utils'
-// v9.9.1: legenda discreta do PCQ para — 1 forma = 50 pães
-import { ehBuscaPropria, legendaPcqPaes, FORMA_PCQ_PAES } from '@/lib/producao-utils'
+// v9.9.1: legenda discreta do PCQ para unidades Busca Própria — 1 forma = 50 pães
+// v9.9.2: formatarFormas — exibição pt-BR (vírgula) das formas nas tabelas de PCQ
+import { ehBuscaPropria, legendaPcqPaes, FORMA_PCQ_PAES, formatarFormas } from '@/lib/producao-utils'
 import { consolidarProducaoSemana } from '@/lib/producao-semana-utils'
 import type { RomaneioMotorista } from '@/lib/romaneio-utils'
 import { useAppStore } from '@/store/app-store'
@@ -391,7 +392,7 @@ export default function ProducaoPage() {
   const escolasLanche = consolidado.escolas.filter(e => e.total_lanche > 0 || (e as any).recebe_lanche === true).sort(sortEscolas)
 
   // v9.9.1: existem unidades Busca Própria com PCQ nesta semana? Usado para
-  // exibir a nota de legenda "(N) = pães · 1 forma = 50 pães" na tela e na
+  // exibir a nota de legenda "(N) = pães · 1 forma = 60 pães" na tela e na
   // impressão da página PCQ.
   const temBuscaPropriaPCQ = escolasPCQ.some((e) => ehBuscaPropria(e) && e.total_pcq > 0)
 
@@ -571,7 +572,7 @@ export default function ProducaoPage() {
                         <td key={d} className="print-col-dia">
                           {escola.pcq[d] > 0 ? (
                             <>
-                              {escola.pcq[d]}
+                              {formatarFormas(escola.pcq[d])}
                               {bp && <span style={{ fontSize: '8pt', color: '#888', marginLeft: '1px' }}>{legendaPcqPaes(escola.pcq[d])}</span>}
                             </>
                           ) : '—'}
@@ -587,7 +588,9 @@ export default function ProducaoPage() {
                 <tr className="print-row-subtotal">
                   <td className="print-col-escola">TOTAL GERAL ({pcqUnit.toUpperCase()})</td>
                   {DIAS_PRODUCAO.map((d) => (
-                    <td key={d} className="print-col-dia">{consolidado.totais_por_dia.pcq[d] || '—'}</td>
+                    // v9.9.2: total do dia formatado em pt-BR — antes exibia o número
+                    // cru (ex.: "50.20000000000001") por resíduo de ponto flutuante
+                    <td key={d} className="print-col-dia">{consolidado.totais_por_dia.pcq[d] > 0 ? formatarFormas(consolidado.totais_por_dia.pcq[d]) : '—'}</td>
                   ))}
                   <td className="print-col-total">{consolidado.total_pcq.toLocaleString('pt-BR')}</td>
                 </tr>
@@ -597,7 +600,7 @@ export default function ProducaoPage() {
             {/* v9.9.1: nota de legenda — só quando há unidade Busca Própria com PCQ */}
             {temBuscaPropriaPCQ && (
               <div style={{ fontSize: '7.5pt', color: '#777', marginTop: '1mm', fontStyle: 'italic' }}>
-                Legenda: (N) = pães de cachorro quente — 1 forma = {FORMA_PCQ_PAES} pães.
+                Legenda: (N) = pães de cachorro quente — 1 forma = {FORMA_PCQ_PAES} pães (unidades Busca Própria).
               </div>
             )}
 
@@ -1115,7 +1118,7 @@ export default function ProducaoPage() {
                   </thead>
                   <tbody>
                     {/* v9.9.1: unidades Busca Própria mostram a conversão em pães —
-                        "1 (60)" = 1 forma = 60 pães de cachorro quente */}
+                        "1 (50)" = 1 forma = 50 pães de cachorro quente */}
                     {escolasPCQ.map((escola) => {
                       const bp = ehBuscaPropria(escola)
                       return (
@@ -1138,7 +1141,7 @@ export default function ProducaoPage() {
                             onClick={() => openAjusteFromWeekly(escola.id, escola.nome, d, 'PCQ', escola.pcq[d])}>
                             {escola.pcq[d] > 0 ? (
                               <>
-                                {escola.pcq[d]}
+                                {formatarFormas(escola.pcq[d])}
                                 {bp && <span className="ml-0.5 text-[10px] text-muted-foreground font-normal">{legendaPcqPaes(escola.pcq[d])}</span>}
                               </>
                             ) : ''}
@@ -1156,7 +1159,9 @@ export default function ProducaoPage() {
                     <tr className="border-t-2 border-orange-200 bg-orange-50/50">
                       <td className="p-2 font-bold text-orange-900">Total PCQ</td>
                       {DIAS_PRODUCAO.map((d) => (
-                        <td key={d} className="p-2 text-center font-bold font-mono text-orange-900">{consolidado.totais_por_dia.pcq[d] || ''}</td>
+                        // v9.9.2: total do dia formatado em pt-BR — antes exibia o número
+                        // cru (ex.: "50.20000000000001") por resíduo de ponto flutuante
+                        <td key={d} className="p-2 text-center font-bold font-mono text-orange-900">{consolidado.totais_por_dia.pcq[d] > 0 ? formatarFormas(consolidado.totais_por_dia.pcq[d]) : ''}</td>
                       ))}
                       <td className="p-2 text-right font-bold font-mono text-orange-900 bg-orange-100">{consolidado.total_pcq.toLocaleString('pt-BR')}</td>
                     </tr>

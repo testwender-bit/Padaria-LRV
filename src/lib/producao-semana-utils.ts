@@ -3,6 +3,7 @@
 // ============================================================
 
 import type { ItemProducao, ProducaoDia } from './producao-utils'
+import { arredondarFormas } from './producao-utils'
 import type { DiaProducao } from './date-utils'
 import { DIAS_PRODUCAO } from './date-utils'
 
@@ -113,6 +114,22 @@ export function consolidarProducaoSemana(
     })
   })
 
+  // v9.9.2: Normaliza resíduos de ponto flutuante por escola ANTES de somar os
+  // totais do dia. Quantidades fracionárias de PCQ (0.1, 0.2, 0.5 formas —
+  // conversão 1 forma = 50 pães das unidades Busca Própria) acumuladas com
+  // " += " produzem valores como 0.30000000000000004, que vazavam para a
+  // linha "Total PCQ" da tela Semanal e da impressão ("50.20000000000001").
+  mapa.forEach((e) => {
+    DIAS_PRODUCAO.forEach((d) => {
+      e.pf[d] = arredondarFormas(e.pf[d])
+      e.pcq[d] = arredondarFormas(e.pcq[d])
+      e.lanche[d] = arredondarFormas(e.lanche[d])
+    })
+    e.total_pf = arredondarFormas(e.total_pf)
+    e.total_pcq = arredondarFormas(e.total_pcq)
+    e.total_lanche = arredondarFormas(e.total_lanche)
+  })
+
   const totais_por_dia = {
     pf: diasVazios(),
     pcq: diasVazios(),
@@ -132,6 +149,14 @@ export function consolidarProducaoSemana(
     total_lanche += e.total_lanche
   })
 
+  // v9.9.2: totais do dia e da semana também normalizados — mesmo somando
+  // valores já limpos, a acumulação binária pode reintroduzir resíduo.
+  DIAS_PRODUCAO.forEach((d) => {
+    totais_por_dia.pf[d] = arredondarFormas(totais_por_dia.pf[d])
+    totais_por_dia.pcq[d] = arredondarFormas(totais_por_dia.pcq[d])
+    totais_por_dia.lanche[d] = arredondarFormas(totais_por_dia.lanche[d])
+  })
+
   // v9.5.4: ordenação puramente SEQUENCIAL por ordem_rota → nome_curto.
   // NÃO agrupa por rota — o usuário quer 1, 2, 3, 4... independente do
   // motorista. Romaneio continua agrupado por rota (lógica própria).
@@ -140,5 +165,11 @@ export function consolidarProducaoSemana(
     return (a.nome_curto || '').localeCompare(b.nome_curto || '')
   })
 
-  return { escolas, totais_por_dia, total_pf, total_pcq, total_lanche }
+  return {
+    escolas,
+    totais_por_dia,
+    total_pf: arredondarFormas(total_pf),
+    total_pcq: arredondarFormas(total_pcq),
+    total_lanche: arredondarFormas(total_lanche),
+  }
 }

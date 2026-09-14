@@ -25,6 +25,7 @@ export const PCQ_PRODUCAO = {
 // 1 forma inteira = 50 pães de cachorro quente. Usado na legenda discreta
 // "(N)" exibida ao lado da quantidade das unidades Busca Própria
 // (ex.: "Bombeiro 1 (50)" = 1 forma = 50 pães).
+// v9.9.2: ajustado de 60 para 50 pães por forma.
 export const FORMA_PCQ_PAES = 50
 
 // v9.9.1: true quando a unidade é "Busca Própria" (retira no balcão).
@@ -38,12 +39,35 @@ export function ehBuscaPropria(escola: { rota?: string | null; busca_propria?: b
 
 // v9.9.1: Formata a conversão formas → pães para a legenda discreta.
 // Ex.: 1 → "(50)", 0.5 → "(25)", 1.5 → "(75)", 2 → "(100)"
+// v9.9.2: normaliza a entrada antes de multiplicar — se a quantidade vier
+// carregando resíduo binário (ex.: 0.30000000000000004), a conversão também
+// sairia com resíduo e cairia no caminho decimal da formatação. Arredondando
+// para 2 casas, o resultado volta a ser inteiro exato (0.3 × 50 = 15).
 export function legendaPcqPaes(qtdFormas: number): string {
-  const paes = qtdFormas * FORMA_PCQ_PAES
+  const paes = arredondarFormas(qtdFormas * FORMA_PCQ_PAES)
   const texto = Number.isInteger(paes)
     ? paes.toLocaleString('pt-BR')
     : paes.toLocaleString('pt-BR', { maximumFractionDigits: 1 })
   return `(${texto})`
+}
+
+// v9.9.2: Elimina resíduos de ponto flutuante em somas de quantidades
+// fracionárias (formas de PCQ). Em JavaScript, 0.1 + 0.2 = 0.30000000000000004
+// e a soma de muitas formas quebradas produzia totais como
+// "50.20000000000001" na linha "Total PCQ" da produção.
+// Estratégia: acumular em centésimos inteiros (0.1 → 10) e voltar para
+// decimal no final — inteiro é exato em ponto flutuante.
+export function arredondarFormas(valor: number): number {
+  return Math.round(valor * 100) / 100
+}
+
+// v9.9.2: Formata quantidade em formas para exibição pt-BR (vírgula decimal,
+// até 2 casas, sem zeros à direita). Usado nas células do PCQ da produção
+// (tela Semanal e impressão P3) para manter o padrão visual da coluna Total
+// (que já usava toLocaleString) e nunca mostrar resíduos binários.
+// Ex.: 18 → "18", 2.5 → "2,5", 0.1 → "0,1", 50.2 → "50,2"
+export function formatarFormas(valor: number): string {
+  return valor.toLocaleString('pt-BR', { maximumFractionDigits: 2 })
 }
 
 // Dia de produção do LANCHE = MESMO DIA de entrega (D-0)
