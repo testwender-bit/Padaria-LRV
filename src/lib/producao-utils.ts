@@ -21,6 +21,31 @@ export const PCQ_PRODUCAO = {
   sexta: { entregas: ['sexta'] as DiaSemana[], campo: 'prod_sexta', pf_comp: 'pf_comp_sexta' },
 } as const
 
+// v9.9.1: Conversão do PCQ (pão de cachorro quente).
+// 1 forma inteira = 60 pães de cachorro quente. Usado na legenda discreta
+// "(N)" exibida ao lado da quantidade das unidades Busca Própria
+// (ex.: "Bombeiro 1 (60)" = 1 forma = 60 pães).
+export const FORMA_PCQ_PAES = 60
+
+// v9.9.1: true quando a unidade é "Busca Própria" (retira no balcão).
+// Considera os dois sinais que existem no sistema:
+//  - rota === 'BUSCA_PROPRIA' (seletor "Rota" em Configurações → Escolas)
+//  - flag booleana busca_propria do cadastro (mantida por compatibilidade)
+export function ehBuscaPropria(escola: { rota?: string | null; busca_propria?: boolean | null }): boolean {
+  if (escola.busca_propria === true) return true
+  return (escola.rota || '').toUpperCase() === 'BUSCA_PROPRIA'
+}
+
+// v9.9.1: Formata a conversão formas → pães para a legenda discreta.
+// Ex.: 1 → "(60)", 0.5 → "(30)", 1.5 → "(90)", 2 → "(120)"
+export function legendaPcqPaes(qtdFormas: number): string {
+  const paes = qtdFormas * FORMA_PCQ_PAES
+  const texto = Number.isInteger(paes)
+    ? paes.toLocaleString('pt-BR')
+    : paes.toLocaleString('pt-BR', { maximumFractionDigits: 1 })
+  return `(${texto})`
+}
+
 // Dia de produção do LANCHE = MESMO DIA de entrega (D-0)
 export const LANCHE_PRODUCAO_PARA_ENTREGA: Record<string, DiaSemana> = {
   segunda: 'segunda',

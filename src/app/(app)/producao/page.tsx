@@ -27,6 +27,8 @@ import Link from 'next/link'
 import { formatarData, numeroSemana, anoSemana, inicioSemana, fimSemana, formatarPeriodoSemana, dataISO, DIAS_SEMANA, DIAS_LABEL_CURTO, DIAS_PRODUCAO, DIAS_LABEL_CURTO_PRODUCAO, type DiaSemana, type DiaProducao } from '@/lib/date-utils'
 import type { ProducaoDia, ItemProducao } from '@/lib/producao-utils'
 import { PF_PRODUCAO_PARA_ENTREGA, ehDiaProducaoDoProduto } from '@/lib/producao-utils'
+// v9.9.1: legenda discreta do PCQ para unidades Busca Própria — 1 forma = 60 pães
+import { ehBuscaPropria, legendaPcqPaes, FORMA_PCQ_PAES } from '@/lib/producao-utils'
 import { consolidarProducaoSemana } from '@/lib/producao-semana-utils'
 import type { RomaneioMotorista } from '@/lib/romaneio-utils'
 import { useAppStore } from '@/store/app-store'
@@ -388,6 +390,11 @@ export default function ProducaoPage() {
   const escolasPCQ = consolidado.escolas.filter(e => e.total_pcq > 0 || (e as any).recebe_pcq === true).sort(sortEscolasPCQ)
   const escolasLanche = consolidado.escolas.filter(e => e.total_lanche > 0 || (e as any).recebe_lanche === true).sort(sortEscolas)
 
+  // v9.9.1: existem unidades Busca Própria com PCQ nesta semana? Usado para
+  // exibir a nota de legenda "(N) = pães · 1 forma = 60 pães" na tela e na
+  // impressão da página PCQ.
+  const temBuscaPropriaPCQ = escolasPCQ.some((e) => ehBuscaPropria(e) && e.total_pcq > 0)
+
   // Datas para o romaneio (entrega: segunda-sexta)
   const datasEntrega: Record<DiaSemana, string> = {
     segunda: dataISO(inicio),
@@ -553,15 +560,30 @@ export default function ProducaoPage() {
                 </tr>
               </thead>
               <tbody>
-                {escolasPCQ.map((escola) => (
-                  <tr key={escola.id}>
-                    <td className="print-col-escola">{escola.nome_curto}</td>
-                    {DIAS_PRODUCAO.map((d) => (
-                      <td key={d} className="print-col-dia">{escola.pcq[d] > 0 ? escola.pcq[d] : '—'}</td>
-                    ))}
-                    <td className="print-col-total">{escola.total_pcq.toLocaleString('pt-BR')}</td>
-                  </tr>
-                ))}
+                {/* v9.9.1: unidades Busca Própria mostram a conversão em pães —
+                    "1 (60)" = 1 forma = 60 pães de cachorro quente */}
+                {escolasPCQ.map((escola) => {
+                  const bp = ehBuscaPropria(escola)
+                  return (
+                    <tr key={escola.id}>
+                      <td className="print-col-escola">{escola.nome_curto}</td>
+                      {DIAS_PRODUCAO.map((d) => (
+                        <td key={d} className="print-col-dia">
+                          {escola.pcq[d] > 0 ? (
+                            <>
+                              {escola.pcq[d]}
+                              {bp && <span style={{ fontSize: '8pt', color: '#888', marginLeft: '1px' }}>{legendaPcqPaes(escola.pcq[d])}</span>}
+                            </>
+                          ) : '—'}
+                        </td>
+                      ))}
+                      <td className="print-col-total">
+                        {escola.total_pcq.toLocaleString('pt-BR')}
+                        {bp && escola.total_pcq > 0 && <span style={{ fontSize: '8pt', color: '#888', marginLeft: '1px' }}>{legendaPcqPaes(escola.total_pcq)}</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
                 <tr className="print-row-subtotal">
                   <td className="print-col-escola">TOTAL GERAL ({pcqUnit.toUpperCase()})</td>
                   {DIAS_PRODUCAO.map((d) => (
@@ -571,6 +593,13 @@ export default function ProducaoPage() {
                 </tr>
               </tbody>
             </table>
+
+            {/* v9.9.1: nota de legenda — só quando há unidade Busca Própria com PCQ */}
+            {temBuscaPropriaPCQ && (
+              <div style={{ fontSize: '7.5pt', color: '#777', marginTop: '1mm', fontStyle: 'italic' }}>
+                Legenda: (N) = pães de cachorro quente — 1 forma = {FORMA_PCQ_PAES} pães (unidades Busca Própria).
+              </div>
+            )}
 
             {/* v9.8.2: Aviso da Semana removido da impressão */}
 
@@ -1085,7 +1114,11 @@ export default function ProducaoPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {escolasPCQ.map((escola) => (
+                    {/* v9.9.1: unidades Busca Própria mostram a conversão em pães —
+                        "1 (60)" = 1 forma = 60 pães de cachorro quente */}
+                    {escolasPCQ.map((escola) => {
+                      const bp = ehBuscaPropria(escola)
+                      return (
                       <tr key={escola.id} className="border-b border-muted/30 hover:bg-muted/20">
                         <td className="p-2 font-medium text-sm">{escola.nome_curto}</td>
                         {DIAS_PRODUCAO.map((d) => {
@@ -1103,14 +1136,23 @@ export default function ProducaoPage() {
                           <td key={d} className={`p-2 text-center font-mono text-sm cursor-pointer hover:bg-orange-50 rounded ${ajuste ? 'bg-amber-100 text-amber-700 font-semibold' : ''}`}
                             title={ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : 'Clique para ajustar'}
                             onClick={() => openAjusteFromWeekly(escola.id, escola.nome, d, 'PCQ', escola.pcq[d])}>
-                            {escola.pcq[d] > 0 ? escola.pcq[d] : ''}
+                            {escola.pcq[d] > 0 ? (
+                              <>
+                                {escola.pcq[d]}
+                                {bp && <span className="ml-0.5 text-[10px] text-muted-foreground font-normal">{legendaPcqPaes(escola.pcq[d])}</span>}
+                              </>
+                            ) : ''}
                             {ajuste && <span className="ml-0.5 text-[8px] text-amber-600">●</span>}
                           </td>
                           )
                         })}
-                        <td className="p-2 text-right font-mono font-semibold bg-orange-50 text-sm">{escola.total_pcq.toLocaleString('pt-BR')}</td>
+                        <td className="p-2 text-right font-mono font-semibold bg-orange-50 text-sm">
+                          {escola.total_pcq.toLocaleString('pt-BR')}
+                          {bp && escola.total_pcq > 0 && <span className="ml-0.5 text-[10px] text-muted-foreground font-normal">{legendaPcqPaes(escola.total_pcq)}</span>}
+                        </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                     <tr className="border-t-2 border-orange-200 bg-orange-50/50">
                       <td className="p-2 font-bold text-orange-900">Total PCQ</td>
                       {DIAS_PRODUCAO.map((d) => (
@@ -1120,6 +1162,12 @@ export default function ProducaoPage() {
                     </tr>
                   </tbody>
                 </table>
+                {/* v9.9.1: nota de legenda discreta — só quando há Busca Própria com PCQ */}
+                {temBuscaPropriaPCQ && (
+                  <p className="px-2 pb-2 text-[10px] text-muted-foreground">
+                    (N) = pães de cachorro quente · 1 forma = {FORMA_PCQ_PAES} pães · unidades Busca Própria
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1406,11 +1454,24 @@ function DiaProducaoCard({ dia, onAjuste }: { dia: ProducaoDia; onAjuste: (item:
                 <th className="p-2"></th>
               </tr></thead>
               <tbody>
-                {dia.itens_pcq.map((item) => (
+                {/* v9.9.1: unidades Busca Própria mostram a conversão em pães —
+                    "1 (60)" = 1 forma = 60 pães de cachorro quente */}
+                {dia.itens_pcq.map((item) => {
+                  const bp = ehBuscaPropria(item)
+                  return (
                   <tr key={item.escola_id} className="border-b border-muted/30 hover:bg-muted/20 cursor-pointer" onClick={() => onAjuste(item)}>
                     <td className="p-2 font-medium">{item.escola_curto}</td>
                     <td className="p-2 text-right font-mono">
-                      {item.zerado ? <span className="line-through text-red-400">{item.quantidade}</span> : <span className={item.ajustado ? 'text-amber-600 font-semibold' : ''}>{item.quantidade.toLocaleString('pt-BR')}</span>}
+                      {item.zerado ? (
+                        <span className="line-through text-red-400">{item.quantidade}</span>
+                      ) : (
+                        <>
+                          <span className={item.ajustado ? 'text-amber-600 font-semibold' : ''}>{item.quantidade.toLocaleString('pt-BR')}</span>
+                          {bp && item.quantidade > 0 && (
+                            <span className="ml-1 text-[10px] text-muted-foreground font-normal">{legendaPcqPaes(item.quantidade)}</span>
+                          )}
+                        </>
+                      )}
                     </td>
                     <td className="p-2 text-center">
                       {item.zerado && <Badge variant="destructive" className="text-[10px]"><AlertTriangle className="w-3 h-3 mr-0.5" /> Feriado</Badge>}
@@ -1418,7 +1479,8 @@ function DiaProducaoCard({ dia, onAjuste }: { dia: ProducaoDia; onAjuste: (item:
                     </td>
                     <td className="p-2"><Button variant="ghost" size="sm" className="h-6 text-[10px] text-muted-foreground">Ajustar</Button></td>
                   </tr>
-                ))}
+                  )
+                })}
                 <tr className="border-t-2 border-orange-200 bg-orange-50/50">
                   <td className="p-2 font-bold text-orange-900">Total PCQ</td>
                   <td className="p-2 text-right font-bold text-orange-900">{dia.total_pcq.toLocaleString('pt-BR')}</td>
@@ -1426,6 +1488,12 @@ function DiaProducaoCard({ dia, onAjuste }: { dia: ProducaoDia; onAjuste: (item:
                 </tr>
               </tbody>
             </table>
+            {/* v9.9.1: nota de legenda discreta — só quando há Busca Própria com PCQ neste dia */}
+            {dia.itens_pcq.some((i) => ehBuscaPropria(i) && !i.zerado && i.quantidade > 0) && (
+              <p className="px-2 pb-2 text-[10px] text-muted-foreground">
+                (N) = pães de cachorro quente · 1 forma = {FORMA_PCQ_PAES} pães · unidades Busca Própria
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
