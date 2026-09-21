@@ -1501,17 +1501,25 @@ export default function CardapioEditorPage() {
       .filter(c => c.count > 0)
   }, [preparacoes])
 
-  // v9.9.4: lista agrupada por categoria (ordem canônica), para exibição organizada
+  // v9.9.5: preparações selecionadas (já no cardápio + marcadas agora) na ORDEM DA LISTA — exibidas em bloco fixo no topo
+  const selecionadasNaOrdem = useMemo(() => {
+    return preparacoes.filter(p => addSelectedPrepIds.has(p.id))
+  }, [preparacoes, addSelectedPrepIds])
+
+  // v9.9.4: lista agrupada por categoria (ordem canônica) — v9.9.5: exclui as selecionadas (elas ficam no bloco do topo)
   const gruposPreparacoes = useMemo(() => {
     return PREPARACAO_CATEGORIAS
       .map(c => ({
         categoria: c.value,
         label: c.label,
         cor: c.cor,
-        itens: filteredPreparacoes.filter(p => getCategoriaInfo(p.categoria || 'PREPARACAO').value === c.value),
+        itens: filteredPreparacoes.filter(p =>
+          !addSelectedPrepIds.has(p.id) &&
+          getCategoriaInfo(p.categoria || 'PREPARACAO').value === c.value
+        ),
       }))
       .filter(g => g.itens.length > 0)
-  }, [filteredPreparacoes])
+  }, [filteredPreparacoes, addSelectedPrepIds])
 
   if (loading) {
     return (
@@ -1537,6 +1545,100 @@ export default function CardapioEditorPage() {
 
   const totalSemanas = cardapio.semanas.length || 22
   const faseInfo = FASES_ESCOLARES.find(f => f.value === cardapio.fase_escolar)
+
+  // v9.9.5: render de uma linha de preparação — usado no bloco "Selecionadas" (topo) e nos grupos por categoria
+  const renderPrepRow = (p: Preparacao) => {
+    // v9.6.4: respeita override manual de alergenos
+    const bloqueados = parseAlergenosArrayLocal((p as any).alergenos_bloqueados)
+    const forcados = parseAlergenosArrayLocal((p as any).alergenos_forcados)
+    const alergenos = detectarAlergenosPreparacaoComOverride(
+      p.ingredientes.map((ing) => ({
+        nome: ing.alimento.nome,
+        grupo: ing.alimento.grupo,
+      })),
+      bloqueados,
+      forcados,
+    )
+    // v9.9.4: kcal por porção + flag "já estava no cardápio"
+    const kcal = Math.round(kcalPreparacao(p))
+    const jaNoCardapio = addExistingItems.has(p.id)
+    return (
+      <label
+        key={p.id}
+        onClick={(e) => {
+          // v9.9.4: linha inteira clicável para marcar/desmarcar
+          e.preventDefault()
+          togglePrepSelection(p.id)
+        }}
+        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer transition-colors text-xs ${
+          addSelectedPrepIds.has(p.id)
+            ? 'bg-[#1A3A5C]/10 border border-[#1A3A5C]/20'
+            : 'hover:bg-gray-50 border border-transparent'
+        }`}
+      >
+        <Checkbox
+          checked={addSelectedPrepIds.has(p.id)}
+          className="flex-shrink-0 pointer-events-none"
+        />
+        {p.favorita && (
+          <Star className="w-3 h-3 text-[#D4A017] flex-shrink-0 fill-[#D4A017]" />
+        )}
+        <span className="font-medium truncate flex-1 min-w-0" title={p.nome}>{p.nome}</span>
+        {jaNoCardapio && (
+          <span
+            className="px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-[8px] font-bold text-amber-700 flex-shrink-0 whitespace-nowrap"
+            title="Já está nesta refeição — desmarque para remover"
+          >
+            no cardápio
+          </span>
+        )}
+        {alergenos.length > 0 && (
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            {alergenos.map((sigla) => (
+              <span
+                key={sigla}
+                className="inline-flex items-center justify-center w-4 h-4 rounded-sm border border-gray-300 text-[8px] font-bold text-gray-600"
+                title={sigla}
+              >
+                {sigla}
+              </span>
+            ))}
+          </div>
+        )}
+        {/* v9.9.5: cluster compacto kcal · ingredientes · usos — não é cortado pela largura da janela */}
+        <span className="flex items-center gap-1 text-[9px] flex-shrink-0 whitespace-nowrap">
+          <span
+            className="flex items-center gap-0.5 text-orange-500 font-medium"
+            title={`≈ ${kcal} kcal por porção (fase ${faseInfo?.label || 'atual'})`}
+          >
+            <Flame className="w-2.5 h-2.5" />
+            {kcal} kcal
+          </span>
+          <span className="text-muted-foreground" title={`${p.ingredientes.length} ingrediente(s)`}>
+            · {p.ingredientes.length} ing.
+          </span>
+          {p.vezes_usada > 0 && (
+            <span className="text-muted-foreground" title={`Usada ${p.vezes_usada}× no semestre`}>
+              · {p.vezes_usada}×
+            </span>
+          )}
+        </span>
+        {/* v8: Botão editar preparação — abre sub-dialog (não abre nova aba) */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            openEditPrepInDialog(p.id)
+          }}
+          className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded p-0.5 flex-shrink-0 transition-colors"
+          title="Editar preparação"
+        >
+          <Pencil className="w-3 h-3" />
+        </button>
+      </label>
+    )
+  }
 
   return (
     <div className="space-y-3 max-w-[1600px] mx-auto">
@@ -2158,7 +2260,8 @@ export default function CardapioEditorPage() {
 
       {/* ═══ Add Preparações Dialog (Multi-Select) ═══ */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col gap-3 p-5 overflow-hidden">
+        {/* v9.9.5: sm:max-w-3xl corrige largura real (o sm:max-w-lg do shadcn estava sobrepondo o max-w-2xl e cortava as informações após "ing.") */}
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col gap-3 p-5 overflow-hidden">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-[#1A3A5C] text-sm">
               {addExistingItems.size > 0 ? 'Editar Preparações da Refeição' : 'Adicionar Preparações'}
@@ -2291,14 +2394,26 @@ export default function CardapioEditorPage() {
               </div>
             )}
 
-            {/* Preparations list — v9.9.4: agrupada por categoria, com kcal e modo editar */}
-            <ScrollArea className="flex-1 min-h-0 border rounded-lg">
+            {/* Preparations list — v9.9.5: scroll nativo sempre visível + bloco "Selecionadas" fixo no topo */}
+            <div className="flex-1 min-h-0 overflow-y-auto border rounded-lg bg-white [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-track]:bg-slate-100/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300">
               <div className="p-1">
-                {filteredPreparacoes.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-8">
-                    {addPrepSearch ? 'Nenhuma preparação encontrada' : 'Nenhuma preparação cadastrada'}
-                  </p>
-                ) : (
+                {/* v9.9.5: selecionadas (existentes + marcadas agora) sempre no topo, na ordem da lista */}
+                {selecionadasNaOrdem.length > 0 && (
+                  <div className="mb-1.5 rounded-md border border-[#1A3A5C]/25 bg-[#1A3A5C]/[0.04] overflow-hidden">
+                    <div className="flex items-center gap-1.5 px-2 py-1 bg-[#1A3A5C]/10 border-b border-[#1A3A5C]/10">
+                      <Check className="w-3 h-3 text-[#1A3A5C] flex-shrink-0" />
+                      <span className="text-[9px] font-bold uppercase tracking-wide text-[#1A3A5C]">
+                        Selecionadas ({selecionadasNaOrdem.length})
+                      </span>
+                      <span className="text-[9px] text-[#1A3A5C]/50">— sempre no topo, na ordem da lista</span>
+                    </div>
+                    <div className="p-0.5">
+                      {selecionadasNaOrdem.map((p) => renderPrepRow(p))}
+                    </div>
+                  </div>
+                )}
+
+                {gruposPreparacoes.length > 0 ? (
                   gruposPreparacoes.map((grupo) => (
                     <div key={grupo.categoria}>
                       {/* Cabeçalho da categoria */}
@@ -2307,101 +2422,20 @@ export default function CardapioEditorPage() {
                         <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">{grupo.label}</span>
                         <span className="text-[9px] text-muted-foreground/70">({grupo.itens.length})</span>
                       </div>
-                      {grupo.itens.map((p) => {
-                        // v9.6.4: respeita override manual de alergenos
-                        const bloqueados = parseAlergenosArrayLocal((p as any).alergenos_bloqueados)
-                        const forcados = parseAlergenosArrayLocal((p as any).alergenos_forcados)
-                        const alergenos = detectarAlergenosPreparacaoComOverride(
-                          p.ingredientes.map((ing) => ({
-                            nome: ing.alimento.nome,
-                            grupo: ing.alimento.grupo,
-                          })),
-                          bloqueados,
-                          forcados,
-                        )
-                        // v9.9.4: kcal por porção + flag "já estava no cardápio"
-                        const kcal = Math.round(kcalPreparacao(p))
-                        const jaNoCardapio = addExistingItems.has(p.id)
-                        return (
-                          <label
-                            key={p.id}
-                            onClick={(e) => {
-                              // v9.9.4: linha inteira clicável para marcar/desmarcar
-                              e.preventDefault()
-                              togglePrepSelection(p.id)
-                            }}
-                            className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors text-xs ${
-                              addSelectedPrepIds.has(p.id)
-                                ? 'bg-[#1A3A5C]/10 border border-[#1A3A5C]/20'
-                                : 'hover:bg-gray-50 border border-transparent'
-                            }`}
-                          >
-                            <Checkbox
-                              checked={addSelectedPrepIds.has(p.id)}
-                              className="flex-shrink-0 pointer-events-none"
-                            />
-                            {p.favorita && (
-                              <Star className="w-3 h-3 text-[#D4A017] flex-shrink-0 fill-[#D4A017]" />
-                            )}
-                            <span className="font-medium truncate flex-1 min-w-0">{p.nome}</span>
-                            {jaNoCardapio && (
-                              <span
-                                className="px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-[8px] font-bold text-amber-700 flex-shrink-0 whitespace-nowrap"
-                                title="Já está nesta refeição — desmarque para remover"
-                              >
-                                no cardápio
-                              </span>
-                            )}
-                            {alergenos.length > 0 && (
-                              <div className="flex items-center gap-0.5 flex-shrink-0">
-                                {alergenos.map((sigla) => (
-                                  <span
-                                    key={sigla}
-                                    className="inline-flex items-center justify-center w-4 h-4 rounded-sm border border-gray-300 text-[8px] font-bold text-gray-600"
-                                    title={sigla}
-                                  >
-                                    {sigla}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                            {/* v9.9.4: kcal por porção (fase do cardápio) */}
-                            <span
-                              className="flex items-center gap-0.5 text-[9px] text-orange-500 font-medium flex-shrink-0"
-                              title={`≈ ${kcal} kcal por porção (fase ${faseInfo?.label || 'atual'})`}
-                            >
-                              <Flame className="w-2.5 h-2.5" />
-                              {kcal} kcal
-                            </span>
-                            <span className="text-[10px] text-muted-foreground flex-shrink-0">
-                              {p.ingredientes.length} ing.
-                            </span>
-                            {p.vezes_usada > 0 && (
-                              <span className="text-[9px] text-muted-foreground flex-shrink-0">
-                                {p.vezes_usada}×
-                              </span>
-                            )}
-                            {/* v8: Botão editar preparação — abre sub-dialog (não abre nova aba) */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                openEditPrepInDialog(p.id)
-                              }}
-                              className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded p-0.5 flex-shrink-0 transition-colors"
-                              title="Editar preparação"
-                            >
-                              <Pencil className="w-3 h-3" />
-                            </button>
-                          </label>
-                        )
-                      })}
+                      {grupo.itens.map((p) => renderPrepRow(p))}
                     </div>
                   ))
+                ) : selecionadasNaOrdem.length > 0 ? (
+                  <p className="text-[10px] text-muted-foreground text-center py-4">
+                    Todas as preparações do filtro atual já estão selecionadas (bloco acima)
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center py-8">
+                    {addPrepSearch ? 'Nenhuma preparação encontrada' : 'Nenhuma preparação cadastrada'}
+                  </p>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           </div>
           <DialogFooter className="gap-2 flex-shrink-0">
             {/* v8: Botão para criar nova preparação — abre sub-dialog (não abre nova aba) */}
