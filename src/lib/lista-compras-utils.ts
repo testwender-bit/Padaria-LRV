@@ -155,6 +155,8 @@ export const LISTA_CANONICA: ItemCanonico[] = [
   { nome: 'Azeite de dendê (200ml)', categoria: 'MERCEARIA_SECA', unidade: 'unid' },
   { nome: 'Bebida vegetal de aveia', categoria: 'MERCEARIA_SECA', unidade: 'L' },
   { nome: 'Biscoito água e sal (345g)', categoria: 'MERCEARIA_SECA', unidade: 'unid' },
+  // v9.9.3: item da licitação que faltava na lista canônica
+  { nome: 'Biscoito de Arroz (90g)', categoria: 'MERCEARIA_SECA', unidade: 'unid' },
   { nome: 'Biscoito de polvilho', categoria: 'MERCEARIA_SECA', unidade: 'kg' },
   { nome: 'Biscoito maisena (345g)', categoria: 'MERCEARIA_SECA', unidade: 'unid' },
   { nome: 'Biscoito sem glúten (150g)', categoria: 'MERCEARIA_SECA', unidade: 'unid' },
@@ -258,11 +260,15 @@ const MAPA_VARIACOES: Record<string, string> = {
   'cheiro verde': 'Cheiro verde',
   'salsa': 'Cheiro verde',  // alias
   'salsinha': 'Cheiro verde',  // alias
+  // v9.9.3: TACO "Cebolinha, crua" caía em OUTROS — cheiro verde = salsa + cebolinha
+  'cebolinha': 'Cheiro verde',
   'chuchu': 'Chuchu',
   'couve manteiga': 'Couve Manteiga',
   'couve': 'Couve Manteiga',  // alias
   'ervilha verde congelada': 'Ervilha verde congelada',
   'ervilha congelada': 'Ervilha verde congelada',
+  // v9.9.3: genérico "ervilha" caía em OUTROS — default = congelada (item da licitação)
+  'ervilha': 'Ervilha verde congelada',
   'mandioca descascada': 'Mandioca descascada',
   'mandioca': 'Mandioca descascada',  // alias
   'aipim': 'Mandioca descascada',  // alias
@@ -321,37 +327,65 @@ const MAPA_VARIACOES: Record<string, string> = {
   'margarina sem lactose': 'Margarina sem lactose',
   'margarina sem leite': 'Margarina sem leite',
   'nata': 'Nata',
-  'queijo': 'Nata',  // alias aproximado (se aparecer, vai para Nata)
-  'requeijao': 'Nata',  // alias
+  // v9.9.3: 'queijo' e 'requeijao' REMOVIDOS — eram mapeados para Nata,
+  // o que somava queijo na mesma linha da nata (produtos diferentes).
+  // Agora caem em OUTROS com o nome honesto (Queijo não está na licitação).
 
   // Carnes
+  // v9.9.3: chaves com "ª" (TACO usa "de 1ª"/"de 2ª") e cortes completos —
+  // antes, com 'bovina'/'suina'/'em cubos'/'em isca' sendo descartados como
+  // descritores, TODAS as carnes colapsavam em "carne" → bovina 2ª cubo.
   'carne bovina de 1': 'Carne bovina de 1ª (patinho)',
   'carne bovina de 1a': 'Carne bovina de 1ª (patinho)',
+  'carne bovina de 1ª': 'Carne bovina de 1ª (patinho)',
   'patinho': 'Carne bovina de 1ª (patinho)',
   'carne bovina de 2 isca': 'Carne bovina de 2ª em isca',
   'carne bovina isca': 'Carne bovina de 2ª em isca',
   'isca bovina': 'Carne bovina de 2ª em isca',
+  'carne bovina de 2ª em isca': 'Carne bovina de 2ª em isca',
+  'carne bovina de 2 em isca': 'Carne bovina de 2ª em isca',
   'carne bovina de 2 cubo': 'Carne bovina de 2ª em cubo',
   'carne bovina em cubos': 'Carne bovina de 2ª em cubo',
+  'carne bovina de 2ª em cubos': 'Carne bovina de 2ª em cubo',
+  'carne bovina de 2 em cubos': 'Carne bovina de 2ª em cubo',
+  'carne bovina de 2': 'Carne bovina de 2ª em cubo',
+  'carne bovina de 2ª': 'Carne bovina de 2ª em cubo',
+  'carne bovina de 2a': 'Carne bovina de 2ª em cubo',
   'carne bovina moida': 'Carne bovina moída',
+  'carne bovina moída': 'Carne bovina moída',
   'carne moida': 'Carne bovina moída',
   'patinho moido': 'Carne bovina moída',
   'carne de ovino': 'Carne de Ovino',
   'carne ovina': 'Carne de Ovino',
+  'carne ovino': 'Carne de Ovino',
+  // ('carneiro' já mapeado na seção v9.6.2)
   'carne suina': 'Carne Suína',
-  'pernil': 'Carne Suína',  // alias
+  'pernil': 'Carne Suína',
+  'pernil suino': 'Carne Suína',
+  'lombo suino': 'Carne Suína',
+  'lombo': 'Carne Suína',
   'coxa e sobrecoxa': 'Coxa e sobrecoxa',
   'frango coxa sobrecoxa': 'Coxa e sobrecoxa',
-  'coxa e sobrecoxa s osso': 'Coxa e sobrecoxa S/ osso',
+  // v9.9.3: "S/ osso" é produto de compra DISTINTO de "Coxa e sobrecoxa" na
+  // licitação — não pode colapsar (antes, com 'sem osso' descartado, os dois
+  // viravam o mesmo item)
+  'coxa e sobrecoxa s/ osso': 'Coxa e sobrecoxa S/ osso',
   'coxa e sobrecoxa sem osso': 'Coxa e sobrecoxa S/ osso',
+  'coxa e sobrecoxa com osso': 'Coxa e sobrecoxa',
   'figado bovino': 'Fígado Bovino',
   'figado': 'Fígado Bovino',  // alias
   'file de peito de frango': 'Filé de peito de frango',
   'peito de frango': 'Filé de peito de frango',
   'file de frango': 'Filé de peito de frango',
+  'frango peito sem osso': 'Filé de peito de frango',
+  // v9.9.3: "peito de frango ..." com qualificadores extras não pode cair no
+  // genérico 'frango' (que vai para Coxa e sobrecoxa)
+  'peito de frango sem pele': 'Filé de peito de frango',
   'file de tilapia': 'Filé de tilápia (800g)',
   'tilapia': 'Filé de tilápia (800g)',
+  'peixe': 'Filé de tilápia (800g)',  // genérico — única opção da licitação
   'linguica calabresa': 'Linguiça calabresa',
+  'linguica': 'Linguiça calabresa',
   'calabresa': 'Linguiça calabresa',  // alias
   'ovos de galinha': 'Ovos de galinha (dz)',
   'ovo': 'Ovos de galinha (dz)',
@@ -382,6 +416,9 @@ const MAPA_VARIACOES: Record<string, string> = {
   'bebida vegetal de aveia': 'Bebida vegetal de aveia',
   'leite de aveia': 'Bebida vegetal de aveia',  // alias
   'biscoito agua e sal': 'Biscoito água e sal (345g)',
+  // v9.9.3: biscoito de arroz existia na licitação mas não estava mapeado
+  'biscoito de arroz': 'Biscoito de Arroz (90g)',
+  'biscoito arroz': 'Biscoito de Arroz (90g)',
   'biscoito de polvilho': 'Biscoito de polvilho',
   'biscoito maisena': 'Biscoito maisena (345g)',
   'biscoito sem gluten': 'Biscoito sem glúten (150g)',
@@ -400,7 +437,7 @@ const MAPA_VARIACOES: Record<string, string> = {
   'doce de leite balde 5kg': 'Doce de leite balde (5kg)',
   'doce de leite': 'Doce de Leite balde (10kg)',  // alias
   'ervilha seca': 'Ervilha seca (500g)',
-  'extrato de tomate': 'Extrato de tomate 1,7kg)',
+  'extrato de tomate': 'Extrato de tomate 1,7kg',
   'extrato tomate': 'Extrato de tomate 1,7kg',
   'farinha de arroz': 'Farinha de arroz (kg)',
   'farinha de mandioca': 'Farinha de mandioca (kg)',
@@ -438,6 +475,12 @@ const MAPA_VARIACOES: Record<string, string> = {
   'macarrao trigo': 'Macarrão espaguete (500g)',  // TACO: "Macarrão, Trigo, Cru"
   'milho verde': 'Milho verde (1,7kg)',
   'milho': 'Milho verde (1,7kg)',  // alias
+  // v9.9.3: desambiguação do milho — espiga fresca vs lata de 1,7kg
+  // ('milho verde espiga' já mapeado na seção Hortifruti)
+  'espiga de milho': 'Milho verde espiga',
+  'milho fresco': 'Milho verde espiga',
+  'milho na espiga': 'Milho verde espiga',
+  'milho enlatado': 'Milho verde (1,7kg)',
   'flocos de milho': 'Flocão de milho (pacote 500gr)',  // TACO: "Flocos de Milho (cuscuz)"
   'oleo de soja': 'Óleo de soja (900ml)',
   'oleo': 'Óleo de soja (900ml)',  // alias
@@ -574,6 +617,10 @@ const MAPA_VARIACOES: Record<string, string> = {
   // 'uva' já existe acima
 }
 
+// v9.9.3: valores de destino do mapa (para auditoria de integridade em testes —
+// garante que toda variação aponta para um item real da LISTA_CANONICA)
+export const MAPA_AUDITORIA: string[] = Array.from(new Set(Object.values(MAPA_VARIACOES)))
+
 // ── v9.6.2: Itens a IGNORAR (não aparecer na lista de compras) ──
 // Estes ingredientes são filtrados completamente da lista porque não são
 // itens de compra (ex: água da torneira) ou são pães produzidos pela
@@ -644,47 +691,57 @@ function semAcentos(s: string): string {
 //    tipo 1, branca, cristal, acem, sem gordura, com sal, etc.)
 // 4. Remove parênteses e seu conteúdo
 // 5. Colapsa espaços múltiplos
-function limparNomeTaco(s: string): string {
+// v9.9.3: descritores separados em dois grupos — PREPARO (cosmético, sempre
+// removível) e VARIEDADE (identifica o produto; só removido na limpeza completa)
+const DESCRITORES_PREPARO = [
+  'cozido', 'cozida', 'cozidos', 'cozidas',
+  'cru', 'crus', 'crua', 'cruas',
+  'picado', 'picada', 'picados', 'picadas',
+  'ralado', 'ralada', 'ralados', 'raladas',
+  'cortado', 'cortada', 'cortados', 'cortadas',
+  'descascado', 'descascada', 'descascados', 'descascadas',
+  'fresco', 'fresca', 'frescos', 'frescas',
+  'seco', 'seca', 'secos', 'secas',
+  'inteiro', 'inteira', 'inteiros', 'inteiras',
+  'maduro', 'madura', 'maduros', 'maduras',
+  'em tiras', 'em rodelas', 'em pedacos', 'em pedaços',
+  'sem gordura', 'com sal', 'sem sal',
+]
+
+const DESCRITORES_VARIEDADE = [
+  'verde', 'verdes',
+  'crespa', 'crespo',
+  'fuji', 'pera', 'gala', 'argentina',
+  'tipo 1', 'tipo 2', 'tipo a', 'tipo b',
+  'branca', 'branco',
+  'cristal',
+  // v9.9.3: REMOVIDOS da lista de descritores (causavam o bug "Carne suína →
+  // Carne bovina de 2ª em cubo"): 'acem', 'acém', 'moido', 'moída', 'moidos',
+  // 'moídas', 'sem osso', 'com osso', 'bovina', 'bovino', 'suina', 'suíno',
+  // 'em cubos', 'em isca'. Espécie/corte/moagem DISTINGUEM alimentos de compra
+  // diferentes — não são descritores cosméticos. Com eles presentes,
+  // "Carne, suína, cru" era limpado para "carne" e caía no alias genérico
+  // 'carne' → bovina 2ª cubo.
+  'de vaca', 'de galinha',
+  // Outros descritores comuns
+  'natural', 'industrializado', 'industrializada',
+  'comum', 'especial',
+  'extrativa',
+  'organico', 'organica', 'orgânico', 'orgânica',
+]
+
+function limparNomeTaco(s: string, somentePreparo = false): string {
   let r = s.toLowerCase()
   // 1. Vírgulas → espaços
   r = r.replace(/,/g, ' ')
   // 2. Parênteses e conteúdo → remove
   r = r.replace(/\([^)]*\)/g, ' ')
   // 3. Remove descritores de preparo E variedade TACO
-  //    Lista ampliada baseada nos nomes reais do banco TACO
-  const descritores = [
-    // Preparo
-    'cozido', 'cozida', 'cozidos', 'cozidas',
-    'cru', 'crus', 'crua', 'cruas',
-    'picado', 'picada', 'picados', 'picadas',
-    'ralado', 'ralada', 'ralados', 'raladas',
-    'cortado', 'cortada', 'cortados', 'cortadas',
-    'descascado', 'descascada', 'descascados', 'descascadas',
-    'fresco', 'fresca', 'frescos', 'frescas',
-    'seco', 'seca', 'secos', 'secas',
-    'inteiro', 'inteira', 'inteiros', 'inteiras',
-    'maduro', 'madura', 'maduros', 'maduras',
-    'em cubos', 'em isca', 'em tiras', 'em rodelas', 'em pedacos', 'em pedaços',
-    'sem gordura', 'com sal', 'sem sal',
-    // Variedade / tipo (TACO descriptors)
-    'verde', 'verdes',
-    'crespa', 'crespo',
-    'fuji', 'pera', 'gala', 'argentina',
-    'tipo 1', 'tipo 2', 'tipo a', 'tipo b',
-    'branca', 'branco',
-    'cristal',
-    'acem', 'acém',
-    'moido', 'moída', 'moidos', 'moídas',
-    'sem osso', 'com osso',
-    'bovina', 'bovino',
-    'suina', 'suíno', 'suíno',
-    'de vaca', 'de galinha',
-    // Outros descritores comuns
-    'natural', 'industrializado', 'industrializada',
-    'comum', 'especial',
-    'extrativa',
-    'organico', 'organica', 'orgânico', 'orgânica',
-  ]
+  //    v9.9.3: modo somentePreparo — usado no fallback quando a limpeza
+  //    completa consumiria o nome inteiro (ex.: TACO "Pera, cru")
+  const descritores = somentePreparo
+    ? DESCRITORES_PREPARO
+    : [...DESCRITORES_PREPARO, ...DESCRITORES_VARIEDADE]
   for (const d of descritores) {
     // Remove o descritor como palavra completa (\b)
     r = r.replace(new RegExp(`\\b${d}\\b`, 'g'), ' ')
@@ -713,9 +770,13 @@ export function normalizarNomeIngrediente(nome: string): string {
   if (!nome) return ''
   const semAcentosLower = semAcentos(nome)
   const limpo = limparNomeTaco(semAcentosLower)
+  // v9.9.3: se a limpeza completa consumiu o nome inteiro (ex.: TACO
+  // "Pera, cru" — 'pera' é descritor da laranja), refaz com descritores
+  // de PREPARO apenas, para não gerar item vazio nem manter vírgulas
+  const efetivo = limpo || limparNomeTaco(semAcentosLower, true)
 
   // 1. Match exato no mapa
-  if (MAPA_VARIACOES[limpo]) return MAPA_VARIACOES[limpo]
+  if (MAPA_VARIACOES[efetivo]) return MAPA_VARIACOES[efetivo]
   if (MAPA_VARIACOES[semAcentosLower]) return MAPA_VARIACOES[semAcentosLower]
 
   // 2. Match por substring — para cada chave do mapa, verifica se o nome
@@ -724,13 +785,13 @@ export function normalizarNomeIngrediente(nome: string): string {
     .filter((k) => k.length >= 4)  // ignora chaves muito curtas (ex: "ovo")
     .sort((a, b) => b.length - a.length)  // mais longas primeiro
   for (const chave of chavesOrdenadas) {
-    if (limpo.includes(chave)) {
+    if (efetivo.includes(chave)) {
       return MAPA_VARIACOES[chave]
     }
   }
 
   // 3. Não encontrado — retorna nome limpo em title case (vai para OUTROS)
-  return titleCase(limpo)
+  return titleCase(efetivo)
 }
 
 function titleCase(s: string): string {
@@ -761,6 +822,87 @@ export function obterCategoria(nomeCanonico: string): CategoriaLista | 'OUTROS' 
 export function obterUnidade(nomeCanonico: string): string {
   const item = LISTA_CANONICA.find((i) => i.nome === nomeCanonico)
   return item ? item.unidade : 'kg'
+}
+
+// ── v9.9.3: Conversão para a UNIDADE DE COMPRA real ───────────
+
+function num(v: string): number {
+  return parseFloat(v.replace(',', '.'))
+}
+
+function round2(v: number): number {
+  return Math.round(v * 100) / 100
+}
+
+/**
+ * v9.9.3: Extrai a massa/volume da embalagem declarada no nome canônico.
+ * Ex.: "Manteiga (500g)" → 0.5 · "Óleo de soja (900ml)" → 0.9 ·
+ * "Milho verde (1,7kg)" → 1.7 · "Leite integral (cx 12 litros)" → 12 ·
+ * "Doce de Leite balde (10kg)" → 10 · "Farinha Pura (25kg)" → 25 ·
+ * "Chá de Camomila (pct 100gr)" → 0.1 · "Sal pct de (kg)" → null (sem medida).
+ */
+function parseMassaEmbalagemKg(nome: string): number | null {
+  // Caixa com volume declarado (leite): "cx 12 litros"
+  if (/\bcx\b[^)]*12\s*litros/i.test(nome)) return 12
+  // Baldes: "balde (10kg)", "balde (15kg)"
+  const balde = nome.match(/balde\s*\((\d+[.,]?\d*)\s*kg/i)
+  if (balde) return num(balde[1])
+  // Quilos explícitos: "(25kg)", "(1,7kg)", "1,7kg", "(5kg)"
+  const kg = nome.match(/(\d+[.,]?\d*)\s*kg\b/i)
+  if (kg) return num(kg[1])
+  // Gramas com sufixo "gr": "(pct 500gr)", "pacote 500gr", "(100gr)"
+  const gr = nome.match(/(\d+[.,]?\d*)\s*gr\b/i)
+  if (gr) return num(gr[1]) / 1000
+  // Gramas: "(500g)", "(850g)", "(345g)"
+  const g = nome.match(/(\d+[.,]?\d*)\s*g\b/i)
+  if (g) return num(g[1]) / 1000
+  // Mililitros: "(900ml)", "(750ml)", "(200ml)" — densidade ~1 kg/L
+  const ml = nome.match(/(\d+[.,]?\d*)\s*ml\b/i)
+  if (ml) return num(ml[1]) / 1000
+  return null
+}
+
+/**
+ * v9.9.3: Converte a quantidade total (em gramas) para a UNIDADE DE COMPRA
+ * do item canônico. Corrige a exibição "Unidade Compra" da lista de compras,
+ * que antes exibia kg com o rótulo da unidade (ex.: óleo 900ml mostrando
+ * "3.01 unid" quando o certo são ~3.34 garrafas).
+ *
+ * Regras:
+ * - dz (ovos): 1 ovo ≈ 50 g → 1 dúzia = 600 g (constante ajustável)
+ * - kg / g / L: medida direta (litro ≈ kg — densidade ~1)
+ * - unid / balde / cx / saco: divide pela embalagem declarada no nome
+ * - unid SEM embalagem identificável (fórmulas, pão de forma, adoçante):
+ *   mantém em kg com rótulo honesto 'kg'
+ */
+export function converterUnidadeCompra(
+  nomeCanonico: string,
+  gramas: number
+): { quantidade: number; unidade: string } {
+  const kg = gramas / 1000
+  const unidade = obterUnidade(nomeCanonico)
+
+  // Ovos por dúzia (1 ovo ≈ 50 g)
+  if (unidade === 'dz') {
+    return { quantidade: round2(gramas / 600), unidade: 'dz' }
+  }
+  if (unidade === 'kg') {
+    return { quantidade: round2(kg), unidade: 'kg' }
+  }
+  if (unidade === 'g') {
+    return { quantidade: gramas, unidade: 'g' }
+  }
+  if (unidade === 'L') {
+    return { quantidade: round2(kg), unidade: 'L' } // densidade ~1
+  }
+
+  // unid / balde / cx / saco → converte pela embalagem declarada
+  const massa = parseMassaEmbalagemKg(nomeCanonico)
+  if (massa && massa > 0) {
+    return { quantidade: round2(kg / massa), unidade }
+  }
+  // Sem embalagem identificável — exibe em kg (rótulo honesto)
+  return { quantidade: round2(kg), unidade: 'kg' }
 }
 
 /**

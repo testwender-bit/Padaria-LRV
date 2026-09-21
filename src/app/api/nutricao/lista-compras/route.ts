@@ -8,7 +8,7 @@ import { calcularPercapitaPorFase, type FaseEscolar } from '@/lib/nutricao-utils
 import {
   normalizarNomeIngrediente,
   obterCategoria,
-  obterUnidade,
+  converterUnidadeCompra,
   ordenarItens,
   deveIgnorarIngrediente,
   CATEGORIAS_LISTA,
@@ -382,13 +382,11 @@ async function handlePrevisao(
   const itens: ItemListaComprasConsolidado[] = ordenarItens(
     Array.from(porNomeCanonico.values()).map((c) => {
       const gramas = Math.round(c.qtd_total_gramas)
-      const unidade = obterUnidade(c.nome_canonico)
-      // Converter para unidade canônica
-      let qtd_total_unidade = gramas / 1000  // default: kg
-      if (unidade === 'g') qtd_total_unidade = gramas
-      else if (unidade === 'kg') qtd_total_unidade = gramas / 1000
-      else if (unidade === 'L') qtd_total_unidade = gramas / 1000
-      else qtd_total_unidade = gramas / 1000  // pacotes/baldes/etc — usar kg como aproximação
+      // v9.9.3: conversão REAL para a unidade de compra (embalagem/dúzia),
+      // centralizada em converterUnidadeCompra() — antes exibia kg com o
+      // rótulo da unidade (ex.: óleo 900ml mostrando "3.01 unid" em vez de
+      // ~3.34 garrafas)
+      const { quantidade: qtd_total_unidade, unidade } = converterUnidadeCompra(c.nome_canonico, gramas)
       return {
         alimento_id: c.alimento_ids[0] || '',
         nome_original: c.nome_original_primario,
@@ -636,9 +634,8 @@ async function handlePedido(escolaId: string, dataReferencia: Date) {
   const itens: ItemListaComprasConsolidado[] = ordenarItens(
     Array.from(porNomeCanonico.values()).map((c) => {
       const gramas = Math.round(c.qtd_total_gramas)
-      const unidade = obterUnidade(c.nome_canonico)
-      let qtd_total_unidade = gramas / 1000
-      if (unidade === 'g') qtd_total_unidade = gramas
+      // v9.9.3: mesma conversão do modo PREVISAO (ver converterUnidadeCompra)
+      const { quantidade: qtd_total_unidade, unidade } = converterUnidadeCompra(c.nome_canonico, gramas)
       return {
         alimento_id: '',
         nome_original: c.nome_original_primario,
