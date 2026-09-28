@@ -17,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, Flame
+  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, Flame, Replace
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -163,6 +163,22 @@ interface CardapioHorarioRefeicao {
   tipo_refeicao_id: string
   horario: string         // ex: "09h00 / 15h00"
   multiplicador: number   // ex: 2 se tem 2 horários
+}
+
+// v9.9.6: Localizar e Substituir preparação (contrato da API localizar-substituir)
+interface SubOcorrencia {
+  item_id: string
+  semana_num: number
+  dia_semana: string
+  tipo_refeicao_codigo: string
+  tipo_refeicao_nome: string
+}
+
+interface SubResultado {
+  preparacao_id: string
+  preparacao_nome: string
+  categoria: string | null
+  ocorrencias: SubOcorrencia[]
 }
 
 interface MetaNutricional {
@@ -321,6 +337,43 @@ export default function CardapioEditorPage() {
   const [horarioEditando, setHorarioEditando] = useState<{ tipoRefeicaoId: string; nome: string; horarioDefault: string; horarioAtual: string } | null>(null)
   const [horarioInput, setHorarioInput] = useState('')
   const [salvandoHorario, setSalvandoHorario] = useState(false)
+
+  // ── v9.9.6: Localizar e Substituir preparação (restaurado) ──
+  const [subDialogOpen, setSubDialogOpen] = useState(false)
+  const [subBusca, setSubBusca] = useState('')
+  const [subBuscando, setSubBuscando] = useState(false)
+  const [subResultados, setSubResultados] = useState<SubResultado[] | null>(null)
+  const [subPrepSelecionada, setSubPrepSelecionada] = useState<SubResultado | null>(null)
+  const [subItensMarcados, setSubItensMarcados] = useState<Set<string>>(new Set())
+  const [subNovaId, setSubNovaId] = useState('')
+  const [subNovaBusca, setSubNovaBusca] = useState('')
+  const [subNovaAberta, setSubNovaAberta] = useState(false)
+  const [subExecutando, setSubExecutando] = useState(false)
+
+  // v9.9.6: busca de ocorrências com debounce (GET localizar-substituir)
+  useEffect(() => {
+    if (!subDialogOpen) return
+    const q = subBusca.trim()
+    if (q.length < 2) {
+      setSubResultados(null)
+      setSubBuscando(false)
+      return
+    }
+    setSubBuscando(true)
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/localizar-substituir?q=${encodeURIComponent(q)}`)
+        if (!res.ok) throw new Error()
+        const data = await res.json()
+        setSubResultados(Array.isArray(data.preparacoes) ? data.preparacoes : [])
+      } catch {
+        setSubResultados([])
+      } finally {
+        setSubBuscando(false)
+      }
+    }, 350)
+    return () => clearTimeout(t)
+  }, [subBusca, subDialogOpen, cardapioId])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -981,7 +1034,8 @@ export default function CardapioEditorPage() {
   // Função handleUpdatePorcoes removida.
 
   // ── NOVO v8: Marcar semana como diferenciada (manualmente ajustada vs base) ──
-  async function handleDiferenciarSemana(semanaNumero: number, marcarComoDiferenciada?: boolean) {
+  // v9.9.6: parâmetro silencioso (sem toast) para marcação em lote via substituição
+  async function handleDiferenciarSemana(semanaNumero: number, marcarComoDiferenciada?: boolean, silencioso?: boolean) {
     try {
       const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/diferenciar-semana`, {
         method: 'POST',
@@ -1008,9 +1062,134 @@ export default function CardapioEditorPage() {
           ),
         }
       })
-      toast.success(data.message)
+      if (!silencioso) toast.success(data.message)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao diferenciar semana')
+      if (!silencioso) toast.error(err instanceof Error ? err.message : 'Erro ao diferenciar semana')
+      else console.error('Erro silencioso ao diferenciar semana', semanaNumero, err)
+    }
+  }
+
+  // ── v9.9.6: Localizar e Substituir — handlers ──
+  function openSubDialog() {
+    setSubBusca('')
+    setSubResultados(null)
+    setSubPrepSelecionada(null)
+    setSubItensMarcados(new Set())
+    setSubNovaId('')
+    setSubNovaBusca('')
+    setSubNovaAberta(false)
+    setSubExecutando(false)
+    setSubDialogOpen(true)
+  }
+
+  function toggleSubItem(itemId: string) {
+    setSubItensMarcados(prev => {
+      const next = new Set(prev)
+      if (next.has(itemId)) next.delete(itemId)
+      else next.add(itemId)
+      return next
+    })
+  }
+
+  // Aplica localmente o resultado de substituir_um (atualizado | deletado_duplicata)
+  function aplicarSubstituicaoLocal(itemId: string, nova: Preparacao, deletado: boolean) {
+    setCardapio(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        semanas: prev.semanas.map(s => ({
+          ...s,
+          dias: s.dias.map(d => {
+            if (!d.itens.some(i => i.id === itemId)) return d
+            if (deletado) return { ...d, itens: d.itens.filter(i => i.id !== itemId) }
+            return {
+              ...d,
+              itens: d.itens.map(i =>
+                i.id === itemId ? { ...i, preparacao_id: nova.id, preparacao: nova } : i
+              ),
+            }
+          }),
+        })),
+      }
+    })
+  }
+
+  // Marca semanas afetadas como diferenciada (apenas instâncias de base), sem spam de toast
+  async function marcarSemanasSubstituidas(numeros: number[]) {
+    if (!cardapio?.escola_id || !cardapio?.cardapio_base_id) return
+    for (const n of numeros) {
+      await handleDiferenciarSemana(n, true, true)
+    }
+  }
+
+  async function handleSubstituir() {
+    if (!subPrepSelecionada || !subNovaId || subItensMarcados.size === 0) return
+    const prepNova = preparacoes.find(p => p.id === subNovaId)
+    if (!prepNova) return
+    if (prepNova.id === subPrepSelecionada.preparacao_id) {
+      toast.error('A preparação substituta é igual à original')
+      return
+    }
+
+    // Lote = todas as ocorrências marcadas → 1 requisição (substituir_todos);
+    // Parcial = loop de substituir_um apenas nas marcadas
+    const modoLote = subItensMarcados.size === subPrepSelecionada.ocorrencias.length
+    setSubExecutando(true)
+    try {
+      if (modoLote) {
+        const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/localizar-substituir`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            acao: 'substituir_todos',
+            preparacao_id_antiga: subPrepSelecionada.preparacao_id,
+            preparacao_id_nova: subNovaId,
+          }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err.error || 'Erro ao substituir')
+        }
+        const data = await res.json()
+        const semanasAfetadas = [...new Set(subPrepSelecionada.ocorrencias.map(o => o.semana_num))]
+        await marcarSemanasSubstituidas(semanasAfetadas)
+        await loadData() // recarrega do banco (operação em massa tocou várias semanas)
+        toast.success(
+          `Substituição concluída: ${data.atualizados} atualizada(s)` +
+          (data.duplicatas_removidas > 0 ? ` · ${data.duplicatas_removidas} removida(s) (substituta já estava na refeição)` : '')
+        )
+      } else {
+        let atualizadas = 0
+        let removidas = 0
+        const semanasAfetadas = new Set<number>()
+        for (const o of subPrepSelecionada.ocorrencias) {
+          if (!subItensMarcados.has(o.item_id)) continue
+          const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/localizar-substituir`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ acao: 'substituir_um', item_id: o.item_id, preparacao_id_nova: subNovaId }),
+          })
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.error || 'Erro ao substituir')
+          }
+          const data = await res.json()
+          semanasAfetadas.add(o.semana_num)
+          if (data.acao === 'deletado_duplicata') removidas++
+          else atualizadas++
+          aplicarSubstituicaoLocal(o.item_id, prepNova, data.acao === 'deletado_duplicata')
+        }
+        await marcarSemanasSubstituidas([...semanasAfetadas])
+        toast.success(
+          `Substituição concluída: ${atualizadas} atualizada(s)` +
+          (removidas > 0 ? ` · ${removidas} removida(s) (substituta já estava na refeição)` : '')
+        )
+      }
+      setSubDialogOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao substituir preparação')
+    } finally {
+      setSubExecutando(false)
     }
   }
 
@@ -1521,6 +1700,14 @@ export default function CardapioEditorPage() {
       .filter(g => g.itens.length > 0)
   }, [filteredPreparacoes, addSelectedPrepIds])
 
+  // v9.9.6: candidatas a substituta (busca local na biblioteca, sem API)
+  const subNovasFiltradas = useMemo(() => {
+    const q = normalizeText(subNovaBusca)
+    let list = preparacoes.filter(p => p.id !== subPrepSelecionada?.preparacao_id)
+    if (q) list = list.filter(p => normalizeText(p.nome).includes(q))
+    return list.slice(0, 8)
+  }, [preparacoes, subNovaBusca, subPrepSelecionada])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -1736,6 +1923,17 @@ export default function CardapioEditorPage() {
               </Button>
             </Link>
           )}
+
+          {/* v9.9.6: Pesquisar e Substituir preparação (restaurado) */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-8 border-amber-300 text-amber-700 hover:bg-amber-50"
+            onClick={openSubDialog}
+            title="Localizar uma preparação e substituí-la parcial ou totalmente por outra"
+          >
+            <Replace className="w-3 h-3 mr-1" /> Pesquisar e Substituir
+          </Button>
 
           <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setSidebarOpen(!sidebarOpen)}>
             {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
@@ -2461,6 +2659,212 @@ export default function CardapioEditorPage() {
                   : addNovasPreparacoes.length > 0
                     ? `Adicionar ${addNovasPreparacoes.length} preparação(ões)`
                     : `Remover ${addItensParaRemover.length} preparação(ões)`
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══ v9.9.6: Pesquisar e Substituir Preparação ═══ */}
+      <Dialog open={subDialogOpen} onOpenChange={setSubDialogOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col gap-3 p-5 overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="text-[#1A3A5C] text-sm flex items-center gap-1.5">
+              <Replace className="w-4 h-4 text-amber-600" />
+              Pesquisar e Substituir Preparação
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto pr-0.5 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300">
+            {/* ── Etapa 1: localizar a preparação atual ── */}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold text-muted-foreground uppercase">1 · Preparação atual (localizar)</Label>
+              {!subPrepSelecionada ? (
+                <>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                    <Input
+                      placeholder="Digite o nome da preparação (mín. 2 letras)..."
+                      value={subBusca}
+                      onChange={(e) => setSubBusca(e.target.value)}
+                      className="pl-8 h-8 text-xs"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="min-h-[100px]">
+                    {subBuscando && (
+                      <p className="text-xs text-muted-foreground text-center py-6">Buscando ocorrências...</p>
+                    )}
+                    {!subBuscando && subBusca.trim().length < 2 && (
+                      <p className="text-[10px] text-muted-foreground text-center py-6 leading-relaxed">
+                        Ex.: "arroz", "suco" — mostra todas as ocorrências no cardápio inteiro (todas as semanas)
+                      </p>
+                    )}
+                    {!subBuscando && subBusca.trim().length >= 2 && subResultados && subResultados.length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-6">Nenhuma ocorrência encontrada</p>
+                    )}
+                    {!subBuscando && subResultados && subResultados.length > 0 && (
+                      <div className="space-y-1.5">
+                        {subResultados.map((r) => (
+                          <button
+                            key={r.preparacao_id}
+                            onClick={() => {
+                              setSubPrepSelecionada(r)
+                              setSubItensMarcados(new Set(r.ocorrencias.map(o => o.item_id)))
+                            }}
+                            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border border-gray-200 hover:border-[#1A3A5C]/40 hover:bg-[#1A3A5C]/5 transition-colors text-left"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: getCategoriaInfo(r.categoria || 'PREPARACAO').cor }} />
+                            <span className="text-xs font-medium text-[#1A3A5C] truncate flex-1 min-w-0">{r.preparacao_nome}</span>
+                            <Badge className="bg-[#1A3A5C]/10 text-[#1A3A5C] hover:bg-[#1A3A5C]/10 text-[9px] flex-shrink-0">
+                              {r.ocorrencias.length} ocorrência{r.ocorrencias.length !== 1 ? 's' : ''}
+                            </Badge>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/60 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: getCategoriaInfo(subPrepSelecionada.categoria || 'PREPARACAO').cor }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-[#1A3A5C] truncate">{subPrepSelecionada.preparacao_nome}</p>
+                    <p className="text-[9px] text-muted-foreground">{subPrepSelecionada.ocorrencias.length} ocorrência(s) no cardápio</p>
+                  </div>
+                  <button
+                    onClick={() => { setSubPrepSelecionada(null); setSubItensMarcados(new Set()) }}
+                    className="text-[10px] text-muted-foreground hover:text-foreground underline flex-shrink-0"
+                  >
+                    trocar
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* ── Ocorrências: marque as que serão substituídas (lote = todas) ── */}
+            {subPrepSelecionada && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[10px] font-bold text-muted-foreground uppercase">Marque as ocorrências a substituir</Label>
+                  <button
+                    onClick={() => setSubItensMarcados(
+                      subItensMarcados.size === subPrepSelecionada.ocorrencias.length
+                        ? new Set()
+                        : new Set(subPrepSelecionada.ocorrencias.map(o => o.item_id))
+                    )}
+                    className="text-[10px] text-[#1A3A5C] hover:underline font-medium"
+                  >
+                    {subItensMarcados.size === subPrepSelecionada.ocorrencias.length ? 'Desmarcar todas' : 'Marcar todas'}
+                  </button>
+                </div>
+                <div className="max-h-44 overflow-y-auto rounded-lg border border-gray-100 p-1 space-y-0.5 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300">
+                  {subPrepSelecionada.ocorrencias.map((o) => {
+                    const marcado = subItensMarcados.has(o.item_id)
+                    return (
+                      <label
+                        key={o.item_id}
+                        onClick={(e) => { e.preventDefault(); toggleSubItem(o.item_id) }}
+                        className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-xs transition-colors ${
+                          marcado ? 'bg-amber-50 border border-amber-200' : 'hover:bg-gray-50 border border-transparent'
+                        }`}
+                      >
+                        <Checkbox checked={marcado} className="flex-shrink-0 pointer-events-none" />
+                        <span className="font-medium text-[#1A3A5C] flex-shrink-0">S{String(o.semana_num).padStart(2, '0')}</span>
+                        <span className="text-muted-foreground flex-shrink-0">{DIAS_SEMANA_NUTRI.find(d => d.value === o.dia_semana)?.label || o.dia_semana}</span>
+                        <span className="text-muted-foreground truncate" title={o.tipo_refeicao_nome}>{o.tipo_refeicao_nome}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ── Etapa 2: escolher a substituta ── */}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-bold text-muted-foreground uppercase">2 · Substituir por</Label>
+              {!subNovaAberta ? (
+                <button
+                  onClick={() => setSubNovaAberta(true)}
+                  disabled={!subPrepSelecionada}
+                  className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border border-dashed transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed ${
+                    subNovaId ? 'border-emerald-300 bg-emerald-50/50 hover:border-emerald-400' : 'border-gray-300 hover:border-[#1A3A5C]/40 hover:bg-gray-50'
+                  }`}
+                >
+                  {subNovaId ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                      <span className="text-xs font-medium text-[#1A3A5C] truncate flex-1 min-w-0">
+                        {preparacoes.find(p => p.id === subNovaId)?.nome || '—'}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground flex-shrink-0">clique para trocar</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      <span className="text-xs text-muted-foreground">Escolher a preparação substituta...</span>
+                    </>
+                  )}
+                </button>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar preparação substituta..."
+                      value={subNovaBusca}
+                      onChange={(e) => setSubNovaBusca(e.target.value)}
+                      className="pl-8 h-8 text-xs"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="max-h-44 overflow-y-auto rounded-lg border border-gray-100 p-1 space-y-0.5 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300">
+                    {subNovasFiltradas.length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-4">Nenhuma preparação encontrada</p>
+                    )}
+                    {subNovasFiltradas.map((p) => {
+                      const kcal = Math.round(kcalPreparacao(p))
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => { setSubNovaId(p.id); setSubNovaAberta(false) }}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[#1A3A5C]/5 border border-transparent hover:border-[#1A3A5C]/20 transition-colors text-left text-xs"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: getCategoriaInfo(p.categoria || 'PREPARACAO').cor }} />
+                          <span className="font-medium truncate flex-1 min-w-0" title={p.nome}>{p.nome}</span>
+                          <span className="flex items-center gap-0.5 text-[9px] text-orange-500 font-medium flex-shrink-0 whitespace-nowrap">
+                            <Flame className="w-2.5 h-2.5" /> {kcal} kcal
+                          </span>
+                          <span className="text-[9px] text-muted-foreground flex-shrink-0">{p.ingredientes.length} ing.</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Nota sobre duplicatas ── */}
+            {subPrepSelecionada && subNovaId && (
+              <p className="text-[9px] text-muted-foreground leading-relaxed px-0.5">
+                Se a preparação substituta já estiver em alguma refeição marcada, a preparação original é
+                apenas removida ali (nunca fica duplicada no mesmo dia/refeição).
+              </p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 flex-shrink-0">
+            <Button variant="outline" size="sm" onClick={() => setSubDialogOpen(false)} disabled={subExecutando}>Cancelar</Button>
+            <Button
+              size="sm"
+              onClick={handleSubstituir}
+              disabled={subExecutando || !subPrepSelecionada || !subNovaId || subItensMarcados.size === 0}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {subExecutando ? 'Substituindo...' : (
+                subPrepSelecionada && subItensMarcados.size === subPrepSelecionada.ocorrencias.length
+                  ? `Substituir TODAS (${subItensMarcados.size})`
+                  : `Substituir selecionadas (${subItensMarcados.size})`
               )}
             </Button>
           </DialogFooter>
