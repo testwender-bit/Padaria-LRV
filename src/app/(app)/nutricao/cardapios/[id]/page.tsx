@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
@@ -17,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, Flame, Replace
+  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, Flame, Replace, ArrowRight
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -350,6 +350,20 @@ export default function CardapioEditorPage() {
   const [subNovaAberta, setSubNovaAberta] = useState(false)
   const [subExecutando, setSubExecutando] = useState(false)
 
+  // ── v9.9.7: Localizar preparação (separado do Substituir) ──
+  // Fluxo somente-leitura: busca → vê ONDE a preparação está (semana/dia/refeição) →
+  // clica na ocorrência e a tela pula para aquela semana destacando o item.
+  const [locDialogOpen, setLocDialogOpen] = useState(false)
+  const [locBusca, setLocBusca] = useState('')
+  const [locBuscando, setLocBuscando] = useState(false)
+  const [locResultados, setLocResultados] = useState<SubResultado[] | null>(null)
+  const [locPrepAberta, setLocPrepAberta] = useState<string | null>(null) // preparacao_id do card expandido
+  // Item destacado temporariamente após "Ir" (ring âmbar, limpo por timeout)
+  const [locDestaqueItemId, setLocDestaqueItemId] = useState<string | null>(null)
+  // Timers dos efeitos de navegação (limpos ao navegar de novo para não piscar)
+  const locScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const locClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // v9.9.6: busca de ocorrências com debounce (GET localizar-substituir)
   useEffect(() => {
     if (!subDialogOpen) return
@@ -374,6 +388,34 @@ export default function CardapioEditorPage() {
     }, 350)
     return () => clearTimeout(t)
   }, [subBusca, subDialogOpen, cardapioId])
+
+  // v9.9.7: busca do Localizar com o mesmo debounce (GET localizar-substituir)
+  useEffect(() => {
+    if (!locDialogOpen) return
+    const q = locBusca.trim()
+    if (q.length < 2) {
+      setLocResultados(null)
+      setLocBuscando(false)
+      return
+    }
+    setLocBuscando(true)
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/localizar-substituir?q=${encodeURIComponent(q)}`)
+        if (!res.ok) throw new Error()
+        const data = await res.json()
+        const preps: SubResultado[] = Array.isArray(data.preparacoes) ? data.preparacoes : []
+        setLocResultados(preps)
+        // Conveniência: se a busca casou com UMA preparação só, já expande as ocorrências
+        setLocPrepAberta(preps.length === 1 ? preps[0].preparacao_id : null)
+      } catch {
+        setLocResultados([])
+      } finally {
+        setLocBuscando(false)
+      }
+    }, 350)
+    return () => clearTimeout(t)
+  }, [locBusca, locDialogOpen, cardapioId])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -1080,6 +1122,33 @@ export default function CardapioEditorPage() {
     setSubNovaAberta(false)
     setSubExecutando(false)
     setSubDialogOpen(true)
+  }
+
+  // ── v9.9.7: Localizar — abrir dialog (estado limpo) ──
+  function openLocDialog() {
+    setLocBusca('')
+    setLocResultados(null)
+    setLocPrepAberta(null)
+    setLocBuscando(false)
+    setLocDialogOpen(true)
+  }
+
+  // ── v9.9.7: Localizar — "Ir" para a ocorrência ──
+  // Fecha o dialog, pula para a semana (e dia no mobile), rola até o item e o
+  // destaca com ring âmbar por alguns segundos. Timers são limpos se o usuário
+  // navegar de novo antes (evita o destaque piscar/apagar cedo demais).
+  function irParaOcorrencia(o: SubOcorrencia) {
+    if (locClearTimerRef.current) clearTimeout(locClearTimerRef.current)
+    if (locScrollTimerRef.current) clearTimeout(locScrollTimerRef.current)
+    setCurrentSemana(o.semana_num)
+    if (isMobile) setMobileDayView(o.dia_semana)
+    setLocDestaqueItemId(o.item_id)
+    setLocDialogOpen(false)
+    // Aguarda o React re-renderizar a semana nova antes de rolar até o item
+    locScrollTimerRef.current = setTimeout(() => {
+      document.getElementById(`cardapio-item-${o.item_id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 250)
+    locClearTimerRef.current = setTimeout(() => setLocDestaqueItemId(null), 6000)
   }
 
   function toggleSubItem(itemId: string) {
@@ -1924,7 +1993,16 @@ export default function CardapioEditorPage() {
             </Link>
           )}
 
-          {/* v9.9.6: Pesquisar e Substituir preparação (restaurado) */}
+          {/* v9.9.7: Localizar e Substituir separados (funções independentes) */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-8 border-blue-200 text-blue-700 hover:bg-blue-50"
+            onClick={openLocDialog}
+            title="Localizar preparação no cardápio e ir até a semana (somente consulta)"
+          >
+            <Search className="w-3 h-3 mr-1" /> Localizar
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -1932,7 +2010,7 @@ export default function CardapioEditorPage() {
             onClick={openSubDialog}
             title="Localizar uma preparação e substituí-la parcial ou totalmente por outra"
           >
-            <Replace className="w-3 h-3 mr-1" /> Pesquisar e Substituir
+            <Replace className="w-3 h-3 mr-1" /> Substituir
           </Button>
 
           <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setSidebarOpen(!sidebarOpen)}>
@@ -2252,6 +2330,7 @@ export default function CardapioEditorPage() {
                           {itens.map((item) => (
                             <div
                               key={item.id}
+                              id={`cardapio-item-${item.id}`}
                               draggable
                               onDragStart={(e) => {
                                 setDraggedItem(item)
@@ -2265,8 +2344,10 @@ export default function CardapioEditorPage() {
                                 setDragOverSlot(null)
                                 setDragAltHint(false)
                               }}
-                              className={`flex items-center gap-1 mb-1 p-1 rounded bg-white border border-gray-100 text-[10px] group cursor-grab active:cursor-grabbing ${
-                                draggedItem?.id === item.id ? 'opacity-50' : ''
+                              className={`flex items-center gap-1 mb-1 p-1 rounded bg-white border text-[10px] group cursor-grab active:cursor-grabbing transition-all ${
+                                draggedItem?.id === item.id ? 'opacity-50' :
+                                // v9.9.7: destaque após "Ir" do Localizar
+                                locDestaqueItemId === item.id ? 'border-amber-400 ring-2 ring-amber-300 bg-amber-50' : 'border-gray-100'
                               }`}
                               title="Arraste para mover • Alt+Arraste para duplicar"
                             >
@@ -2665,13 +2746,105 @@ export default function CardapioEditorPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ═══ v9.9.6: Pesquisar e Substituir Preparação ═══ */}
+      {/* ═══ v9.9.7: Localizar Preparação (somente consulta + navegar) ═══ */}
+      <Dialog open={locDialogOpen} onOpenChange={setLocDialogOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col gap-3 p-5 overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="text-[#1A3A5C] text-sm flex items-center gap-1.5">
+              <Search className="w-4 h-4 text-blue-600" />
+              Localizar Preparação
+            </DialogTitle>
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              Onde essa preparação está no cardápio? Clique na ocorrência para ir até a semana.
+            </p>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto pr-0.5 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300">
+            <div className="relative flex-shrink-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              <Input
+                placeholder="Digite o nome da preparação (mín. 2 letras)..."
+                value={locBusca}
+                onChange={(e) => setLocBusca(e.target.value)}
+                className="pl-8 h-8 text-xs"
+                autoFocus
+              />
+            </div>
+
+            <div className="min-h-[120px]">
+              {locBuscando && (
+                <p className="text-xs text-muted-foreground text-center py-8">Buscando ocorrências...</p>
+              )}
+              {!locBuscando && locBusca.trim().length < 2 && (
+                <p className="text-[10px] text-muted-foreground text-center py-8 leading-relaxed">
+                  Ex.: "arroz", "suco" — mostra todas as ocorrências no cardápio inteiro
+                  (semana, dia e refeição). Clique para navegar até elas.
+                </p>
+              )}
+              {!locBuscando && locBusca.trim().length >= 2 && locResultados && locResultados.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-8">Nenhuma ocorrência encontrada</p>
+              )}
+              {!locBuscando && locResultados && locResultados.length > 0 && (
+                <div className="space-y-1.5">
+                  {locResultados.map((r) => {
+                    // v9.9.7: nº de semanas distintas em que a preparação aparece
+                    const semanasCount = new Set(r.ocorrencias.map(o => o.semana_num)).size
+                    const aberto = locPrepAberta === r.preparacao_id
+                    return (
+                      <div key={r.preparacao_id} className="rounded-lg border border-gray-200 overflow-hidden">
+                        <button
+                          onClick={() => setLocPrepAberta(aberto ? null : r.preparacao_id)}
+                          className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-[#1A3A5C]/5 transition-colors text-left"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: getCategoriaInfo(r.categoria || 'PREPARACAO').cor }} />
+                          <span className="text-xs font-medium text-[#1A3A5C] truncate flex-1 min-w-0" title={r.preparacao_nome}>{r.preparacao_nome}</span>
+                          <Badge className="bg-[#1A3A5C]/10 text-[#1A3A5C] hover:bg-[#1A3A5C]/10 text-[9px] flex-shrink-0">
+                            {r.ocorrencias.length} ocorrência{r.ocorrencias.length !== 1 ? 's' : ''}
+                          </Badge>
+                          <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 text-[9px] flex-shrink-0">
+                            {semanasCount} sem.
+                          </Badge>
+                          {aberto ? <ChevronUp className="w-3 h-3 text-muted-foreground flex-shrink-0" /> : <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />}
+                        </button>
+                        {aberto && (
+                          <div className="border-t border-gray-100 p-1 space-y-0.5 bg-gray-50/50">
+                            {r.ocorrencias.map((o) => (
+                              <button
+                                key={o.item_id}
+                                onClick={() => irParaOcorrencia(o)}
+                                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors text-left text-xs"
+                              >
+                                <span className="font-bold text-[#1A3A5C] flex-shrink-0">S{String(o.semana_num).padStart(2, '0')}</span>
+                                <span className="text-muted-foreground flex-shrink-0">{DIAS_SEMANA_NUTRI.find(d => d.value === o.dia_semana)?.label || o.dia_semana}</span>
+                                <span className="text-muted-foreground truncate" title={o.tipo_refeicao_nome}>{o.tipo_refeicao_nome}</span>
+                                <span className="ml-auto flex items-center gap-0.5 text-[10px] font-semibold text-blue-600 flex-shrink-0">
+                                  Ir <ArrowRight className="w-3 h-3" />
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="flex-shrink-0">
+            <Button variant="outline" size="sm" onClick={() => setLocDialogOpen(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══ v9.9.6 · retitulado v9.9.7: Substituir Preparação (parcial ou em lote) ═══ */}
       <Dialog open={subDialogOpen} onOpenChange={setSubDialogOpen}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col gap-3 p-5 overflow-hidden">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-[#1A3A5C] text-sm flex items-center gap-1.5">
               <Replace className="w-4 h-4 text-amber-600" />
-              Pesquisar e Substituir Preparação
+              Substituir Preparação
             </DialogTitle>
           </DialogHeader>
 
