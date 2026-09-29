@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { SEMANAS_SEMESTRE, gerarDatasSemanasSemestre } from '@/lib/cardapio-base-utils'
 import { isoToPt } from '@/lib/preparacao-categorias'
+// v9.10.0: ciclo REAL detectado pelo CONTEÚDO (não pelo campo ciclo_semanas)
+import { detectarCicloReal } from '@/lib/cardapio-ciclo-utils'
 
 // ============================================================
 // POST /api/nutricao/cardapios/[id]/replicar
@@ -122,6 +124,20 @@ export async function POST(
     //       - se o original é um base (escola_id = null), usa o próprio id
     const baseIdParaCopias = original.cardapio_base_id || original.id
 
+    // ── v9.10.0: FIX “replicar não replica as semanas” ──
+    // O cardápio é criado com 22 LINHAS de semanas (vazias) e o campo
+    // ciclo_semanas fica no default 5. Antes, baseCompleto contava linhas
+    // (semanas.length >= 22 → true) e a expansão NUNCA rodava: o cardápio
+    // clonado ficava só com as semanas preenchidas na origem e 16 vazias.
+    // Agora o ciclo é detectado pelo CONTEÚDO (maior semana com itens) e a
+    // expansão repete esse ciclo até a 22 (ex.: 6 semanas → S7=S1 ... S22=S4).
+    const cicloReal = detectarCicloReal(original.semanas)
+    const ciclo = cicloReal > 0 ? cicloReal : (original.ciclo_semanas || 5)
+    // v9.10.0: “base completo” por CONTEÚDO — só copia 22 semanas direto (sem
+    // expandir) quando TODAS estão realmente preenchidas (içado p/ usar na resposta)
+    const baseCompleto =
+      original.semanas.length >= SEMANAS_SEMESTRE && cicloReal >= SEMANAS_SEMESTRE
+
     // ── Detecta quais dias do base têm pão e lanche ──
     // (faz um scan das semanas base para saber em qual dia caiu o pão/lanche)
     const diasComPao = new Set<string>()      // dia_semana (pt: 'segunda', etc.)
@@ -223,7 +239,8 @@ export async function POST(
               status: 'RASCUNHO',
               origem_id: original.id,
               cardapio_base_id: baseIdParaCopias,  // v8.10: preserva vínculo com o base verdadeiro
-              ciclo_semanas: original.ciclo_semanas,
+              // v9.10.0: grava o ciclo REAL (conteúdo), não o campo dessincronizado da origem
+              ciclo_semanas: ciclo,
               repetir_ciclo: expandir,
               dia_pao_frances: configEscola.dia_pao,
               dia_lanche: configEscola.dia_lanche,
@@ -233,13 +250,11 @@ export async function POST(
           })
 
           // ── Clona as semanas base ──
-          // v6.3: se o base já tem 22 semanas (semestre completo), clona TODAS
-          //       se tem menos, clona só as do ciclo (1..ciclo) e expande depois
-          const ciclo = original.ciclo_semanas || 5
-          const baseCompleto = original.semanas.length >= SEMANAS_SEMESTRE
+          // v9.10.0: baseCompleto (por conteúdo) é calculado fora da transação,
+          //       junto da detecção do ciclo real.
           const semanasBase = baseCompleto
-            ? original.semanas  // clona todas as 22 (já está completo)
-            : original.semanas.filter((s) => s.numero <= ciclo)  // só as do ciclo
+            ? original.semanas  // clona todas as 22 (semestre inteiro preenchido)
+            : original.semanas.filter((s) => s.numero <= ciclo)  // só as do ciclo real
 
           // Pré-calcula as trocas para esta escola
           const trocas: Array<{ tipo: 'PAO' | 'LANCHE'; dia_origem: string; dia_destino: string; dia_deslocado: string | null; semanas_afetadas: number }> = []
@@ -351,9 +366,11 @@ export async function POST(
           }
 
           // ── Expande para 22 semanas (réplicas) se solicitado ──
-          // v6.3: só expande se o base NÃO está completo (tem menos de 22 semanas)
-          //       se já tem 22, as semanas já foram clonadas acima — não expandir de novo
-          if (expandir && !baseCompleto && original.semanas.length >= ciclo) {
+          // v9.10.0: condição por CONTEÚDO — antes exigia semanas.length >= ciclo
+          //       (22 linhas vazias satisfaziam!) e contava com baseCompleto=true
+          //       para pular a expansão. Agora: expande sempre que o ciclo real
+          //       é menor que o semestre e existem semanas base a clonar.
+          if (expandir && !baseCompleto && semanasBase.length > 0) {
             const dataInicioBase = original.semanas[0]?.data_inicio
               ? new Date(original.semanas[0].data_inicio + 'T12:00:00')
               : new Date()
@@ -466,6 +483,10 @@ export async function POST(
           tem_lanche: diasLancheArray.length > 0,
           dias_pao_base: diasPaoArray,
           dias_lanche_base: diasLancheArray,
+          // v9.10.0: transparência do ciclo detectado/usado na expansão
+          ciclo_detectado: cicloReal,
+          ciclo_usado: ciclo,
+          semanas_base_clonadas: baseCompleto ? original.semanas.length : Math.min(ciclo, original.semanas.length),
         },
         // v8.10: info extra sobre a origem
         origem: {

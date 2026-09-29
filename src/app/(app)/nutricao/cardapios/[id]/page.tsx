@@ -49,6 +49,8 @@ function parseAlergenosArrayLocal(jsonStr: unknown): AlergenoSigla[] {
 import { normalizeText } from '@/lib/busca-utils'
 import { sortItensByRefeicao } from '@/lib/ordenacao-preparacoes'
 import { PREPARACAO_CATEGORIAS, getCategoriaInfo } from '@/lib/preparacao-categorias'
+// v9.10.0: detecção do ciclo real de semanas (por conteúdo) para o dialog "Gerar Ciclo"
+import { detectarCicloReal } from '@/lib/cardapio-ciclo-utils'
 import { PreparacaoFormDialog, type PreparacaoLite } from '@/components/preparacao-form-dialog'
 import { parseHorarioToMinutes, ordenarPorHorario, contarHorarios, temMultiplosHorarios } from '@/lib/horario-utils'
 
@@ -651,6 +653,10 @@ export default function CardapioEditorPage() {
   const [repCat, setRepCat] = useState('all')                              // filtro por categoria
   const [repSoAlertas, setRepSoAlertas] = useState(true)                   // só vermelho+amarelo (default)
 
+  // ── v9.10.0: Gerar Ciclo (repetir as semanas montadas até a 22ª) ──
+  const [cicloDialogOpen, setCicloDialogOpen] = useState(false)
+  const [gerandoCiclo, setGerandoCiclo] = useState(false)
+
   // v9.9.6: busca de ocorrências com debounce (GET localizar-substituir)
   useEffect(() => {
     if (!subDialogOpen) return
@@ -709,6 +715,27 @@ export default function CardapioEditorPage() {
     if (!repDialogOpen || !cardapio) return null
     return analisarRepeticoesCardapio(cardapio)
   }, [repDialogOpen, cardapio])
+
+  // ── v9.10.0: análise do ciclo p/ dialog "Gerar Ciclo" (100% client-side) ──
+  // ciclo = maior semana com conteúdo; gerar = semanas ciclo+1..total;
+  // foraDoCicloComConteudo = semanas além do ciclo que serão SUBSTITUÍDAS (aviso)
+  const analiseCiclo = useMemo(() => {
+    if (!cicloDialogOpen || !cardapio) return null
+    const total = cardapio.semanas.length || 22
+    const ciclo = detectarCicloReal(cardapio.semanas)
+    const comConteudo = cardapio.semanas
+      .filter(s => (s.dias || []).some(d => d.itens.length > 0))
+      .map(s => s.numero)
+      .sort((a, b) => a - b)
+    const foraDoCicloComConteudo = comConteudo.filter(n => n > ciclo)
+    const gerar: number[] = []
+    for (let num = ciclo + 1; num <= total; num++) gerar.push(num)
+    const mapeamento = gerar.map(num => ({
+      semana: num,
+      base: ciclo > 0 ? ((num - 1) % ciclo) + 1 : num,
+    }))
+    return { total, ciclo, comConteudo, foraDoCicloComConteudo, gerar, mapeamento }
+  }, [cicloDialogOpen, cardapio])
 
   // v9.9.9: ranking filtrado (categoria + somente alertas)
   const repFiltradas = useMemo(() => {
@@ -1466,6 +1493,38 @@ export default function CardapioEditorPage() {
     setRepCat('all')
     setRepSoAlertas(true)
     setRepDialogOpen(true)
+  }
+
+  // ── v9.10.0: Gerar Ciclo — chama a API, recarrega as semanas e fecha ──
+  // A API detecta o ciclo pelo conteúdo, deleta semanas além do ciclo e recria
+  // ciclo+1..22 como réplicas (S7=S1 ...). Sem $transaction longa (pgbouncer).
+  async function handleGerarCiclo() {
+    setGerandoCiclo(true)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/gerar-ciclo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Erro ao gerar ciclo')
+      }
+      const data = await res.json()
+      const substituidas: number[] = data.semanas_substituidas_com_conteudo || []
+      toast.success(
+        `Ciclo gerado: ${data.semanas_geradas} semanas criadas (S${String((data.ciclo_semanas || 0) + 1).padStart(2, '0')}–S${String(data.total_semanas).padStart(2, '0')}) repetindo o ciclo de ${data.ciclo_semanas} semanas`
+      )
+      if (substituidas.length > 0) {
+        toast.warning(`Semanas ${substituidas.map((n: number) => `S${n}`).join(', ')} tinham conteúdo e foram substituídas pelo ciclo.`)
+      }
+      setCicloDialogOpen(false)
+      await loadData() // recarrega as 22 semanas do banco (operação em massa)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao gerar ciclo')
+    } finally {
+      setGerandoCiclo(false)
+    }
   }
 
   function toggleSubItem(itemId: string) {
@@ -2338,6 +2397,17 @@ export default function CardapioEditorPage() {
             title="Identifica preparações repetitivas: 2× no mesmo dia, dias seguidos, concentração no mesmo dia da semana e pouca variedade por refeição"
           >
             <BarChart3 className="w-3 h-3 mr-1" /> Repetições
+          </Button>
+
+          {/* v9.10.0: Gerar Ciclo — repete as semanas montadas até completar as 22 do semestre */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-8 border-teal-200 text-teal-700 hover:bg-teal-50"
+            onClick={() => setCicloDialogOpen(true)}
+            title="Repete as semanas preenchidas até completar o semestre: ex. 6 semanas montadas viram 22 (S7=S1, S8=S2...)"
+          >
+            <Repeat className="w-3 h-3 mr-1" /> Gerar Ciclo
           </Button>
 
           <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setSidebarOpen(!sidebarOpen)}>
@@ -3331,6 +3401,104 @@ export default function CardapioEditorPage() {
 
           <DialogFooter className="flex-shrink-0">
             <Button variant="outline" size="sm" onClick={() => setRepDialogOpen(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══ v9.10.0: Gerar Ciclo — repetir as semanas montadas até completar as 22 ═══ */}
+      <Dialog open={cicloDialogOpen} onOpenChange={setCicloDialogOpen}>
+        <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col gap-3 p-5 overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="text-[#1A3A5C] text-sm flex items-center gap-1.5">
+              <Repeat className="w-4 h-4 text-teal-600" />
+              Gerar Ciclo de Semanas
+            </DialogTitle>
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              Repete as semanas que você já montou até completar o semestre: ex. 6 semanas montadas
+              viram 22 (S7 = S1, S8 = S2, ..., S12 = S6, S13 = S1, ...).
+            </p>
+          </DialogHeader>
+
+          {!analiseCiclo ? (
+            <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">Analisando semanas...</div>
+          ) : analiseCiclo.ciclo === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground py-10 text-center px-4">
+              Nenhuma semana tem conteúdo ainda — monte pelo menos a semana 1 antes de gerar o ciclo.
+            </div>
+          ) : analiseCiclo.gerar.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground py-10 text-center px-4">
+              Todas as {analiseCiclo.total} semanas já têm conteúdo — nada a gerar.
+            </div>
+          ) : (
+            <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto pr-0.5 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300">
+              {/* Resumo: ciclo detectado × semanas a gerar */}
+              <div className="grid grid-cols-2 gap-2 flex-shrink-0">
+                <div className="p-2 rounded-lg border border-[#1A3A5C]/10 bg-[#1A3A5C]/5">
+                  <p className="text-[9px] text-muted-foreground uppercase font-bold">Ciclo detectado</p>
+                  <p className="text-lg font-bold text-[#1A3A5C] leading-tight">{analiseCiclo.ciclo} semanas</p>
+                  <p className="text-[9px] text-muted-foreground">S1–S{analiseCiclo.ciclo} montadas por você</p>
+                </div>
+                <div className="p-2 rounded-lg border border-teal-200 bg-teal-50">
+                  <p className="text-[9px] text-muted-foreground uppercase font-bold">Semanas a gerar</p>
+                  <p className="text-lg font-bold text-teal-700 leading-tight">{analiseCiclo.gerar.length}</p>
+                  <p className="text-[9px] text-muted-foreground">S{analiseCiclo.ciclo + 1}–S{analiseCiclo.total} como réplicas</p>
+                </div>
+              </div>
+
+              {/* Aviso: semanas além do ciclo que já têm conteúdo serão substituídas */}
+              {analiseCiclo.foraDoCicloComConteudo.length > 0 && (
+                <div className="p-2.5 rounded-lg border border-amber-300 bg-amber-50 flex items-start gap-2 flex-shrink-0">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <p className="text-[10px] text-amber-800 leading-relaxed">
+                    <strong>Atenção:</strong> as semanas {analiseCiclo.foraDoCicloComConteudo.map(n => `S${n}`).join(', ')} já têm
+                    conteúdo e serão <strong>substituídas</strong> pelas réplicas do ciclo.
+                  </p>
+                </div>
+              )}
+
+              {/* Prévia do mapeamento S7=S1, S8=S2... */}
+              <div className="space-y-1.5 flex-shrink-0">
+                <Label className="text-[10px] font-bold text-muted-foreground uppercase">Prévia da repetição</Label>
+                <div className="flex flex-wrap gap-1">
+                  {analiseCiclo.mapeamento.map(m => (
+                    <span
+                      key={m.semana}
+                      className="px-1.5 py-0.5 rounded border text-[9px] font-medium bg-teal-50 border-teal-200 text-teal-800"
+                      title={`Semana ${m.semana} = cópia da semana ${m.base}`}
+                    >
+                      S{m.semana} = S{m.base}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <p className="text-[9px] text-muted-foreground leading-relaxed px-0.5 flex-shrink-0">
+                As semanas do ciclo (S1–S{analiseCiclo.ciclo}) não são alteradas. As datas são recalculadas a partir da data de
+                início da semana 1. Depois de gerar, cada semana continua editável individualmente (a edição marca a semana como "Modificada").
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="flex-shrink-0">
+            <Button variant="outline" size="sm" onClick={() => setCicloDialogOpen(false)} disabled={gerandoCiclo}>Cancelar</Button>
+            {analiseCiclo && analiseCiclo.ciclo > 0 && analiseCiclo.gerar.length > 0 && (
+              <Button
+                size="sm"
+                onClick={handleGerarCiclo}
+                disabled={gerandoCiclo}
+                className="bg-teal-600 hover:bg-teal-700 text-white"
+              >
+                {gerandoCiclo ? (
+                  <>
+                    <RefreshCw className="w-3 h-3 mr-1 animate-spin" /> Gerando...
+                  </>
+                ) : (
+                  <>
+                    <Repeat className="w-3 h-3 mr-1" /> Gerar semanas {analiseCiclo.ciclo + 1}–{analiseCiclo.total} ({analiseCiclo.gerar.length})
+                  </>
+                )}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

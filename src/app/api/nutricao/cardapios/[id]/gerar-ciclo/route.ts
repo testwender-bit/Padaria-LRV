@@ -4,13 +4,21 @@ import {
   SEMANAS_SEMESTRE,
   gerarDatasSemanasSemestre,
 } from '@/lib/cardapio-base-utils'
+// v9.10.0: ciclo REAL detectado pelo CONTEÚDO (não pelo campo ciclo_semanas)
+import { detectarCicloReal } from '@/lib/cardapio-ciclo-utils'
 
 // POST /api/nutricao/cardapios/[id]/gerar-ciclo
 // Body: { data_inicio?: string (YYYY-MM-DD), total_semanas?: number }
 //
-// A partir de um cardápio base já com as primeiras N semanas preenchidas
-// (default 5 — ciclo PNAE), gera as semanas restantes (até 22) como
-// réplicas automáticas da semana correspondente do ciclo.
+// A partir de um cardápio já com as primeiras N semanas preenchidas,
+// gera as semanas restantes (até 22) como réplicas automáticas da
+// semana correspondente do ciclo.
+//
+// v9.10.0: o ciclo agora é detectado pelo CONTEÚDO (maior semana com
+// itens), não pelo campo ciclo_semanas — que fica no default 5 quando o
+// cardápio foi montado com 5, 6 ou N semanas no editor. Antes, um
+// cardápio montado com 6 semanas teria a semana 6 DELETADA aqui
+// (ciclo=5 deletava semanas > 5 e regenerava 6..22 a partir de 1..5).
 //
 // Semana 6 = cópia da 1, Semana 7 = cópia da 2, ..., Semana 11 = cópia da 1, etc.
 export async function POST(
@@ -39,8 +47,24 @@ export async function POST(
       return NextResponse.json({ error: 'Cardápio não encontrado' }, { status: 404 })
     }
 
-    const ciclo = cardapio.ciclo_semanas || 5
+    // ── v9.10.0: ciclo REAL pelo conteúdo ──
+    const cicloReal = detectarCicloReal(cardapio.semanas)
+    if (cicloReal === 0) {
+      return NextResponse.json(
+        { error: 'Nenhuma semana com conteúdo. Preencha ao menos uma semana do cardápio antes de gerar o ciclo.' },
+        { status: 400 }
+      )
+    }
+    const ciclo = cicloReal
     const semanasBase = cardapio.semanas.filter((s) => s.numero <= ciclo)
+
+    // v9.10.0: semanas além do ciclo que já têm conteúdo — serão SUBSTITUÍDAS
+    // pelo ciclo (aviso exibido no dialog antes de confirmar)
+    const semanasSubstituidasComConteudo = cardapio.semanas
+      .filter((s) => s.numero > ciclo)
+      .filter((s) => (s.dias || []).some((d) => (d.itens || []).length > 0))
+      .map((s) => s.numero)
+      .sort((a, b) => a - b)
 
     if (semanasBase.length < ciclo) {
       return NextResponse.json(
@@ -122,10 +146,10 @@ export async function POST(
         semanasCriadas.push(num)
       }
 
-      // Atualizar flag repetir_ciclo = true no cardápio
+      // Atualizar flag repetir_ciclo = true + gravar o ciclo REAL no cardápio
       await tx.cardapioNutricional.update({
         where: { id: cardapio.id },
-        data: { atualizado_em: criadoEm, repetir_ciclo: true },
+        data: { atualizado_em: criadoEm, repetir_ciclo: true, ciclo_semanas: ciclo },
       })
 
       return {
@@ -134,6 +158,8 @@ export async function POST(
         semanas_geradas: semanasCriadas.length,
         semanas_criadas_nums: semanasCriadas,
         total_semanas: totalSemanas,
+        // v9.10.0: semanas além do ciclo que tinham conteúdo e foram substituídas
+        semanas_substituidas_com_conteudo: semanasSubstituidasComConteudo,
         mapeamento: Array.from({ length: totalSemanas }, (_, i) => ({
           semana: i + 1,
           base: ((i) % ciclo) + 1,

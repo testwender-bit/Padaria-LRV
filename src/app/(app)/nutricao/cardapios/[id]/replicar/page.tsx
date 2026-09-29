@@ -17,6 +17,8 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DIAS_SEMANA_ISO } from '@/lib/preparacao-categorias'
+// v9.10.0: ciclo detectado pelo CONTEÚDO (não pelo campo ciclo_semanas)
+import { detectarCicloReal } from '@/lib/cardapio-ciclo-utils'
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -325,7 +327,11 @@ export default function ReplicarCardapioPage() {
   const ehCardapioDeEscola = cardapio.escola_id !== null
   const escolaOrigemNome = cardapio.escola?.nome || escolas.find((e) => e.id === cardapio.escola_id)?.nome || ''
 
-  const totalSemanasBase = cardapio.ciclo_semanas || 5
+  // v9.10.0: ciclo REAL pelo conteúdo — o cardápio é criado com 22 linhas de semanas
+  // (vazias) e o campo ciclo_semanas fica no default 5, mesmo quando a nutricionista
+  // monta 6 semanas. Exibir o ciclo pelo conteúdo evita a mensagem errada "5 semanas base".
+  const cicloReal = cardapio ? detectarCicloReal(cardapio.semanas) : 0
+  const totalSemanasBase = cicloReal > 0 ? cicloReal : (cardapio?.ciclo_semanas || 5)
   const escolasSelecionadasCount = Object.keys(configs).length
 
   return (
@@ -393,6 +399,10 @@ export default function ReplicarCardapioPage() {
               <div>
                 <p className="text-[10px] text-muted-foreground uppercase">Semanas base</p>
                 <p className="text-sm font-bold text-[#1A3A5C]">{totalSemanasBase}</p>
+                {/* v9.10.0: avisa quando o campo ciclo_semanas está dessincronizado do conteúdo */}
+                {cicloReal > 0 && cicloReal !== (cardapio.ciclo_semanas || 5) && (
+                  <p className="text-[9px] text-amber-600" title={`O cardápio está com ciclo_semanas = ${cardapio.ciclo_semanas || 5}, mas ${cicloReal} semanas têm conteúdo`}>ciclo real (conteúdo)</p>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2 p-2 rounded-md bg-white/60 border border-[#1A3A5C]/10">
@@ -463,7 +473,11 @@ export default function ReplicarCardapioPage() {
               <div>
                 <p className="text-sm font-medium">Expandir para 22 semanas (semestre completo)</p>
                 <p className="text-xs text-muted-foreground">
-                  Gera 22 semanas: as {totalSemanasBase} base + réplicas automáticas (semana 6 = semana 1, etc). Desmarque para gerar apenas as {totalSemanasBase} semanas base.
+                  {/* v9.10.0: mapeamento explícito do ciclo detectado */}
+                  Gera 22 semanas: as {totalSemanasBase} base (S1–S{totalSemanasBase}) + réplicas automáticas repetindo o ciclo
+                  {totalSemanasBase > 0 && totalSemanasBase < 22
+                    ? ` (S${totalSemanasBase + 1} = S1, S${totalSemanasBase + 2} = S2, ...)`
+                    : ''}. Desmarque para gerar apenas as {totalSemanasBase} semanas base.
                 </p>
               </div>
             </label>
