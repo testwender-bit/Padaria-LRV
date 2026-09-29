@@ -1,53 +1,41 @@
-# Patch v9.9.7 — Nutrição > Cardápios: "Localizar" separado do "Substituir" (com navegação por clique)
+# Patch v9.9.8 — Nutrição > Cardápios: "Replicar p/ Escolas" disponível para TODOS os cardápios
 
 ## 📦 Conteúdo do patch
 
 | Arquivo | Mudança |
 |---|---|
-| `src/app/(app)/nutricao/cardapios/[id]/page.tsx` | Editor de cardápio — botões separados + novo dialog "Localizar" com navegação |
+| `src/app/(app)/nutricao/cardapios/[id]/page.tsx` | Editor: botão Replicar sem restrição a base |
+| `src/app/(app)/nutricao/cardapios/page.tsx` | Lista de cardápios: botão Replicar sem restrição a base |
 
-Sem mudança de schema (não precisa `prisma db push`).
-Sem mudança de API — continua usando a rota existente `/api/nutricao/cardapios/[id]/localizar-substituir` (GET).
+Sem mudança de schema (não precisa `prisma db push`). Sem mudança de API.
 
 ## 🎯 O que mudou
 
-Você pediu para **separar as funções**: substituir funciona bem, mas só localizar (para achar ONDE
-uma preparação está) não era prático. Agora são **dois botões independentes** na barra superior do
-editor do cardápio:
+Você notou que a ferramenta **"Replicar p/ Escolas"** (replicar o cardápio e suas semanas para
+outras escolas, escolhendo o **dia de pão e o dia de lanche** de cada uma) só aparecia para os
+**cardápios base** — o botão estava escondido nos cardápios de escola.
 
-### 🔍 Botão "Localizar" (azul) — NOVO, somente consulta
-- Digite o nome da preparação (mín. 2 letras, debounce 350ms) → busca em **todas as 22 semanas**.
-- Cada preparação encontrada vira um card com **2 badges**:
-  `6 ocorrências` e `3 sem.` (nº de **semanas distintas** em que aparece).
-- Clique no card → expande a lista de **todas as ocorrências**: `S05 · Segunda · Almoço`.
-- **Clique na ocorrência (Ir →)** → o dialog fecha, a tela **pula para aquela semana**, rola até o
-  item e o **destaca com um ring âmbar por ~6 segundos**.
-- Se a busca casar com **1 preparação só**, as ocorrências já abrem expandidas automaticamente.
-- No mobile, além da semana, o **dia clicado é selecionado** no visualizador de 1 dia por vez.
-- Se você clicar em outra ocorrência rapidamente (ex.: reabrindo o dialog), o destaque anterior é
-  cancelado limpo — nada de piscar ou apagar cedo demais.
+### Investigação (boa notícia)
+- A **API** `POST /api/nutricao/cardapios/[id]/replicar` **já suportava origem-escola desde a v8.10**:
+  - Exclui automaticamente a **escola de origem** da lista de destinos (não replica para ela mesma);
+  - **Preserva o vínculo** `cardapio_base_id` original nas cópias;
+  - Realoca pão/lanche pelo **deslocamento para o dia útil mais próximo** (não é swap cego);
+  - Opções "expandir para semestre (22 semanas)" e "manter pão/lanche" (v8.16) intactas.
+- A **página** de replicar também já estava pronta: mostra banner azul informativo quando o cardápio
+  origem é de escola, valida dia de pão/lanche por escola e lista escolas candidatas da mesma categoria.
+- **O único bloqueio eram os dois botões** no front (condições `!cardapio.escola_id` no editor e
+  `c.is_base` na lista). Este patch apenas os libera.
 
-### 🔄 Botão "Substituir" (âmbar) — mesmo fluxo de antes, só renomeado
-- Exatamente o dialog do v9.9.6 (localizar → marcar ocorrências → escolher substituta → lote ou
-  parcial), com o título agora sendo **"Substituir Preparação"**.
-- Proteções preservadas: substituta igual à original bloqueada, duplicata nunca fica no slot
-  (servidor remove), semanas marcadas como "Modificada".
-
-## 💡 Detalhes técnicos
-
-- `irParaOcorrencia(o)`: `setCurrentSemana(o.semana_num)` + `setMobileDayView` (só mobile) +
-  destaque por `item_id` + `scrollIntoView({ behavior: 'smooth', block: 'center' })` após 250ms
-  (espera o React re-renderizar a semana) + limpeza do destaque após 6s.
-- Timers guardados em `useRef` e limpos a cada navegação (evita corrida entre destaques).
-- Linha do item no cardápio ganhou `id={cardapio-item-${item.id}}` (âncora do scroll) e classe de
-  destaque condicional (ring âmbar), sem afetar drag-and-drop existente.
-- Nenhuma alteração em produção, PCQ, romaneio ou Lista de Compra. v9.9.4/v9.9.5/v9.9.6 intactos.
+### O que NÃO mudou
+- "Comparar c/ Base" continua **somente** para instâncias de escola (faz sentido só nelas);
+- "Clonar em Lote" continua somente para base;
+- Nenhuma regra de negócio, cálculo, PCQ, produção ou romaneio foi tocada.
 
 ## 🚀 Como aplicar no Codespace
 
 ```bash
 # 1. Extraia o zip na RAIZ do projeto (mesmo nível de package.json):
-unzip -o patch-v9.9.7-localizar-preparacao.zip
+unzip -o patch-v9.9.8-replicar-todos-cardapios.zip
 
 # 2. Não há migração de banco nem rota nova. Confira:
 git status
@@ -59,11 +47,14 @@ npm run build
 
 ## ✅ Roteiro de teste
 
-1. Abra **Nutrição > Cardápios > [um cardápio]**.
-2. Na barra superior, confira os **2 botões**: "Localizar" (azul) e "Substituir" (âmbar).
-3. **Localizar**: digite "arroz" (ou outra preparação que você sabe que existe) → veja os cards com
-   `N ocorrências · M sem.` → clique num card → clique numa ocorrência `S12 · Quarta · Almoço` →
-   a tela deve pular para a Semana 12 com o item **destacado em âmbar**.
-4. No mobile (ou janela estreita): repita — deve pular para a semana E para o dia certo.
-5. Busca que casa com 1 preparação só → lista de ocorrências já vem aberta.
-6. **Substituir**: fluxo igual ao de sempre (renomeado) — substituição em lote e parcial funcionando.
+1. Vá em **Nutrição > Cardápios** e abra um **cardápio de escola** (instância).
+2. Na barra superior do editor, confirme que agora aparece o botão roxo **"Replicar p/ Escolas"**
+   (antes só aparecia em cardápios base).
+3. Clique nele → a página de replicar mostra o **banner azul** "Replicando a partir de um cardápio
+   de escola" com o nome da escola de origem.
+4. Selecione outras escolas, defina **dia de pão** e **dia de lanche** de cada uma, escolha
+   expandir (22 semanas) ou não, e replique.
+5. Confirme que a **escola de origem não aparece** na lista de destinos.
+6. Volte à **lista de cardápios** → o botão "Replicar p/ Escolas" agora aparece em TODAS as linhas
+   (base e escola).
+7. Em um cardápio base, confirme que "Comparar c/ Base" continua sumido e em instância continua lá.

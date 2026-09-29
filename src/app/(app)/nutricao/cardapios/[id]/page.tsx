@@ -1966,14 +1966,13 @@ export default function CardapioEditorPage() {
             {cardapio.semanas?.[0]?.data_inicio ? formatDate(cardapio.semanas[0].data_inicio) : 'Definir data'}
           </button>
 
-          {/* Botão Replicar p/ Escolas (somente se for base) */}
-          {!cardapio.escola_id && (
-            <Link href={`/nutricao/cardapios/${cardapioId}/replicar`}>
-              <Button variant="outline" size="sm" className="text-xs h-8 border-purple-200 text-purple-700 hover:bg-purple-50">
-                <Copy className="w-3 h-3 mr-1" /> Replicar p/ Escolas
-              </Button>
-            </Link>
-          )}
+          {/* v9.9.8: Replicar p/ Escolas disponível para TODOS os cardápios (base e escola).
+              A API (v8.10) já exclui a escola de origem e preserva o vínculo com o base. */}
+          <Link href={`/nutricao/cardapios/${cardapioId}/replicar`}>
+            <Button variant="outline" size="sm" className="text-xs h-8 border-purple-200 text-purple-700 hover:bg-purple-50" title="Replicar este cardápio e suas semanas para outras escolas, escolhendo o dia de pão/lanche de cada uma">
+              <Copy className="w-3 h-3 mr-1" /> Replicar p/ Escolas
+            </Button>
+          </Link>
 
           {/* Botão Comparar com Base (somente se for instância de escola) */}
           {cardapio.escola_id && (

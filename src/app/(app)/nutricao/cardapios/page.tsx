@@ -460,14 +460,14 @@ export default function CardapiosPage() {
                           <Pencil className="w-3 h-3 mr-1" /> Editar
                         </Button>
                       </Link>
-                      {/* v8: Replicar p/ Escolas (somente bases) — substitui "Clonar em Lote" + "Ciclo PNAE" */}
-                      {c.is_base && (
-                        <Link href={`/nutricao/cardapios/${c.id}/replicar`}>
-                          <Button variant="outline" size="sm" className="h-7 text-[11px] border-purple-200 text-purple-700 hover:bg-purple-50">
-                            <Layers className="w-3 h-3 mr-1" /> Replicar p/ Escolas
-                          </Button>
-                        </Link>
-                      )}
+                      {/* v9.9.8: Replicar p/ Escolas disponível para TODOS os cardápios
+                          (antes só bases). API v8.10 já trata origem-escola: exclui a
+                          escola de origem da lista e preserva o cardapio_base_id nas cópias. */}
+                      <Link href={`/nutricao/cardapios/${c.id}/replicar`}>
+                        <Button variant="outline" size="sm" className="h-7 text-[11px] border-purple-200 text-purple-700 hover:bg-purple-50">
+                          <Layers className="w-3 h-3 mr-1" /> Replicar p/ Escolas
+                        </Button>
+                      </Link>
                       {/* v8: Comparar c/ Base (somente instâncias de escola) */}
                       {!c.is_base && c.cardapio_base_id && (
                         <Link href={`/nutricao/cardapios/${c.id}/comparar`}>
