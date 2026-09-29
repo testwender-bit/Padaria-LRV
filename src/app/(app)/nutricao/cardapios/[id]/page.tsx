@@ -17,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, Flame, Replace, ArrowRight
+  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, Flame, Replace, ArrowRight, BarChart3
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -211,6 +211,287 @@ interface CategoriaRefeicao {
   tipo_refeicao: TipoRefeicao
 }
 
+// ── v9.9.9: Analisador de Repetições ─────────────────────────────
+// Ferramenta de qualidade do cardápio: identifica preparações repetitivas
+// varrendo TODAS as semanas (análise 100% client-side, sem API nova).
+//
+// Métricas por preparação:
+//   mesmoDia        → 2+ vezes no MESMO dia (ex.: arroz no almoço e no lanche)
+//   consecutivos    → pares de dias letivos seguidos (seg→ter... qui→sex E sex→seg da semana seguinte)
+//   streakMaxSemana → maior sequência de dias seguidos DENTRO de uma mesma semana
+//   freqPct         → % dos dias letivos do cardápio em que a preparação aparece
+//   diaFixo         → concentração num único dia da semana (≥50% das ocorrências, total ≥5)
+//
+// Níveis:
+//   vermelho = repetição forte  (2× no mesmo dia · 4+ dias seguidos na semana · >60% dos dias)
+//   amarelo  = atenção          (dias consecutivos · 3 dias seguidos · >40% dos dias · dia fixo)
+//   verde    = sem alerta
+
+type RepNivel = 'vermelho' | 'amarelo' | 'verde'
+
+interface RepPrepAnalise {
+  preparacao_id: string
+  nome: string
+  categoria: string
+  total: number            // nº de ocorrências no cardápio
+  diasDistintos: number    // dias letivos distintos com a preparação
+  freqPct: number          // % dos dias letivos com a preparação
+  mesmoDia: number         // nº de dias com 2+ ocorrências
+  mesmoDiaExtra: number    // ocorrências excedentes somadas (3 no dia = 2 extras)
+  consecutivos: number     // pares de dias letivos consecutivos
+  streakMaxSemana: number  // maior sequência de dias seguidos dentro de uma semana
+  streakSemanaNum: number | null
+  streakDias: string[]     // labels dos dias do streak máximo (ex.: ['Terça','Quarta'])
+  diaFixo: { label: string; pct: number; total: number } | null
+  semanasDistintas: number
+  nivel: RepNivel
+  ocorrencias: SubOcorrencia[]  // mesmo contrato do Localizar (v9.9.7) → reusa irParaOcorrencia
+}
+
+interface RepPorRefeicao {
+  tipo_refeicao_id: string
+  nome: string
+  totalItens: number
+  distintas: number        // preparações distintas na refeição
+  diasCobertos: number     // dias letivos com itens nessa refeição
+  top: Array<{ nome: string; total: number }>  // 3 mais usadas
+}
+
+interface AnaliseRepeticao {
+  totalItens: number
+  totalDiasLetivos: number
+  preps: RepPrepAnalise[]
+  porRefeicao: RepPorRefeicao[]
+  resumo: {
+    distintas: number
+    vermelhas: number
+    amarelas: number
+    verdes: number
+    diasMesmoDia: number     // dias letivos onde ALGUMA preparação aparece 2+
+    paresConsecutivos: number
+  }
+}
+
+const REP_INDICE_DIA: Record<string, number> = { segunda: 0, terca: 1, quarta: 2, quinta: 3, sexta: 4 }
+
+function analisarRepeticoesCardapio(cardapio: CardapioFull): AnaliseRepeticao | null {
+  if (!cardapio?.semanas) return null
+
+  const diasLetivos = new Set<string>()
+  let totalItens = 0
+  // acumulador por preparação
+  const acc = new Map<string, {
+    nome: string
+    categoria: string
+    ocorrencias: SubOcorrencia[]
+    porDia: Map<string, number>            // `${semana}-${dia}` → nº de ocorrências naquele dia
+  }>()
+  // por refeição (variedade)
+  const porRef = new Map<string, { nome: string; totalItens: number; porPrep: Map<string, number>; dias: Set<string> }>()
+  // por dia → por preparação (para contar dias com QUALQUER prep 2+)
+  const porDiaPreps = new Map<string, Map<string, number>>()
+
+  for (const semana of cardapio.semanas) {
+    for (const dia of semana.dias) {
+      if (!dia.itens?.length) continue
+      const diaKey = `${semana.numero}-${dia.dia_semana}`
+      diasLetivos.add(diaKey)
+      for (const item of dia.itens) {
+        totalItens++
+        const prep = item.preparacao
+        if (!prep) continue
+        let a = acc.get(prep.id)
+        if (!a) {
+          a = { nome: prep.nome, categoria: prep.categoria || 'PREPARACAO', ocorrencias: [], porDia: new Map() }
+          acc.set(prep.id, a)
+        }
+        a.ocorrencias.push({
+          item_id: item.id,
+          semana_num: semana.numero,
+          dia_semana: dia.dia_semana,
+          tipo_refeicao_codigo: item.tipo_refeicao?.codigo || '',
+          tipo_refeicao_nome: item.tipo_refeicao?.nome || '',
+        })
+        a.porDia.set(diaKey, (a.porDia.get(diaKey) || 0) + 1)
+        // variedade por refeição
+        const trId = item.tipo_refeicao_id
+        let r = porRef.get(trId)
+        if (!r) {
+          r = { nome: item.tipo_refeicao?.nome || trId, totalItens: 0, porPrep: new Map(), dias: new Set() }
+          porRef.set(trId, r)
+        }
+        r.totalItens++
+        r.dias.add(diaKey)
+        r.porPrep.set(prep.id, (r.porPrep.get(prep.id) || 0) + 1)
+        // dia → preparação (resumo global de "2× no mesmo dia")
+        let dp = porDiaPreps.get(diaKey)
+        if (!dp) { dp = new Map(); porDiaPreps.set(diaKey, dp) }
+        dp.set(prep.id, (dp.get(prep.id) || 0) + 1)
+      }
+    }
+  }
+
+  const totalDias = diasLetivos.size || 1
+  const diaLabelRep = (v: string) => DIAS_SEMANA_NUTRI.find(d => d.value === v)?.label || v
+
+  const preps: RepPrepAnalise[] = []
+  let paresConsecutivos = 0
+
+  for (const [pid, a] of acc) {
+    const total = a.ocorrencias.length
+    const diasDistintos = a.porDia.size
+    const freqPct = Math.round((diasDistintos / totalDias) * 100)
+
+    // 2+ no mesmo dia
+    let mesmoDia = 0
+    let mesmoDiaExtra = 0
+    for (const c of a.porDia.values()) {
+      if (c >= 2) { mesmoDia++; mesmoDiaExtra += c - 1 }
+    }
+
+    // ocorrências ordenadas por (semana, dia) para análise de sequência
+    const ordenadas = [...a.ocorrencias].sort((x, y) => {
+      if (x.semana_num !== y.semana_num) return x.semana_num - y.semana_num
+      return (REP_INDICE_DIA[x.dia_semana] ?? 0) - (REP_INDICE_DIA[y.dia_semana] ?? 0)
+    })
+
+    // pares de dias letivos consecutivos (seg→ter...qui→sex e sex→seg da semana seguinte)
+    let consecutivos = 0
+    for (let i = 1; i < ordenadas.length; i++) {
+      const p = ordenadas[i - 1]
+      const c = ordenadas[i]
+      const pi = REP_INDICE_DIA[p.dia_semana] ?? -1
+      const ci = REP_INDICE_DIA[c.dia_semana] ?? -2
+      const mesmaSemanaSeguinte = p.semana_num === c.semana_num && ci === pi + 1
+      const viradaSemana = c.semana_num === p.semana_num + 1 && pi === 4 && ci === 0
+      if (mesmaSemanaSeguinte || viradaSemana) consecutivos++
+    }
+    paresConsecutivos += consecutivos
+
+    // maior sequência de dias DISTINTOS seguidos dentro de uma mesma semana
+    const porSemana = new Map<number, number[]>()
+    for (const o of ordenadas) {
+      const arr = porSemana.get(o.semana_num) || []
+      arr.push(REP_INDICE_DIA[o.dia_semana] ?? 0)
+      porSemana.set(o.semana_num, arr)
+    }
+    let streakMaxSemana = 0
+    let streakSemanaNum: number | null = null
+    let streakDias: string[] = []
+    for (const [w, arr] of porSemana) {
+      const uniq = [...new Set(arr)].sort((x, y) => x - y)
+      let run = uniq.length ? 1 : 0
+      let bestRun = 0
+      let bestFrom = 0
+      for (let i = 1; i < uniq.length; i++) {
+        if (uniq[i] === uniq[i - 1] + 1) run++
+        else {
+          if (run > bestRun) { bestRun = run; bestFrom = i - run }
+          run = 1
+        }
+      }
+      if (run > bestRun) { bestRun = run; bestFrom = uniq.length - run }
+      if (bestRun > streakMaxSemana) {
+        streakMaxSemana = bestRun
+        streakSemanaNum = w
+        streakDias = uniq.slice(bestFrom, bestFrom + bestRun).map(idx => diaLabelRep(DIAS_SEMANA_NUTRI[idx]?.value || ''))
+      }
+    }
+
+    // concentração em um dia da semana (ex.: "sempre segunda")
+    const porDiaSemana = new Map<string, number>()
+    for (const o of a.ocorrencias) porDiaSemana.set(o.dia_semana, (porDiaSemana.get(o.dia_semana) || 0) + 1)
+    let diaFixo: RepPrepAnalise['diaFixo'] = null
+    let melhorDia = ''
+    let melhorTotal = 0
+    for (const [d, c] of porDiaSemana) {
+      if (c > melhorTotal) { melhorTotal = c; melhorDia = d }
+    }
+    if (total >= 5 && melhorTotal > 0) {
+      const pct = Math.round((melhorTotal / total) * 100)
+      if (pct >= 50) diaFixo = { label: diaLabelRep(melhorDia), pct, total: melhorTotal }
+    }
+
+    const semanasDistintas = new Set(a.ocorrencias.map(o => o.semana_num)).size
+
+    // classificação
+    // Critérios de % de dias só valem com amostra mínima (3+ ocorrências em 5+ dias letivos),
+    // senão cardápios quase vazios geram falso positivo (1 item = 100% de 1 dia)
+    const freqConfiavel = total >= 3 && diasLetivos.size >= 5
+    let nivel: RepNivel = 'verde'
+    if (mesmoDia > 0 || streakMaxSemana >= 4 || (freqConfiavel && freqPct > 60)) nivel = 'vermelho'
+    else if (consecutivos > 0 || streakMaxSemana === 3 || (freqConfiavel && freqPct > 40) || diaFixo) nivel = 'amarelo'
+
+    preps.push({
+      preparacao_id: pid,
+      nome: a.nome,
+      categoria: a.categoria,
+      total,
+      diasDistintos,
+      freqPct,
+      mesmoDia,
+      mesmoDiaExtra,
+      consecutivos,
+      streakMaxSemana,
+      streakSemanaNum,
+      streakDias,
+      diaFixo,
+      semanasDistintas,
+      nivel,
+      ocorrencias: a.ocorrencias,
+    })
+  }
+
+  // ordena: vermelho → amarelo → verde; dentro do nível, piores primeiro
+  const prioridade: Record<RepNivel, number> = { vermelho: 3, amarelo: 2, verde: 1 }
+  preps.sort((x, y) =>
+    (prioridade[y.nivel] - prioridade[x.nivel]) ||
+    (y.mesmoDiaExtra - x.mesmoDiaExtra) ||
+    (y.streakMaxSemana - x.streakMaxSemana) ||
+    (y.consecutivos - x.consecutivos) ||
+    (y.total - x.total) ||
+    x.nome.localeCompare(y.nome)
+  )
+
+  // variedade por refeição (mais movimentadas primeiro)
+  const porRefeicao: RepPorRefeicao[] = [...porRef.entries()]
+    .map(([trId, r]) => ({
+      tipo_refeicao_id: trId,
+      nome: r.nome,
+      totalItens: r.totalItens,
+      distintas: r.porPrep.size,
+      diasCobertos: r.dias.size,
+      top: [...r.porPrep.entries()]
+        .map(([p2, c]) => ({ nome: acc.get(p2)?.nome || p2, total: c }))
+        .sort((x, y) => y.total - x.total || x.nome.localeCompare(y.nome))
+        .slice(0, 3),
+    }))
+    .sort((x, y) => y.totalItens - x.totalItens)
+
+  // dias letivos onde alguma preparação aparece 2+
+  let diasMesmoDia = 0
+  for (const dp of porDiaPreps.values()) {
+    for (const c of dp.values()) {
+      if (c >= 2) { diasMesmoDia++; break }
+    }
+  }
+
+  return {
+    totalItens,
+    totalDiasLetivos: diasLetivos.size,
+    preps,
+    porRefeicao,
+    resumo: {
+      distintas: acc.size,
+      vermelhas: preps.filter(p => p.nivel === 'vermelho').length,
+      amarelas: preps.filter(p => p.nivel === 'amarelo').length,
+      verdes: preps.filter(p => p.nivel === 'verde').length,
+      diasMesmoDia,
+      paresConsecutivos,
+    },
+  }
+}
+
 // ── Helpers ────────────────────────────────────────────────────
 
 function getStatusBadge(status: string) {
@@ -364,6 +645,12 @@ export default function CardapioEditorPage() {
   const locScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const locClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // ── v9.9.9: Analisador de Repetições ──
+  const [repDialogOpen, setRepDialogOpen] = useState(false)
+  const [repCardAberto, setRepCardAberto] = useState<string | null>(null)   // preparação expandida no ranking
+  const [repCat, setRepCat] = useState('all')                              // filtro por categoria
+  const [repSoAlertas, setRepSoAlertas] = useState(true)                   // só vermelho+amarelo (default)
+
   // v9.9.6: busca de ocorrências com debounce (GET localizar-substituir)
   useEffect(() => {
     if (!subDialogOpen) return
@@ -416,6 +703,28 @@ export default function CardapioEditorPage() {
     }, 350)
     return () => clearTimeout(t)
   }, [locBusca, locDialogOpen, cardapioId])
+
+  // v9.9.9: análise calculada só quando o dialog está aberto (varredura das 22 semanas)
+  const analiseRep = useMemo(() => {
+    if (!repDialogOpen || !cardapio) return null
+    return analisarRepeticoesCardapio(cardapio)
+  }, [repDialogOpen, cardapio])
+
+  // v9.9.9: ranking filtrado (categoria + somente alertas)
+  const repFiltradas = useMemo(() => {
+    if (!analiseRep) return []
+    let list = analiseRep.preps
+    if (repCat !== 'all') list = list.filter(p => p.categoria === repCat)
+    if (repSoAlertas) list = list.filter(p => p.nivel !== 'verde')
+    return list
+  }, [analiseRep, repCat, repSoAlertas])
+
+  // v9.9.9: categorias presentes no cardápio (para o filtro)
+  const repCategoriasPresentes = useMemo(() => {
+    if (!analiseRep) return []
+    const set = new Set(analiseRep.preps.map(p => p.categoria))
+    return PREPARACAO_CATEGORIAS.filter(c => set.has(c.value))
+  }, [analiseRep])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -1149,6 +1458,14 @@ export default function CardapioEditorPage() {
       document.getElementById(`cardapio-item-${o.item_id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 250)
     locClearTimerRef.current = setTimeout(() => setLocDestaqueItemId(null), 6000)
+  }
+
+  // ── v9.9.9: Analisador de Repetições — abrir dialog (estado limpo) ──
+  function openRepDialog() {
+    setRepCardAberto(null)
+    setRepCat('all')
+    setRepSoAlertas(true)
+    setRepDialogOpen(true)
   }
 
   function toggleSubItem(itemId: string) {
@@ -2012,6 +2329,17 @@ export default function CardapioEditorPage() {
             <Replace className="w-3 h-3 mr-1" /> Substituir
           </Button>
 
+          {/* v9.9.9: Analisador de Repetições — identifica preparações repetitivas */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-8 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+            onClick={openRepDialog}
+            title="Identifica preparações repetitivas: 2× no mesmo dia, dias seguidos, concentração no mesmo dia da semana e pouca variedade por refeição"
+          >
+            <BarChart3 className="w-3 h-3 mr-1" /> Repetições
+          </Button>
+
           <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setSidebarOpen(!sidebarOpen)}>
             {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
             <span className="ml-1 text-xs">Resumo</span>
@@ -2833,6 +3161,176 @@ export default function CardapioEditorPage() {
 
           <DialogFooter className="flex-shrink-0">
             <Button variant="outline" size="sm" onClick={() => setLocDialogOpen(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══ v9.9.9: Analisador de Repetições ═══ */}
+      <Dialog open={repDialogOpen} onOpenChange={setRepDialogOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col gap-3 p-5 overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="text-[#1A3A5C] text-sm flex items-center gap-1.5">
+              <BarChart3 className="w-4 h-4 text-indigo-600" />
+              Analisar Repetições
+            </DialogTitle>
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              Varre o cardápio inteiro (todas as semanas) e aponta preparações repetitivas:
+              2× no mesmo dia, dias seguidos, concentração num único dia da semana e pouca variedade por refeição.
+            </p>
+          </DialogHeader>
+
+          {!analiseRep ? (
+            <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">Analisando...</div>
+          ) : analiseRep.totalItens === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground py-10 text-center px-4">
+              Nenhum item no cardápio ainda — adicione preparações para analisar repetições.
+            </div>
+          ) : (
+            <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto pr-0.5 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300">
+              {/* ── Resumo geral ── */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 flex-shrink-0">
+                <div className="p-2 rounded-lg border border-[#1A3A5C]/10 bg-[#1A3A5C]/5">
+                  <p className="text-[9px] text-muted-foreground uppercase font-bold">Itens no cardápio</p>
+                  <p className="text-lg font-bold text-[#1A3A5C] leading-tight">{analiseRep.totalItens}</p>
+                  <p className="text-[9px] text-muted-foreground">{analiseRep.resumo.distintas} preparações distintas</p>
+                </div>
+                <div className={`p-2 rounded-lg border ${analiseRep.resumo.vermelhas > 0 ? 'border-red-200 bg-red-50' : 'border-gray-100 bg-gray-50'}`}>
+                  <p className="text-[9px] text-muted-foreground uppercase font-bold">Repetição forte</p>
+                  <p className={`text-lg font-bold leading-tight ${analiseRep.resumo.vermelhas > 0 ? 'text-red-600' : 'text-gray-400'}`}>{analiseRep.resumo.vermelhas}</p>
+                  <p className="text-[9px] text-muted-foreground">preparação(ões) em vermelho</p>
+                </div>
+                <div className={`p-2 rounded-lg border ${analiseRep.resumo.amarelas > 0 ? 'border-amber-200 bg-amber-50' : 'border-gray-100 bg-gray-50'}`}>
+                  <p className="text-[9px] text-muted-foreground uppercase font-bold">Atenção</p>
+                  <p className={`text-lg font-bold leading-tight ${analiseRep.resumo.amarelas > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{analiseRep.resumo.amarelas}</p>
+                  <p className="text-[9px] text-muted-foreground">preparação(ões) em amarelo</p>
+                </div>
+                <div className={`p-2 rounded-lg border ${analiseRep.resumo.diasMesmoDia > 0 ? 'border-red-200 bg-red-50' : 'border-gray-100 bg-gray-50'}`}>
+                  <p className="text-[9px] text-muted-foreground uppercase font-bold">2× no mesmo dia</p>
+                  <p className={`text-lg font-bold leading-tight ${analiseRep.resumo.diasMesmoDia > 0 ? 'text-red-600' : 'text-gray-400'}`}>{analiseRep.resumo.diasMesmoDia}</p>
+                  <p className="text-[9px] text-muted-foreground">de {analiseRep.totalDiasLetivos} dias letivos</p>
+                </div>
+              </div>
+
+              {/* ── Variedade por refeição ── */}
+              <div className="space-y-1.5 flex-shrink-0">
+                <Label className="text-[10px] font-bold text-muted-foreground uppercase">Variedade por refeição</Label>
+                <div className="rounded-lg border border-gray-200 p-2 space-y-1">
+                  {analiseRep.porRefeicao.map(r => (
+                    <div key={r.tipo_refeicao_id} className="text-[10px] leading-relaxed flex flex-wrap items-baseline gap-x-1.5">
+                      <span className="font-bold text-[#1A3A5C]">{r.nome}:</span>
+                      <span className="text-muted-foreground">{r.distintas} preparações distintas · mais usadas:</span>
+                      {r.top.map((t, i) => (
+                        <span key={i} className="text-[#1A3A5C] font-medium">
+                          {t.nome} ({t.total}×){i < r.top.length - 1 ? ',' : ''}
+                        </span>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Filtros do ranking ── */}
+              <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                <Select value={repCat} onValueChange={(v) => { setRepCat(v); setRepCardAberto(null) }}>
+                  <SelectTrigger className="h-7 text-[11px] w-[190px] flex-shrink-0">
+                    <SelectValue placeholder="Categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as categorias</SelectItem>
+                    {repCategoriasPresentes.map(c => (
+                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <button
+                  onClick={() => { setRepSoAlertas(v => !v); setRepCardAberto(null) }}
+                  className={`inline-flex items-center gap-1.5 h-7 px-2 rounded-md border text-[11px] font-medium transition-colors flex-shrink-0 ${
+                    repSoAlertas ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-gray-200 text-muted-foreground hover:bg-gray-50'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${repSoAlertas ? 'bg-indigo-500' : 'bg-gray-300'}`} />
+                  Só com alertas
+                </button>
+                <span className="text-[10px] text-muted-foreground ml-auto">{repFiltradas.length} preparação(ões)</span>
+              </div>
+
+              {/* ── Ranking de repetições ── */}
+              <div className="space-y-1.5">
+                {repFiltradas.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-6 leading-relaxed">
+                    {repSoAlertas && analiseRep.resumo.vermelhas === 0 && analiseRep.resumo.amarelas === 0
+                      ? 'Nenhuma repetição preocupante encontrada — o cardápio está variado.'
+                      : repSoAlertas
+                        ? 'Nenhuma preparação com alerta neste filtro. Desative "Só com alertas" para ver todas.'
+                        : 'Nenhuma preparação neste filtro.'}
+                  </p>
+                ) : repFiltradas.map(p => {
+                  const aberto = repCardAberto === p.preparacao_id
+                  return (
+                    <div key={p.preparacao_id} className="rounded-lg border border-gray-200 overflow-hidden">
+                      <button
+                        onClick={() => setRepCardAberto(aberto ? null : p.preparacao_id)}
+                        className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-[#1A3A5C]/5 transition-colors text-left"
+                      >
+                        <span
+                          className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                            p.nivel === 'vermelho' ? 'bg-red-500' : p.nivel === 'amarelo' ? 'bg-amber-400' : 'bg-emerald-500'
+                          }`}
+                          title={p.nivel === 'vermelho' ? 'Repetição forte' : p.nivel === 'amarelo' ? 'Atenção' : 'Sem alerta'}
+                        />
+                        <span className="text-xs font-medium text-[#1A3A5C] truncate flex-1 min-w-0" title={p.nome}>{p.nome}</span>
+                        <Badge className="bg-[#1A3A5C]/10 text-[#1A3A5C] hover:bg-[#1A3A5C]/10 text-[9px] flex-shrink-0">{p.total}×</Badge>
+                        <Badge className="bg-gray-100 text-gray-600 hover:bg-gray-100 text-[9px] flex-shrink-0">{p.freqPct}% dos dias</Badge>
+                        {p.mesmoDia > 0 && (
+                          <Badge className="bg-red-100 text-red-700 hover:bg-red-100 text-[9px] flex-shrink-0">2× no mesmo dia ({p.mesmoDia})</Badge>
+                        )}
+                        {p.streakMaxSemana >= 3 && (
+                          <Badge className={`text-[9px] flex-shrink-0 ${p.streakMaxSemana >= 4 ? 'bg-red-100 text-red-700 hover:bg-red-100' : 'bg-amber-100 text-amber-700 hover:bg-amber-100'}`}>
+                            {p.streakMaxSemana} dias seguidos
+                          </Badge>
+                        )}
+                        {p.consecutivos > 0 && (
+                          <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 text-[9px] flex-shrink-0">{p.consecutivos} consec.</Badge>
+                        )}
+                        {p.diaFixo && (
+                          <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 text-[9px] flex-shrink-0">{p.diaFixo.pct}% às {p.diaFixo.label}</Badge>
+                        )}
+                        {aberto ? <ChevronUp className="w-3 h-3 text-muted-foreground flex-shrink-0" /> : <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />}
+                      </button>
+                      {aberto && (
+                        <div className="border-t border-gray-100 p-1 space-y-0.5 bg-gray-50/50 max-h-56 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300">
+                          {p.ocorrencias.map(o => (
+                            <button
+                              key={o.item_id}
+                              onClick={() => { setRepDialogOpen(false); irParaOcorrencia(o) }}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors text-left text-xs"
+                            >
+                              <span className="font-bold text-[#1A3A5C] flex-shrink-0">S{String(o.semana_num).padStart(2, '0')}</span>
+                              <span className="text-muted-foreground flex-shrink-0">{DIAS_SEMANA_NUTRI.find(d => d.value === o.dia_semana)?.label || o.dia_semana}</span>
+                              <span className="text-muted-foreground truncate" title={o.tipo_refeicao_nome}>{o.tipo_refeicao_nome}</span>
+                              <span className="ml-auto flex items-center gap-0.5 text-[10px] font-semibold text-blue-600 flex-shrink-0">
+                                Ir <ArrowRight className="w-3 h-3" />
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* ── Critérios (transparência) ── */}
+              <p className="text-[9px] text-muted-foreground leading-relaxed px-0.5 flex-shrink-0">
+                Critérios — <span className="text-red-600 font-semibold">Repetição forte</span>: 2+ vezes no mesmo dia, 4+ dias seguidos na mesma semana ou presente em mais de 60% dos dias letivos.
+                {' '}<span className="text-amber-600 font-semibold">Atenção</span>: dias consecutivos (inclusive sexta→segunda), 3 dias seguidos na semana, mais de 40% dos dias ou concentrada em um dia da semana.
+                Preparações de base (arroz, feijão, sucos) naturalmente repetem mais — avalie o conjunto.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="flex-shrink-0">
+            <Button variant="outline" size="sm" onClick={() => setRepDialogOpen(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
