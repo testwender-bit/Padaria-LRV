@@ -17,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, Flame, Replace, ArrowRight, BarChart3
+  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, Flame, Replace, ArrowRight, BarChart3, ArrowLeftRight
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -607,6 +607,13 @@ export default function CardapioEditorPage() {
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null)
   // v8: dica visual de Alt+Drag = duplicar (banner fixo durante o arrasto)
   const [dragAltHint, setDragAltHint] = useState(false)
+  // ── v9.10.2: Modo Troca — clique em 2 preparações e elas trocam de lugar ──
+  // modoTroca     → ferramenta ativa (botão ⇄ no cabeçalho do dia)
+  // trocaPrimeiro → 1ª preparação selecionada (aguardando a 2ª)
+  // trocando      → requisição em andamento (evita duplo clique)
+  const [modoTroca, setModoTroca] = useState(false)
+  const [trocaPrimeiro, setTrocaPrimeiro] = useState<CardapioItem | null>(null)
+  const [trocando, setTrocando] = useState(false)
   // Modo mobile: mostra apenas 1 dia por vez (picker no topo)
   const [mobileDayView, setMobileDayView] = useState<string>('segunda')
   // Porções com edição inline em andamento (item_id)
@@ -825,10 +832,15 @@ export default function CardapioEditorPage() {
         e.preventDefault()
         setCurrentSemana(Number(e.key))
       }
+      // v9.10.2: ESC cancela o Modo Troca
+      else if (e.key === 'Escape' && modoTroca) {
+        setModoTroca(false)
+        setTrocaPrimeiro(null)
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [addDialogOpen, copyDialogOpen, faseDialogOpen, cardapio])
+  }, [addDialogOpen, copyDialogOpen, faseDialogOpen, cardapio, modoTroca])
 
   // Refeições for the current category (with schedule info)
   // v8.7: ORDENA POR HORÁRIO CRONOLÓGICO (não por tipo_refeicao.ordem).
@@ -1722,6 +1734,95 @@ export default function CardapioEditorPage() {
     }
   }
 
+  // ── v9.10.2: Modo Troca — troca duas preparações de lugar ──
+  // Fluxo: botão ⇄ no cabeçalho do dia ativa o modo → clique na 1ª preparação
+  // → clique na 2ª → a API troca o conteúdo dos dois itens (preparação +
+  // porções) mantendo dia/refeição/ordem de cada posição. ESC ou ✕ cancela.
+  function sairModoTroca() {
+    setModoTroca(false)
+    setTrocaPrimeiro(null)
+  }
+
+  async function handleTrocaClick(item: CardapioItem) {
+    if (trocando) return
+    // 1º clique: guarda a preparação e pede a 2ª
+    if (!trocaPrimeiro) {
+      setTrocaPrimeiro(item)
+      toast.info(`1ª preparação: ${item.preparacao.nome} — agora clique na 2ª para trocar de lugar`)
+      return
+    }
+    // Clique na mesma preparação: desmarca (cancela a seleção sem sair do modo)
+    if (trocaPrimeiro.id === item.id) {
+      setTrocaPrimeiro(null)
+      toast.info('Seleção cancelada — clique na 1ª preparação novamente')
+      return
+    }
+
+    setTrocando(true)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/trocar-itens`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_a_id: trocaPrimeiro.id, item_b_id: item.id }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || 'Erro ao trocar preparações')
+      }
+      const data = await res.json()
+      const nomeA = trocaPrimeiro.preparacao.nome
+      const nomeB = item.preparacao.nome
+
+      // ── Atualização otimista (sem refresh) ──
+      // action 'swapped' → os dois itens trocam de conteúdo (preparacao_id,
+      //                    objeto preparacao e porções) — ids preservados
+      // action 'ordem'   → mesmo slot: troca apenas os valores de ordem
+      const trocaConteudos = new Map<string, Partial<CardapioItem>>([
+        [trocaPrimeiro.id, { preparacao_id: item.preparacao_id, preparacao: item.preparacao, porcoes: item.porcoes }],
+        [item.id, { preparacao_id: trocaPrimeiro.preparacao_id, preparacao: trocaPrimeiro.preparacao, porcoes: trocaPrimeiro.porcoes }],
+      ])
+
+      setCardapio(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          semanas: prev.semanas.map(s => ({
+            ...s,
+            dias: s.dias.map(d => ({
+              ...d,
+              itens: d.itens.map(i => {
+                if (data.action === 'ordem') {
+                  if (i.id === trocaPrimeiro.id) return { ...i, ordem: data.ordem_a }
+                  if (i.id === item.id) return { ...i, ordem: data.ordem_b }
+                  return i
+                }
+                const troca = trocaConteudos.get(i.id)
+                return troca ? { ...i, ...troca } : i
+              }),
+            })),
+          })),
+        }
+      })
+
+      toast.success(
+        data.action === 'ordem'
+          ? `Ordem trocada: ${nomeA} ⇄ ${nomeB}`
+          : `Trocadas de lugar: ${nomeA} ⇄ ${nomeB}`
+      )
+
+      // v8: marca a semana como diferenciada (se for cardápio de escola)
+      if (cardapio?.escola_id && cardapio?.cardapio_base_id) {
+        handleDiferenciarSemana(currentSemana, true)
+      }
+
+      sairModoTroca()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao trocar preparações')
+    } finally {
+      setTrocando(false)
+    }
+  }
+
   // v8: Duplicar item (Alt+Drag) — cria cópia no destino sem remover origem
   async function handleDuplicateItem(item: CardapioItem, destinoSemana: number, destinoDia: string, destinoTipoRefeicaoId: string) {
     // Não duplica para o mesmo slot — dá feedback claro para o usuário
@@ -2281,6 +2382,26 @@ export default function CardapioEditorPage() {
           <span>Solte para <b className="font-bold">mover</b> · segure <kbd className="px-1.5 py-0.5 bg-white/20 rounded text-[10px] font-mono">Alt</kbd> para <b className="font-bold">duplicar</b></span>
         </div>
       )}
+      {/* v9.10.2: Banner do Modo Troca (ativo enquanto a ferramenta ⇄ está ligada) */}
+      {modoTroca && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 bg-violet-600 text-white text-xs px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
+          <ArrowLeftRight className="w-3.5 h-3.5 flex-shrink-0" />
+          {trocando ? (
+            <span>Trocando preparações...</span>
+          ) : trocaPrimeiro ? (
+            <span>1ª: <b className="font-bold">{trocaPrimeiro.preparacao.nome}</b> — agora clique na 2ª preparação</span>
+          ) : (
+            <span><b className="font-bold">Modo troca:</b> clique na 1ª e depois na 2ª preparação — elas trocam de lugar</span>
+          )}
+          <button
+            onClick={sairModoTroca}
+            className="ml-1 w-4 h-4 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center flex-shrink-0"
+            title="Cancelar modo troca (ESC)"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
       {/* Top Bar */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
@@ -2643,13 +2764,23 @@ export default function CardapioEditorPage() {
                         ) : null
                       })()}
                     </div>
-                    <button
-                      onClick={() => openCopyDialog(dia.value, currentSemana)}
-                      className="text-white/70 hover:text-white transition-colors flex-shrink-0"
-                      title="Copiar refeições para outro dia"
-                    >
-                      <Copy className="w-3 h-3" />
-                    </button>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {/* v9.10.2: Trocar preparações — clique em 2 e elas trocam de lugar */}
+                      <button
+                        onClick={() => { if (modoTroca) { sairModoTroca() } else { setModoTroca(true); setTrocaPrimeiro(null) } }}
+                        className={`transition-colors ${modoTroca ? 'text-violet-300 hover:text-violet-200' : 'text-white/70 hover:text-white'}`}
+                        title="Trocar preparações: clique em uma, depois em outra — elas trocam de lugar"
+                      >
+                        <ArrowLeftRight className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => openCopyDialog(dia.value, currentSemana)}
+                        className="text-white/70 hover:text-white transition-colors flex-shrink-0"
+                        title="Copiar refeições para outro dia"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Refeição slots */}
@@ -2728,7 +2859,8 @@ export default function CardapioEditorPage() {
                             <div
                               key={item.id}
                               id={`cardapio-item-${item.id}`}
-                              draggable
+                              draggable={!modoTroca}
+                              onClick={modoTroca ? () => handleTrocaClick(item) : undefined}
                               onDragStart={(e) => {
                                 setDraggedItem(item)
                                 // ⚠️ 'copyMove' permite que o navegador mostre cursor de cópia (Alt) OU de mover
@@ -2741,16 +2873,27 @@ export default function CardapioEditorPage() {
                                 setDragOverSlot(null)
                                 setDragAltHint(false)
                               }}
-                              className={`flex items-center gap-1 mb-1 p-1 rounded bg-white border text-[10px] group cursor-grab active:cursor-grabbing transition-all ${
+                              className={`flex items-center gap-1 mb-1 p-1 rounded bg-white border text-[10px] group transition-all ${
+                                modoTroca
+                                  ? 'cursor-pointer hover:border-violet-400 hover:bg-violet-50/50'
+                                  : 'cursor-grab active:cursor-grabbing'
+                              } ${
                                 draggedItem?.id === item.id ? 'opacity-50' :
-                                // v9.9.7: destaque após "Ir" do Localizar
-                                locDestaqueItemId === item.id ? 'border-amber-400 ring-2 ring-amber-300 bg-amber-50' : 'border-gray-100'
+                                // v9.10.2: 1ª preparação selecionada no Modo Troca
+                                trocaPrimeiro?.id === item.id
+                                  ? 'border-violet-500 ring-2 ring-violet-300 bg-violet-50'
+                                  : locDestaqueItemId === item.id ? 'border-amber-400 ring-2 ring-amber-300 bg-amber-50' : 'border-gray-100'
                               }`}
-                              title="Arraste para mover • Alt+Arraste para duplicar"
+                              title={modoTroca
+                                ? (trocaPrimeiro?.id === item.id
+                                  ? '1ª selecionada — clique nela novamente para cancelar'
+                                  : 'Clique para trocar de lugar com outra preparação')
+                                : 'Arraste para mover • Alt+Arraste para duplicar'}
                             >
                               <GripVertical className="w-2.5 h-2.5 text-gray-300 flex-shrink-0 group-hover:text-gray-400" />
                               <span className="flex-1 truncate font-medium">{item.preparacao.nome}</span>
-                              {/* v8: Botões up/down para reordenar dentro do slot */}
+                              {/* v8: Botões up/down para reordenar dentro do slot (escondidos no Modo Troca — v9.10.2) */}
+                              {!modoTroca && (
                               <div className="flex flex-col flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleReordenarItem(item.id, 'up') }}
@@ -2767,6 +2910,7 @@ export default function CardapioEditorPage() {
                                   <ChevronDown className="w-2.5 h-2.5" />
                                 </button>
                               </div>
+                              )}
                               {/* Porções (display estático — definidas no cadastro da preparação) */}
                               {item.porcoes > 1 && (
                                 <span
@@ -2776,6 +2920,8 @@ export default function CardapioEditorPage() {
                                   {item.porcoes}×
                                 </span>
                               )}
+                              {/* v9.10.2: botão remover escondido no Modo Troca (clique = selecionar para troca) */}
+                              {!modoTroca && (
                               <button
                                 onClick={() => handleRemoveItem(item.id)}
                                 className="text-red-300 hover:text-red-500 ml-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -2783,6 +2929,7 @@ export default function CardapioEditorPage() {
                               >
                                 <Trash2 className="w-2.5 h-2.5" />
                               </button>
+                              )}
                             </div>
                           ))}
                           {/* Add button */}

@@ -1,52 +1,51 @@
-# LEIA-ME — Patch v9.10.1 · Correção do erro "Transaction not found" no Gerar Ciclo
+# LEIA-ME — Patch v9.10.2 · Modo Troca de Preparações no Editor do Cardápio
 
 **Projeto:** padaria-municipal · **Data:** 30/09/2026
 **Formato de aplicação:** extrair o zip na **raiz do projeto** (os caminhos internos já estão corretos).
 
 ```
-unzip -o patch-v9.10.1-correcao-erro-gerar-ciclo.zip -d ./padaria-municipal
+unzip -o patch-v9.10.2-trocar-preparacoes.zip -d ./padaria-municipal
 ```
 
 ---
 
-## 1. O que este patch corrige
+## 1. O que este patch adiciona
 
-### 🔧 FIX — "Erro ao gerar ciclo PNAE: Transaction API error: Transaction not found (P2028)"
+### ⇄ NOVO — Modo Troca: clique em 2 preparações e elas trocam de lugar
 
-**Causa raiz:** a API `gerar-ciclo` executava **toda a geração dentro de uma transação interativa
-do Prisma (`$transaction`)** — até 22 semanas × 6 dias × N itens = **centenas de INSERTs
-sequenciais**. No Supabase, a conexão passa pelo **pgbouncer (pooler 6543, modo transaction)**,
-que encerra transações longas no meio — o Prisma perde a transação e estoura
-`P2028 "Transaction not found"`. É a mesma lição já registrada na **v8.14** no `/clonar`:
-*"NÃO usa $transaction — pgbouncer mata transações longas... centenas de INSERTs não cabem em
-transação"*. O Replicar funcionou por sorte (menos dados naquele teste) — estava com o mesmo risco.
+No editor do cardápio, **ao lado do botão de copiar o dia** (cabeçalho azul de cada dia da
+semana), agora existe um **botão ⇄ (Trocar preparações)**. Ele ativa o *Modo Troca*:
 
-**Correção (`gerar-ciclo/route.ts` reescrito):**
-- **Sem `$transaction`** — escritas sequenciais com `db.` direto (mesmo padrão do `/clonar` v8.14);
-- **`createMany` para os itens** (1 query em vez de N) — reduz drasticamente o nº de viagens ao banco;
-- **Deleção intercalada**: a semana antiga do número `num` sai **só quando a réplica está pronta
-  para entrar no lugar** (antes apagava tudo de uma vez no início da transação). Se algo falhar no
-  meio, as semanas do ciclo (1–N) ficam intactas e basta clicar "Gerar Ciclo" **de novo** — a
-  operação é reexecutável e completa apenas o que faltou;
-- Resposta, mapeamento (`S7 = S1...`), aviso de semanas substituídas e gravação de
-  `ciclo_semanas`/`repetir_ciclo`: **exatamente iguais** à v9.10.0 (o editor não mudou).
+1. Clique no **⇄** no cabeçalho do dia → aparece o banner violeta no topo:
+   *"Modo troca: clique na 1ª e depois na 2ª preparação — elas trocam de lugar"*;
+2. Clique na **1ª preparação** (qualquer dia/refeição da semana visível) → ela fica com
+   **borda violeta** e o banner mostra o nome dela;
+3. Clique na **2ª preparação** → as duas **trocam de lugar** instantaneamente (toast de
+   confirmação) e o modo desliga sozinho.
 
-### 🛡️ BÔNUS — Replicar e Clonar em Lote blindados com o mesmo padrão
+**Exemplo:** Strogonoff na Segunda/Almoço e Feijoada na Terça/Almoço → clique no Strogonoff,
+depois na Feijoada → a Segunda passa a ter Feijoada e a Terça o Strogonoff. As **porções viajam
+junto com a preparação**, e a ordem dentro de cada refeição é preservada.
 
-- `replicar/route.ts`: removida a transação de 60s que embrulhava **todas as escolas** (N escolas
-  × 22 semanas = milhares de INSERTs — o próximo P2028 seria aí). Corpo preservado, agora com
-  `createMany` nos clones e nos helpers de realocação de pão/lanche. **Novidade:** se uma escola
-  falhar no meio, o cardápio parcial dela é **removido** (cascade) e ela entra em `erros` — sem
-  cardápio pela metade no sistema.
-- `clonar-lote/route.ts`: mesma conversão (era uma transação só para todas as escolas do lote).
+### Como funciona por dentro (sem truques arriscados)
 
-### ✅ O que NÃO mudou
-
-- Rotas de **operações curtas** (copiar-dia, trocar-dia, mover-item, reordenar-semana/dia, item)
-  continuam com `$transaction` — são poucas queries, não sofrem do problema;
-- Toda a lógica da v9.10.0 (ciclo pelo conteúdo, expansão 6→22, botão "Gerar Ciclo"),
-  realocação de pão/lanche (v5), `manter_pao_lanche` (v8.16), exclusão da escola de origem (v8.10),
-  Localizar/Substituir (v9.9.6/7), Repetições (v9.9.9): **preservadas**.
+- **Slots diferentes** (dias e/ou refeições distintos): a API **troca o conteúdo das duas linhas**
+  (`preparacao_id` + `porções`) em vez de apagar/recriar itens. Os **ids são preservados**, nada é
+  deletado — zero risco de perder item se algo falhar no meio. A tela atualiza de forma otimista
+  (sem recarregar).
+- **Mesmo slot** (mesmo dia + mesma refeição): troca apenas o campo `ordem` (reordenação manual).
+- **Proteção anti-duplicação:** se a preparação que vai entrar **já existe** na refeição de destino
+  (por um terceiro item), a troca é **recusada com mensagem amigável** (409) —
+  *"Arroz já existe em Terça/Almoço — a troca duplicaria a preparação na mesma refeição"* —
+  e nada é alterado.
+- **PGBOUNCER (lição v9.10.1):** a transação usada é **curta** (2 updates pontuais em registros já
+  carregados, chaves indexadas) — o mesmo padrão das rotas curtas `mover-item`/`trocar-dia`, que
+  sempre funcionaram. Nada de transações longas com centenas de inserts.
+- **Cardápio de escola (replicado):** a semana trocada é marcada como **"Modificada"**
+  (`diferenciada`), igual ao mover/arrastar.
+- Enquanto o modo está ativo, **arrastar fica desabilitado** e os botõezinhos internos do item
+  (subir/baixo/remover) somem — o clique serve só para selecionar a troca. Saia do modo a qualquer
+  momento com **ESC**, no **✕** do banner ou clicando no **⇄** de novo.
 
 ---
 
@@ -54,42 +53,39 @@ transação"*. O Replicar funcionou por sorte (menos dados naquele teste) — es
 
 | Arquivo | Ação |
 |---|---|
-| `src/app/api/nutricao/cardapios/[id]/gerar-ciclo/route.ts` | **Reescrito** — sem `$transaction`, `createMany`, deleção intercalada, reexecutável |
-| `src/app/api/nutricao/cardapios/[id]/replicar/route.ts` | Blindado — sem transação, `createMany` (5 pontos), cleanup de cardápio parcial, helpers tipados `Prisma.TransactionClient` |
-| `src/app/api/nutricao/cardapios/[id]/clonar-lote/route.ts` | Blindado — sem transação, `createMany`, cleanup de cardápio parcial |
+| `src/app/api/nutricao/cardapios/[id]/trocar-itens/route.ts` | **NOVO** — API da troca (valida cardápio, pré-checa unique, troca conteúdo/ordem) |
+| `src/app/(app)/nutricao/cardapios/[id]/page.tsx` | **Modificado** — botão ⇄ no cabeçalho do dia, banner do modo, seleção 1ª/2ª, ESC, atualização otimista |
 
-**Sem mudança de schema Prisma.** **Sem `prisma db push`.** Editor e páginas: intocados.
+**Sem mudança de schema Prisma.** **Sem `prisma db push`.** Nenhuma outra rota ou página tocada.
 
 ---
 
 ## 3. Como aplicar e testar
 
 1. Faça commit/pull do estado atual no Codespace antes (rollback fácil).
-2. Extraia o zip na raiz: `unzip -o patch-v9.10.1-correcao-erro-gerar-ciclo.zip`.
+2. Extraia o zip na raiz: `unzip -o patch-v9.10.2-trocar-preparacoes.zip`.
 3. Rode `npm install` se o Codespace estiver limpo.
-4. **Teste o Gerar Ciclo no cardápio que deu erro** (o teste que falhou):
-   - Abra o cardápio com as 5–6 semanas montadas → "Gerar Ciclo" → confira a prévia
-     (ex.: 6 semanas → S7 = S1 ... S22 = S4) → confirme.
-   - Agora deve gerar as semanas **sem o erro P2028** e recarregar o cardápio com
-     as 22 semanas preenchidas ciclicamente.
-   - Confira a semana 7 (cópia da 1), a 12 (cópia da 6), a 13 (cópia da 1) e a 22 (cópia da 4, no ciclo 6).
-5. **Regressão do Replicar**: replique um cardápio para 1–2 escolas com "Expandir para 22 semanas"
-   e confira que o cardápio da escola nasceu completo (comportamento igual ao que funcionou).
-6. **Regressão do Clonar em Lote** (se usar): clone o base para uma escola de teste.
+4. **Teste o Modo Troca** no editor do cardápio:
+   - Clique no **⇄** ao lado do botão de copiar em qualquer dia → banner violeta aparece;
+   - Clique numa preparação (ex.: proteína de Segunda) → borda violeta + banner mostra o nome;
+   - Clique noutra (ex.: proteína de Terça) → as duas trocam de lugar na hora, sem recarregar;
+   - Recarregue a página (F5) → a troca **persistiu** no banco.
+5. **Teste a proteção:** tente trocar uma preparação por outra que já existe na mesma refeição do
+   destino (ex.: há Arroz na Seg e na Ter; troque o Feijão de Seg por... use o Arroz de Ter) →
+   deve aparecer a mensagem de duplicação e **nada muda**.
+6. **Teste o cancelamento:** ESC, ✕ do banner e clique no próprio item selecionado.
+7. **Regressão rápida:** arrastar item entre dias continua funcionando; Copiar dia continua
+   funcionando; Gerar Ciclo continua funcionando (v9.10.1 intacta).
 
 ## 4. Observações técnicas
 
-- **Por que transações curtas funcionam e longas não:** o pgbouncer em modo *transaction*
-  empresta a conexão física ao servidor por transação; transações longas (dezenas de segundos ou
-  muitas queries) têm a conexão física reciclada e o Prisma recebe "Transaction not found".
-  Escritas diretas (autocommit) não têm esse problema.
-- **Reexecutabilidade:** se a internet cair no meio do "Gerar Ciclo", clique de novo — a semana em
-  processamento é deletada e recriada do zero, e as que já ficaram prontas são recriadas idênticas.
-- Sem `diferenciada` nas réplicas (igual v9.10.0): editar uma réplica marca só ela como "Modificada".
+- A troca de conteúdo (em vez de mover linhas) mantém `vezes_usada` das preparações intacta
+  (cada uma continua usada 1×) e preserva a ordenação automática por categoria (v9.0) de cada slot.
 - Validação: `tsc --noEmit` 0 erros; `npm run build` OK; suíte nova
-  `scripts/test-p2028-v9101.ts` **49/49** (inclui simulação lógica do loop intercalado +
-  reexecução idempotente); regressões 16/16 (v9.9.5), 18/18 (v9.9.6), 44/44 (v9.9.7),
-  21/21 (v9.9.8), 46/46 (v9.9.9), 88/88 (v9.10.0).
+  `scripts/test-troca-v9102.ts` **61/61** (simulação da lógica: trocas entre dias, entre
+  refeições, mesma preparação, conflitos 409, ordem, validações + **500 trocas aleatórias
+  sem violar a unique** + asserts de fonte do editor); regressões 16/16 (v9.9.5), 18/18 (v9.9.6),
+  44/44 (v9.9.7), 21/21 (v9.9.8), 46/46 (v9.9.9), 88/88 (v9.10.0), 49/49 (v9.10.1).
 - **Pendente (você pediu para deixar para depois):** recálculo do cardápio para escolas integrais
   (2 refeições/dia). Nada foi tocado nesse ponto.
 
@@ -97,11 +93,11 @@ transação"*. O Replicar funcionou por sorte (menos dados naquele teste) — es
 
 ```
 git add .
-git commit -m "v9.10.1: fix P2028 'Transaction not found' no Gerar Ciclo
+git commit -m "v9.10.2: Modo Troca de preparações no editor do cardápio
 
-- gerar-ciclo reescrito sem \$transaction (pgbouncer mata transações longas):
-  escritas sequenciais + createMany + deleção intercalada (reexecutável)
-- replicar e clonar-lote blindados com o mesmo padrão (eram o próximo P2028)
-- escola que falhar no meio da replicação/clonagem não deixa cardápio parcial
-- sem schema; comportamento da v9.10.0 preservado"
+- botão ⇄ ao lado do Copiar dia: clique na 1ª e na 2ª preparação e elas trocam de lugar
+- nova API trocar-itens: troca de conteúdo (ids preservados, sem delete/create)
+- proteção anti-duplicação na mesma refeição (409 amigável, nada é alterado)
+- mesmo slot = troca de ordem; ESC/✕ cancela; semana marcada como Modificada
+- sem schema; v9.9.x–v9.10.1 preservadas"
 ```
