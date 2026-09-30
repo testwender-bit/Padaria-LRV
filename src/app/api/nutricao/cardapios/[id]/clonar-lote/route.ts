@@ -60,12 +60,21 @@ export async function POST(
     const criadoEm = new Date().toISOString().replace('T', ' ').substring(0, 19)
     const nutricionistaId = body.nutricionista_id || original.nutricionista_id
 
-    // Clonar em transação — 1 cardápio por escola
-    const result = await db.$transaction(async (tx) => {
-      const criados: { escola_id: string; escola_nome: string; cardapio_id: string }[] = []
+    // v9.10.1: SEM $transaction — o pgbouncer do Supabase (pooler 6543, modo
+    // transaction) mata transações longas (P2028 "Transaction not found") e
+    // clonar N escolas × semanas × itens gera milhares de INSERTs. Mesmo
+    // padrão do /clonar (v8.14): escritas sequenciais com db. direto +
+    // createMany para itens. `tx` vira alias de db — corpo preservado.
+    // Se uma escola falhar no meio, o cardápio parcial dela é removido
+    // (cascade) e ela entra em `erros`.
+    const tx = db
+
+    const criados: { escola_id: string; escola_nome: string; cardapio_id: string }[] = []
       const erros: { escola_id: string; motivo: string }[] = []
 
       for (const escola of escolas) {
+        // v9.10.1: rastreia o cardápio desta escola p/ remover parcial em erro
+        let cardParcialId: string | null = null
         try {
           // Verificar se já existe cardápio para esta escola + ano + semestre
           const existente = await tx.cardapioNutricional.findFirst({
@@ -107,6 +116,7 @@ export async function POST(
               atualizado_em: criadoEm,
             },
           })
+          cardParcialId = card.id  // v9.10.1: criado — habilita cleanup em erro
 
           // Clonar semanas e dias (com itens)
           for (const semana of original.semanas) {
@@ -127,15 +137,16 @@ export async function POST(
                 },
               })
 
-              for (const item of dia.itens) {
-                await tx.cardapioItem.create({
-                  data: {
+              // v9.10.1: createMany (1 query) em vez de create item a item
+              if (dia.itens.length > 0) {
+                await tx.cardapioItem.createMany({
+                  data: dia.itens.map(item => ({
                     dia_id: novoDia.id,
                     tipo_refeicao_id: item.tipo_refeicao_id,
                     preparacao_id: item.preparacao_id,
                     porcoes: item.porcoes,
                     ordem: item.ordem || 0,  // v5: PROPAGAR ordem (era perdida)
-                  },
+                  })),
                 })
               }
             }
@@ -147,6 +158,10 @@ export async function POST(
             cardapio_id: card.id,
           })
         } catch (err) {
+          // v9.10.1: sem transação — remove cardápio parcial da escola com erro
+          if (cardParcialId) {
+            await db.cardapioNutricional.delete({ where: { id: cardParcialId } }).catch(() => {})
+          }
           erros.push({
             escola_id: escola.id,
             motivo: err instanceof Error ? err.message : 'Erro ao clonar',
@@ -154,11 +169,7 @@ export async function POST(
         }
       }
 
-      return { criados, erros }
-    }, {
-      timeout: 30000,
-      maxWait: 10000,
-    })
+    const result = { criados, erros }
 
     return NextResponse.json(result, { status: 201 })
   } catch (error) {

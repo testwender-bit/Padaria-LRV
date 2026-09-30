@@ -1,57 +1,52 @@
-# LEIA-ME — Patch v9.10.0 · Replicar Ciclo de Semanas (6 → 22)
+# LEIA-ME — Patch v9.10.1 · Correção do erro "Transaction not found" no Gerar Ciclo
 
 **Projeto:** padaria-municipal · **Data:** 30/09/2026
 **Formato de aplicação:** extrair o zip na **raiz do projeto** (os caminhos internos já estão corretos).
 
 ```
-unzip -o patch-v9.10.0-replicar-semanas-e-gerar-ciclo-ate-22.zip -d ./padaria-municipal
+unzip -o patch-v9.10.1-correcao-erro-gerar-ciclo.zip -d ./padaria-municipal
 ```
 
 ---
 
-## 1. O que este patch corrige / entrega
+## 1. O que este patch corrige
 
-### 🔧 FIX — "Replicar não replica as semanas"
+### 🔧 FIX — "Erro ao gerar ciclo PNAE: Transaction API error: Transaction not found (P2028)"
 
-**Causa raiz encontrada:** todo cardápio é criado com **22 linhas de semanas (vazias)** e o campo
-`ciclo_semanas` fica travado no **default 5**. A API de replicar decidia se o cardápio estava
-"completo" contando **linhas** (`semanas.length >= 22` → sempre verdadeiro!). Resultado: ela clonava
-as 22 linhas — as 6 preenchidas + 16 vazias — e **nunca executava a expansão do ciclo**.
+**Causa raiz:** a API `gerar-ciclo` executava **toda a geração dentro de uma transação interativa
+do Prisma (`$transaction`)** — até 22 semanas × 6 dias × N itens = **centenas de INSERTs
+sequenciais**. No Supabase, a conexão passa pelo **pgbouncer (pooler 6543, modo transaction)**,
+que encerra transações longas no meio — o Prisma perde a transação e estoura
+`P2028 "Transaction not found"`. É a mesma lição já registrada na **v8.14** no `/clonar`:
+*"NÃO usa $transaction — pgbouncer mata transações longas... centenas de INSERTs não cabem em
+transação"*. O Replicar funcionou por sorte (menos dados naquele teste) — estava com o mesmo risco.
 
-**Correção:** o ciclo agora é detectado pelo **CONTEÚDO** (maior semana com itens lançados).
-Montou 6 semanas? A replicação clona as semanas 1–6 e gera as semanas 7–22 repetindo o ciclo:
-`S7 = S1, S8 = S2, ..., S12 = S6, S13 = S1, ... S22 = S4`. O campo `ciclo_semanas` do cardápio
-criado também passa a ser gravado com o valor real (6), não mais o default dessincronizado.
+**Correção (`gerar-ciclo/route.ts` reescrito):**
+- **Sem `$transaction`** — escritas sequenciais com `db.` direto (mesmo padrão do `/clonar` v8.14);
+- **`createMany` para os itens** (1 query em vez de N) — reduz drasticamente o nº de viagens ao banco;
+- **Deleção intercalada**: a semana antiga do número `num` sai **só quando a réplica está pronta
+  para entrar no lugar** (antes apagava tudo de uma vez no início da transação). Se algo falhar no
+  meio, as semanas do ciclo (1–N) ficam intactas e basta clicar "Gerar Ciclo" **de novo** — a
+  operação é reexecutável e completa apenas o que faltou;
+- Resposta, mapeamento (`S7 = S1...`), aviso de semanas substituídas e gravação de
+  `ciclo_semanas`/`repetir_ciclo`: **exatamente iguais** à v9.10.0 (o editor não mudou).
 
-Funciona para **qualquer** tamanho de ciclo (2 a 21 semanas preenchidas) e para cardápio base
-**ou** de escola (v9.9.8). Cardápio com as 22 semanas preenchidas continua sendo clonado inteiro
-sem expansão, como antes. Realocação de pão/lanche (v5), `manter_pao_lanche` (v8.16), exclusão da
-escola de origem e preservação do `cardapio_base_id` (v8.10): tudo preservado.
+### 🛡️ BÔNUS — Replicar e Clonar em Lote blindados com o mesmo padrão
 
-### ✨ NOVO — Botão "Gerar Ciclo" dentro do editor do cardápio
+- `replicar/route.ts`: removida a transação de 60s que embrulhava **todas as escolas** (N escolas
+  × 22 semanas = milhares de INSERTs — o próximo P2028 seria aí). Corpo preservado, agora com
+  `createMany` nos clones e nos helpers de realocação de pão/lanche. **Novidade:** se uma escola
+  falhar no meio, o cardápio parcial dela é **removido** (cascade) e ela entra em `erros` — sem
+  cardápio pela metade no sistema.
+- `clonar-lote/route.ts`: mesma conversão (era uma transação só para todas as escolas do lote).
 
-Agora você também pode **gerar o ciclo no próprio cardápio**, sem precisar replicar:
+### ✅ O que NÃO mudou
 
-1. Monte as semanas 1–N no editor (ex.: 6 semanas).
-2. Clique em **"Gerar Ciclo"** (botão verde-água na barra superior, ao lado de "Repetições").
-3. O dialog mostra:
-   - **Ciclo detectado** (ex.: 6 semanas, S1–S6) — pelo conteúdo, não por campo salvo;
-   - **Semanas a gerar** (ex.: 16, S7–S22);
-   - **Prévia da repetição** em chips (`S7 = S1`, `S8 = S2`, ...);
-   - **Aviso em âmbar** se alguma semana além do ciclo já tiver conteúdo (ela será substituída).
-4. Confirme em **"Gerar semanas 7–22 (16)"** → as semanas são criadas e o cardápio recarrega.
-
-A API `POST /api/nutricao/cardapios/[id]/gerar-ciclo` **já existia no backend, mas nenhum botão a
-usava** (mesmo caso da v9.9.6). Ela foi corrigida: antes usaria `ciclo_semanas = 5` e
-**deletaria a semana 6 preenchida** de um cardápio de 6 semanas. Agora o ciclo é sempre o
-detectado pelo conteúdo, e as semanas do ciclo (S1–S6) **não são tocadas**.
-
-### 📄 Página "Replicar p/ Escolas" — exibição honesta do ciclo
-
-- O resumo "Semanas base" agora mostra o **ciclo real** detectado (não mais o "5" fixo);
-- Se o campo salvo divergir do conteúdo, aparece a anotação "ciclo real (conteúdo)";
-- O texto do checkbox "Expandir para 22 semanas" mostra o mapeamento dinâmico
-  (ex.: "...réplicas automáticas repetindo o ciclo (S7 = S1, S8 = S2, ...)").
+- Rotas de **operações curtas** (copiar-dia, trocar-dia, mover-item, reordenar-semana/dia, item)
+  continuam com `$transaction` — são poucas queries, não sofrem do problema;
+- Toda a lógica da v9.10.0 (ciclo pelo conteúdo, expansão 6→22, botão "Gerar Ciclo"),
+  realocação de pão/lanche (v5), `manter_pao_lanche` (v8.16), exclusão da escola de origem (v8.10),
+  Localizar/Substituir (v9.9.6/7), Repetições (v9.9.9): **preservadas**.
 
 ---
 
@@ -59,45 +54,42 @@ detectado pelo conteúdo, e as semanas do ciclo (S1–S6) **não são tocadas**.
 
 | Arquivo | Ação |
 |---|---|
-| `src/lib/cardapio-ciclo-utils.ts` | **NOVO** — util `detectarCicloReal()`, `semanasComConteudo()`, `mapearCicloSemestre()` (usado por APIs e telas) |
-| `src/app/api/nutricao/cardapios/[id]/replicar/route.ts` | Corrigido — ciclo por conteúdo, expansão 6→22, grava `ciclo_semanas` real, resposta com `ciclo_detectado/ciclo_usado` |
-| `src/app/api/nutricao/cardapios/[id]/gerar-ciclo/route.ts` | Corrigido — ciclo por conteúdo, erro amigável se vazio, grava ciclo real, resposta com `semanas_substituidas_com_conteudo` |
-| `src/app/(app)/nutricao/cardapios/[id]/page.tsx` | Editor — botão "Gerar Ciclo" + dialog com prévia do mapeamento e aviso de substituição |
-| `src/app/(app)/nutricao/cardapios/[id]/replicar/page.tsx` | Página — ciclo real no resumo + texto do expandir com mapeamento |
+| `src/app/api/nutricao/cardapios/[id]/gerar-ciclo/route.ts` | **Reescrito** — sem `$transaction`, `createMany`, deleção intercalada, reexecutável |
+| `src/app/api/nutricao/cardapios/[id]/replicar/route.ts` | Blindado — sem transação, `createMany` (5 pontos), cleanup de cardápio parcial, helpers tipados `Prisma.TransactionClient` |
+| `src/app/api/nutricao/cardapios/[id]/clonar-lote/route.ts` | Blindado — sem transação, `createMany`, cleanup de cardápio parcial |
 
-**Sem mudança de schema Prisma** — `ciclo_semanas` e `repetir_ciclo` já existiam. **Sem `prisma db push`.**
+**Sem mudança de schema Prisma.** **Sem `prisma db push`.** Editor e páginas: intocados.
 
 ---
 
 ## 3. Como aplicar e testar
 
 1. Faça commit/pull do estado atual no Codespace antes (rollback fácil).
-2. Extraia o zip na raiz: `unzip -o patch-v9.10.0-replicar-semanas-e-gerar-ciclo-ate-22.zip`.
+2. Extraia o zip na raiz: `unzip -o patch-v9.10.1-correcao-erro-gerar-ciclo.zip`.
 3. Rode `npm install` se o Codespace estiver limpo.
-4. Teste o **Gerar Ciclo** (editor):
-   - Abra um cardápio com 5–6 semanas montadas → "Gerar Ciclo" → confira a prévia
-     (ex.: 6 semanas → S7 = S1 ... S22 = S4) → confirme → navegue pelas semanas 7+ e
-     verifique que são cópias fiéis do ciclo; as datas devem seguir a semana 1.
-   - Teste também num cardápio vazio (deve dizer que não há conteúdo) e num cardápio
-     com as 22 semanas preenchidas (deve dizer "nada a gerar").
-5. Teste o **Replicar p/ Escolas**:
-   - No cardápio de 6 semanas: seleciona escolas → "Expandir para 22 semanas" marcado → replicar.
-   - Abra o cardápio criado da escola: as semanas 7–22 devem estar preenchidas com o ciclo,
-     e o resumo da replicação deve listar o cardápio com `ciclo_usado: 6`.
-6. Opcional (validação em massa): gere uma **Lista de Compras** ou a **Produção** de uma semana
-   réplica (ex.: S8 = S2) para conferir que o motor de cálculo enxerga os itens replicados.
+4. **Teste o Gerar Ciclo no cardápio que deu erro** (o teste que falhou):
+   - Abra o cardápio com as 5–6 semanas montadas → "Gerar Ciclo" → confira a prévia
+     (ex.: 6 semanas → S7 = S1 ... S22 = S4) → confirme.
+   - Agora deve gerar as semanas **sem o erro P2028** e recarregar o cardápio com
+     as 22 semanas preenchidas ciclicamente.
+   - Confira a semana 7 (cópia da 1), a 12 (cópia da 6), a 13 (cópia da 1) e a 22 (cópia da 4, no ciclo 6).
+5. **Regressão do Replicar**: replique um cardápio para 1–2 escolas com "Expandir para 22 semanas"
+   e confira que o cardápio da escola nasceu completo (comportamento igual ao que funcionou).
+6. **Regressão do Clonar em Lote** (se usar): clone o base para uma escola de teste.
 
 ## 4. Observações técnicas
 
-- Expansão da replicar continua dentro da transação de 60s existente (`pgbouncer`-safe, igual v5+).
-- `gerar-ciclo` usa transação curta e apaga apenas semanas **além do ciclo** antes de recriar;
-  semanas do ciclo são preservadas (com suas edições e flag "Modificada").
-- As réplicas nascem sem `diferenciada` — editar uma réplica específica marca só ela como
-  "Modificada", sem afetar o resto do ciclo.
-- Nenhuma feature anterior foi alterada: Localizar/Substituir (v9.9.6/7), Repetições (v9.9.9),
-  Replicar p/ Escolas sem gate (v9.9.8), dialog de preparações (v9.9.4/5) — todos revalidados
-  pelas suítes de regressão (16/16, 18/18, 44/44, 21/21, 46/46) + 88/88 testes novos
-  (`scripts/test-ciclo-v9100.ts`).
+- **Por que transações curtas funcionam e longas não:** o pgbouncer em modo *transaction*
+  empresta a conexão física ao servidor por transação; transações longas (dezenas de segundos ou
+  muitas queries) têm a conexão física reciclada e o Prisma recebe "Transaction not found".
+  Escritas diretas (autocommit) não têm esse problema.
+- **Reexecutabilidade:** se a internet cair no meio do "Gerar Ciclo", clique de novo — a semana em
+  processamento é deletada e recriada do zero, e as que já ficaram prontas são recriadas idênticas.
+- Sem `diferenciada` nas réplicas (igual v9.10.0): editar uma réplica marca só ela como "Modificada".
+- Validação: `tsc --noEmit` 0 erros; `npm run build` OK; suíte nova
+  `scripts/test-p2028-v9101.ts` **49/49** (inclui simulação lógica do loop intercalado +
+  reexecução idempotente); regressões 16/16 (v9.9.5), 18/18 (v9.9.6), 44/44 (v9.9.7),
+  21/21 (v9.9.8), 46/46 (v9.9.9), 88/88 (v9.10.0).
 - **Pendente (você pediu para deixar para depois):** recálculo do cardápio para escolas integrais
   (2 refeições/dia). Nada foi tocado nesse ponto.
 
@@ -105,13 +97,11 @@ detectado pelo conteúdo, e as semanas do ciclo (S1–S6) **não são tocadas**.
 
 ```
 git add .
-git commit -m "v9.10.0: fix replicar ciclo de semanas (6→22) + botão Gerar Ciclo no editor
+git commit -m "v9.10.1: fix P2028 'Transaction not found' no Gerar Ciclo
 
-- ciclo detectado pelo CONTEÚDO (maior semana com itens) em vez do campo
-  ciclo_semanas (default 5 dessincronizado) e da contagem de linhas
-- replicar: clona semanas 1..N e expande réplicas até a 22 (S7=S1...)
-- gerar-ciclo: API agora usável e segura (não deleta semana preenchida)
-- editor: botão 'Gerar Ciclo' com prévia do mapeamento e avisos
-- página replicar: exibe ciclo real e mapeamento dinâmico
-- novo util src/lib/cardapio-ciclo-utils.ts (sem schema)"
+- gerar-ciclo reescrito sem \$transaction (pgbouncer mata transações longas):
+  escritas sequenciais + createMany + deleção intercalada (reexecutável)
+- replicar e clonar-lote blindados com o mesmo padrão (eram o próximo P2028)
+- escola que falhar no meio da replicação/clonagem não deixa cardápio parcial
+- sem schema; comportamento da v9.10.0 preservado"
 ```

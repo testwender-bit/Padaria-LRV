@@ -20,6 +20,17 @@ import { detectarCicloReal } from '@/lib/cardapio-ciclo-utils'
 // cardápio montado com 6 semanas teria a semana 6 DELETADA aqui
 // (ciclo=5 deletava semanas > 5 e regenerava 6..22 a partir de 1..5).
 //
+// v9.10.1: NÃO usa mais $transaction — no Supabase (pooler 6543/pgbouncer,
+// modo transaction) transações longas são mortas no meio com
+// "Transaction API error: Transaction not found" (P2028), e gerar o ciclo
+// envolve até 22 semanas × 6 dias × N itens = centenas de INSERTs.
+// Mesmo padrão do /clonar (v8.14): escritas sequenciais com db. direto +
+// createMany para os itens (1 query em vez de N). A deleção das semanas
+// antigas ficou INTERCALADA com a criação (a semana `num` sai só quando a
+// réplica está pronta para entrar no lugar): se algo falhar no meio, as
+// semanas base (1..ciclo) ficam intactas e basta rodar "Gerar Ciclo" de
+// novo — a operação é reexecutável e completa o que faltou.
+//
 // Semana 6 = cópia da 1, Semana 7 = cópia da 2, ..., Semana 11 = cópia da 1, etc.
 export async function POST(
   request: Request,
@@ -87,86 +98,93 @@ export async function POST(
 
     const criadoEm = new Date().toISOString().replace('T', ' ').substring(0, 19)
 
-    const result = await db.$transaction(async (tx) => {
-      // Atualizar datas das semanas existentes (1..ciclo)
-      for (let i = 0; i < semanasBase.length; i++) {
-        const sem = semanasBase[i]
-        const d = datasSemanas[i]
-        if (d && (sem.data_inicio !== d.data_inicio || sem.data_fim !== d.data_fim)) {
-          await tx.cardapioSemanaNutri.update({
-            where: { id: sem.id },
-            data: { data_inicio: d.data_inicio, data_fim: d.data_fim },
-          })
-        }
-      }
+    // ── v9.10.1: escritas sequenciais SEM transação (pgbouncer-safe) ──
 
-      // Deletar semanas além do ciclo (se houver) — serão recriadas
-      const semanasParaDeletar = cardapio.semanas.filter((s) => s.numero > ciclo)
-      for (const s of semanasParaDeletar) {
-        await tx.cardapioSemanaNutri.delete({ where: { id: s.id } })
-      }
-
-      // Gerar semanas ciclo+1..totalSemanas como cópia da semana (num-1)%ciclo+1
-      const semanasCriadas: number[] = []
-      for (let num = ciclo + 1; num <= totalSemanas; num++) {
-        const numBase = ((num - 1) % ciclo) + 1
-        const baseSemana = semanasBase.find((s) => s.numero === numBase)
-        if (!baseSemana) continue
-
-        const d = datasSemanas[num - 1]
-
-        const novaSemana = await tx.cardapioSemanaNutri.create({
-          data: {
-            cardapio_id: cardapio.id,
-            numero: num,
-            data_inicio: d.data_inicio,
-            data_fim: d.data_fim,
-          },
+    // 1) Atualizar datas das semanas base existentes (1..ciclo) — poucas updates
+    for (let i = 0; i < semanasBase.length; i++) {
+      const sem = semanasBase[i]
+      const d = datasSemanas[i]
+      if (d && (sem.data_inicio !== d.data_inicio || sem.data_fim !== d.data_fim)) {
+        await db.cardapioSemanaNutri.update({
+          where: { id: sem.id },
+          data: { data_inicio: d.data_inicio, data_fim: d.data_fim },
         })
+      }
+    }
 
-        for (const dia of baseSemana.dias) {
-          const novoDia = await tx.cardapioDiaNutri.create({
-            data: {
-              semana_id: novaSemana.id,
-              dia_semana: dia.dia_semana,
-            },
-          })
-          for (const item of dia.itens) {
-            await tx.cardapioItem.create({
-              data: {
-                dia_id: novoDia.id,
-                tipo_refeicao_id: item.tipo_refeicao_id,
-                preparacao_id: item.preparacao_id,
-                porcoes: item.porcoes,
-                ordem: item.ordem || 0,  // v5: PROPAGAR ordem (era perdida)
-              },
-            })
-          }
-        }
-        semanasCriadas.push(num)
+    // 2) Gerar semanas ciclo+1..totalSemanas como cópia da semana (num-1)%ciclo+1
+    const semanasCriadas: number[] = []
+    for (let num = ciclo + 1; num <= totalSemanas; num++) {
+      const numBase = ((num - 1) % ciclo) + 1
+      const baseSemana = semanasBase.find((s) => s.numero === numBase)
+      if (!baseSemana) continue
+
+      const d = datasSemanas[num - 1]
+
+      // v9.10.1: deleção INTERCALADA — a semana antiga do número `num` é
+      // removida apenas quando a réplica está pronta para entrar no lugar
+      // (cascade limpa dias/itens). Antes: delete-all-upfront dentro de uma
+      // transação que o pgbouncer matava no meio (P2028).
+      const existente = await db.cardapioSemanaNutri.findFirst({
+        where: { cardapio_id: cardapio.id, numero: num },
+      })
+      if (existente) {
+        await db.cardapioSemanaNutri.delete({ where: { id: existente.id } })
       }
 
-      // Atualizar flag repetir_ciclo = true + gravar o ciclo REAL no cardápio
-      await tx.cardapioNutricional.update({
-        where: { id: cardapio.id },
-        data: { atualizado_em: criadoEm, repetir_ciclo: true, ciclo_semanas: ciclo },
+      const novaSemana = await db.cardapioSemanaNutri.create({
+        data: {
+          cardapio_id: cardapio.id,
+          numero: num,
+          data_inicio: d.data_inicio,
+          data_fim: d.data_fim,
+        },
       })
 
-      return {
-        ciclo_semanas: ciclo,
-        semanas_base: semanasBase.length,
-        semanas_geradas: semanasCriadas.length,
-        semanas_criadas_nums: semanasCriadas,
-        total_semanas: totalSemanas,
-        // v9.10.0: semanas além do ciclo que tinham conteúdo e foram substituídas
-        semanas_substituidas_com_conteudo: semanasSubstituidasComConteudo,
-        mapeamento: Array.from({ length: totalSemanas }, (_, i) => ({
-          semana: i + 1,
-          base: ((i) % ciclo) + 1,
-          is_replica: i + 1 > ciclo,
-        })),
+      for (const dia of baseSemana.dias) {
+        const novoDia = await db.cardapioDiaNutri.create({
+          data: {
+            semana_id: novaSemana.id,
+            dia_semana: dia.dia_semana,
+          },
+        })
+        // v9.10.1: createMany (1 query) em vez de create item a item —
+        // centenas de round-trips eram o que estourava o tempo da transação
+        if (dia.itens.length > 0) {
+          await db.cardapioItem.createMany({
+            data: dia.itens.map((item) => ({
+              dia_id: novoDia.id,
+              tipo_refeicao_id: item.tipo_refeicao_id,
+              preparacao_id: item.preparacao_id,
+              porcoes: item.porcoes,
+              ordem: item.ordem || 0,  // v5: PROPAGAR ordem (era perdida)
+            })),
+          })
+        }
       }
+      semanasCriadas.push(num)
+    }
+
+    // 3) Atualizar flag repetir_ciclo = true + gravar o ciclo REAL no cardápio
+    await db.cardapioNutricional.update({
+      where: { id: cardapio.id },
+      data: { atualizado_em: criadoEm, repetir_ciclo: true, ciclo_semanas: ciclo },
     })
+
+    const result = {
+      ciclo_semanas: ciclo,
+      semanas_base: semanasBase.length,
+      semanas_geradas: semanasCriadas.length,
+      semanas_criadas_nums: semanasCriadas,
+      total_semanas: totalSemanas,
+      // v9.10.0: semanas além do ciclo que tinham conteúdo e foram substituídas
+      semanas_substituidas_com_conteudo: semanasSubstituidasComConteudo,
+      mapeamento: Array.from({ length: totalSemanas }, (_, i) => ({
+        semana: i + 1,
+        base: ((i) % ciclo) + 1,
+        is_replica: i + 1 > ciclo,
+      })),
+    }
 
     return NextResponse.json(result, { status: 201 })
   } catch (error) {

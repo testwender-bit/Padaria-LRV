@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+// v9.10.1: tipo do client aceito pelos helpers — antes usava a anotação
+// Parameters<Parameters<typeof db.$transaction>[0]>[0]; agora as rotas de massa
+// não usam mais $transaction, então o tipo é o TransactionClient do Prisma
+// (PrismaClient satisfaz: é o mesmo objeto em tempo de execução)
+import { Prisma } from '@prisma/client'
 import { SEMANAS_SEMESTRE, gerarDatasSemanasSemestre } from '@/lib/cardapio-base-utils'
 import { isoToPt } from '@/lib/preparacao-categorias'
 // v9.10.0: ciclo REAL detectado pelo CONTEÚDO (não pelo campo ciclo_semanas)
@@ -187,9 +192,18 @@ export async function POST(
     // v8.10: se a origem for uma escola, avisa no resultado quantas foram puladas
     let pulasPorOrigem = 0
 
-    // ── Transação principal — timeout aumentado para 60s (deslocamento faz mais queries) ──
-    const result = await db.$transaction(async (tx) => {
-      const criados: Array<{
+    // ── v9.10.1: SEM $transaction — o pgbouncer do Supabase (pooler 6543, modo
+    // transaction) mata transações longas no meio com P2028 "Transaction not
+    // found", e replicar N escolas × 22 semanas gera milhares de INSERTs.
+    // Mesmo padrão do /clonar (v8.14): escritas sequenciais com db. direto +
+    // createMany para itens. `tx` vira alias de db — o corpo inteiro permanece
+    // intacto. Comportamento observável se mantém: o catch por escola já
+    // absorvia erros antes (a transação NUNCA fazia rollback por escola).
+    // Melhoria: escola que falhar no meio agora tem o cardápio parcial REMOVIDO
+    // (cascade) e entra em `erros` — sem lixo órfão.
+    const tx = db
+
+    const criados: Array<{
         escola_id: string
         escola_nome: string
         cardapio_id: string
@@ -198,6 +212,8 @@ export async function POST(
       const erros: Array<{ escola_id: string; motivo: string }> = []
 
       for (const escola of escolasDestino) {
+        // v9.10.1: rastreia o cardápio desta escola p/ remover parcial em erro
+        let cardParcialId: string | null = null
         try {
           const configEscola = body.escolas.find((e) => e.escola_id === escola.id)!
 
@@ -248,6 +264,7 @@ export async function POST(
               atualizado_em: criadoEm,
             },
           })
+          cardParcialId = card.id  // v9.10.1: criado — habilita cleanup em erro
 
           // ── Clona as semanas base ──
           // v9.10.0: baseCompleto (por conteúdo) é calculado fora da transação,
@@ -307,15 +324,16 @@ export async function POST(
               })
               diasClonados[dia.dia_semana] = novoDia.id
 
-              for (const item of dia.itens) {
-                await tx.cardapioItem.create({
-                  data: {
+              // v9.10.1: createMany (1 query) em vez de create item a item
+              if (dia.itens.length > 0) {
+                await tx.cardapioItem.createMany({
+                  data: dia.itens.map((item) => ({
                     dia_id: novoDia.id,
                     tipo_refeicao_id: item.tipo_refeicao_id,
                     preparacao_id: item.preparacao_id,
                     porcoes: item.porcoes,
                     ordem: item.ordem || 0,  // v5: PROPAGAR ordem (era perdida)
-                  },
+                  })),
                 })
               }
             }
@@ -423,15 +441,16 @@ export async function POST(
                     dia_semana: dia.dia_semana,
                   },
                 })
-                for (const item of dia.itens) {
-                  await tx.cardapioItem.create({
-                    data: {
+                // v9.10.1: createMany (1 query) em vez de create item a item
+                if (dia.itens.length > 0) {
+                  await tx.cardapioItem.createMany({
+                    data: dia.itens.map((item) => ({
                       dia_id: novoDia.id,
                       tipo_refeicao_id: item.tipo_refeicao_id,
                       preparacao_id: item.preparacao_id,
                       porcoes: item.porcoes,
                       ordem: item.ordem || 0,  // v5: PROPAGAR ordem (era perdida)
-                    },
+                    })),
                   })
                 }
               }
@@ -462,6 +481,11 @@ export async function POST(
             trocas,
           })
         } catch (err) {
+          // v9.10.1: sem transação — remove cardápio parcial da escola com erro
+          // (cascade limpa semanas/dias/itens) para não deixar lixo órfão
+          if (cardParcialId) {
+            await db.cardapioNutricional.delete({ where: { id: cardParcialId } }).catch(() => {})
+          }
           erros.push({
             escola_id: escola.id,
             motivo: err instanceof Error ? err.message : 'Erro ao replicar',
@@ -475,7 +499,7 @@ export async function POST(
         pulasPorOrigem = body.escolas.filter((e) => e.escola_id === original.escola_id).length
       }
 
-      return {
+      const result = {
         criados,
         erros,
         base_info: {
@@ -497,10 +521,6 @@ export async function POST(
           pulas_por_coincidencia: pulasPorOrigem,
         },
       }
-    }, {
-      timeout: 60000,  // 60s — deslocamento faz mais queries que swap
-      maxWait: 10000,
-    })
 
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
@@ -555,7 +575,7 @@ export async function POST(
 //   - Se a cadeia não conseguir chegar à origem (bloqueada), faz swap puro
 // ============================================================
 async function realocarComDeslocamento(
-  tx: Parameters<Parameters<typeof db.$transaction>[0]>[0],
+  tx: Prisma.TransactionClient,
   diasClonados: Record<string, string>,  // mapa dia_semana -> dia_id
   diaOrigem: string,
   diaDestino: string,
@@ -641,15 +661,17 @@ async function realocarComDeslocamento(
     if (!diaAtualId) continue
 
     const itensParaReceber = itensPorDia[diaProximo] || []
-    for (const item of itensParaReceber) {
-      await tx.cardapioItem.create({
-        data: {
+    // v9.10.1: createMany (1 query) — itens vêm de UM dia origem, sem risco de
+    // violar a unique (dia_id, tipo_refeicao_id, preparacao_id)
+    if (itensParaReceber.length > 0) {
+      await tx.cardapioItem.createMany({
+        data: itensParaReceber.map((item) => ({
           dia_id: diaAtualId,
           tipo_refeicao_id: item.tipo_refeicao_id,
           preparacao_id: item.preparacao_id,
           porcoes: item.porcoes,
           ordem: item.ordem || 0,
-        },
+        })),
       })
     }
   }
@@ -659,7 +681,7 @@ async function realocarComDeslocamento(
 // Como CardapioItem tem unique (dia_id, tipo_refeicao_id, preparacao_id),
 // fazemos via delete + re-create usando IDs temporários.
 async function trocarItensEntreDias(
-  tx: Parameters<Parameters<typeof db.$transaction>[0]>[0],
+  tx: Prisma.TransactionClient,
   diaAId: string,
   diaBId: string
 ): Promise<void> {
@@ -672,28 +694,29 @@ async function trocarItensEntreDias(
   await tx.cardapioItem.deleteMany({ where: { dia_id: diaBId } })
 
   // 3. Recria itens de A no dia B (preservando ordem — v5)
-  for (const item of itensA) {
-    await tx.cardapioItem.create({
-      data: {
+  // v9.10.1: createMany (1 query em vez de N)
+  if (itensA.length > 0) {
+    await tx.cardapioItem.createMany({
+      data: itensA.map((item) => ({
         dia_id: diaBId,
         tipo_refeicao_id: item.tipo_refeicao_id,
         preparacao_id: item.preparacao_id,
         porcoes: item.porcoes,
         ordem: item.ordem || 0,
-      },
+      })),
     })
   }
 
   // 4. Recria itens de B no dia A (preservando ordem — v5)
-  for (const item of itensB) {
-    await tx.cardapioItem.create({
-      data: {
+  if (itensB.length > 0) {
+    await tx.cardapioItem.createMany({
+      data: itensB.map((item) => ({
         dia_id: diaAId,
         tipo_refeicao_id: item.tipo_refeicao_id,
         preparacao_id: item.preparacao_id,
         porcoes: item.porcoes,
         ordem: item.ordem || 0,
-      },
+      })),
     })
   }
 }
