@@ -165,6 +165,17 @@ export async function GET(request: Request) {
         for (const dia of dias) {
           const dataDia = diaDates[dia]
           const entries = pcqEntregaMap[dia]
+          // v9.10.4: ter/qui não têm PCQ padrão (entries vazio), mas podem ter
+          // ajuste manual de produção excepcional (criado na view Semanal da
+          // produção). PCQ é D-0 (produção = entrega), então o romaneio reflete
+          // a entrega no mesmo dia — alinhado com /api/producao.
+          if (entries.length === 0) {
+            const ajusteKeyEx = `${escola.id}_${dia}_PCQ`
+            if (ajustesMap.has(ajusteKeyEx)) {
+              pcq[dia] += ajustesMap.get(ajusteKeyEx)!
+            }
+            continue
+          }
           for (const entry of entries) {
             // PCQ formas
             const campoPcq = entry.campo as keyof typeof pcqQ

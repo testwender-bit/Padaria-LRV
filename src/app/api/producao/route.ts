@@ -301,23 +301,44 @@ export async function GET(request: Request) {
         }
       }
 
-      // PCQ: produzido seg/qua/sex
+      // PCQ: produzido seg/qua/sex (dias padrão)
+      // v9.10.4: DIAS EXCEPCIONAIS (terca/quinta) — gera itens de PCQ quando
+      // existir ajuste manual de PCQ para o dia (produção fora do padrão,
+      // criada clicando na célula Ter/Qui da view Semanal da produção).
+      // Dias padrão continuam gerando para TODAS as escolas recebe_pcq
+      // (comportamento v9.7.3 preservado: ajuste cria quantidade onde não tinha).
       const diaTexto = diaSemanaTexto(diaDate)
-      if (diaTexto === 'segunda' || diaTexto === 'quarta' || diaTexto === 'sexta') {
-        const pcqConfig = PCQ_PRODUCAO[diaTexto as keyof typeof PCQ_PRODUCAO]
+      const ehDiaPcqPadrao = diaTexto === 'segunda' || diaTexto === 'quarta' || diaTexto === 'sexta'
+      // Dia excepcional: ter/qui com pelo menos 1 ajuste PCQ do dia nesta semana
+      // (os ajustes já foram carregados — checagem em memória, sem query extra).
+      const temAjustePcqNoDia = !ehDiaPcqPadrao && ajustes.some((a) => a.produto === 'PCQ' && a.dia_semana === diaKey)
+      if (ehDiaPcqPadrao || temAjustePcqNoDia) {
+        // v9.10.4: em dia excepcional (ter/qui) NÃO existe config padrão
+        // (o schema não tem prod_terca/prod_quinta) — qtd base é 0 (o valor
+        // vem do ajuste) e a entrega é o próprio dia (PCQ é D-0).
+        const pcqConfig = ehDiaPcqPadrao
+          ? PCQ_PRODUCAO[diaTexto as keyof typeof PCQ_PRODUCAO]
+          : undefined
 
         for (const escola of escolas) {
           if (!escola.recebe_pcq) continue
           const pcqQ = escola.pcq_quantidades[0]
           if (!pcqQ) continue
 
-          const campoPcq = pcqConfig.campo as keyof typeof pcqQ
-          const qtdFormas = pcqQ[campoPcq] as number
+          // v9.10.4: dia excepcional só gera item para escola COM ajuste
+          // (evita poluir a view Por Dia com dezenas de linhas zeradas).
+          const ajusteKey = `${escola.id}_${diaKey}_PCQ`
+          if (!ehDiaPcqPadrao && !ajustesMap.has(ajusteKey)) continue
+
+          const campoPcq = (pcqConfig ? pcqConfig.campo : null) as keyof typeof pcqQ | null
+          const qtdFormas = campoPcq ? (pcqQ[campoPcq] as number) : 0
+          // v9.10.4: entregas a checar para feriado — dia padrão usa a config
+          // (entrega = mesmo dia); dia excepcional usa o próprio dia.
+          const entregasPcq: DiaSemana[] = pcqConfig ? pcqConfig.entregas as DiaSemana[] : [diaKey]
 
           // v9.7.3: Removido o guard `if (qtdFormas > 0)` — agora sempre processa,
           // para que ajustes em células com qtd=0 funcionem (criar quantidade onde não tinha).
           {
-            const ajusteKey = `${escola.id}_${diaKey}_PCQ`
             // BUG FIX 7: Check feriado on PRODUCTION day AND on DELIVERY days
             let zeradoPcq = false
             let feriadoNomePcq = ''
@@ -329,7 +350,7 @@ export async function GET(request: Request) {
             }
             // Also check each delivery day
             if (!zeradoPcq) {
-              for (const entregaDia of pcqConfig.entregas) {
+              for (const entregaDia of entregasPcq) {
                 const entregaIdx = diaTextKeys.indexOf(entregaDia)
                 if (entregaIdx >= 0) {
                   const dataEntregaPCQ = dataISO(addDays(inicio, entregaIdx))

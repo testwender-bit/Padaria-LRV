@@ -1127,7 +1127,11 @@ export default function ProducaoPage() {
                         {DIAS_PRODUCAO.map((d) => {
                           const diaValido = ehDiaProducaoDoProduto(d, 'PCQ')
                           const ajuste = getAjusteInfo(escola.id, d, 'PCQ')
-                          // v9.7.5: PCQ só é produzido seg/qua/sex — outras colunas neutras
+                          // v9.10.4: ter/qui são dias "extras" — só têm produção de PCQ
+                          // via ajuste manual (situação excepcional); célula vazia mostra
+                          // "+" para indicar que é clicável.
+                          const ehDiaExtra = d === 'terca' || d === 'quinta'
+                          // v9.7.5/v9.10.4: domingo continua neutro (não existe PCQ no domingo)
                           if (!diaValido) {
                             return (
                               <td key={d} className="p-2 text-center font-mono text-sm text-muted-foreground/30 bg-muted/10">
@@ -1137,14 +1141,16 @@ export default function ProducaoPage() {
                           }
                           return (
                           <td key={d} className={`p-2 text-center font-mono text-sm cursor-pointer hover:bg-orange-50 rounded ${ajuste ? 'bg-amber-100 text-amber-700 font-semibold' : ''}`}
-                            title={ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : 'Clique para ajustar'}
+                            title={ajuste
+                              ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}`
+                              : (ehDiaExtra && !escola.pcq[d] ? 'Clique para adicionar produção excepcional de PCQ neste dia' : 'Clique para ajustar')}
                             onClick={() => openAjusteFromWeekly(escola.id, escola.nome, d, 'PCQ', escola.pcq[d])}>
                             {escola.pcq[d] > 0 ? (
                               <>
                                 {formatarFormas(escola.pcq[d])}
                                 {bp && <span className="ml-0.5 text-[10px] text-muted-foreground font-normal">{legendaPcqPaes(escola.pcq[d])}</span>}
                               </>
-                            ) : ''}
+                            ) : (ehDiaExtra ? <span className="text-muted-foreground/30">+</span> : '')}
                             {ajuste && <span className="ml-0.5 text-[8px] text-amber-600">●</span>}
                           </td>
                           )
@@ -1173,6 +1179,10 @@ export default function ProducaoPage() {
                     (N) = pães de cachorro quente · 1 forma = {FORMA_PCQ_PAES} pães · unidades Busca Própria
                   </p>
                 )}
+                {/* v9.10.4: dica de produção excepcional — PCQ em ter/qui via ajuste */}
+                <p className="px-2 pb-2 text-[10px] text-muted-foreground/70">
+                  Situação excepcional? Clique em Ter ou Qui para adicionar produção de PCQ nesse dia (fica registrada como ajuste da semana, com motivo).
+                </p>
               </div>
             </CardContent>
           </Card>

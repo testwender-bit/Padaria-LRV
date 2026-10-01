@@ -85,12 +85,18 @@ export const LANCHE_PRODUCAO_PARA_ENTREGA: Record<string, DiaSemana> = {
 //
 // PF: dom→seg, seg→ter, ter→qua, qua→qui, qui→sex (D-1). Não tem sexta
 //     porque sábado não tem entrega.
-// PCQ: seg, qua, sex (mesmo dia de entrega — seg/qua/sex).
+// PCQ: v9.10.4 — seg/qua/sex são os dias PADRÃO (produção regular), mas
+//     terça e quinta também são clicáveis para produção EXCEPCIONAL via
+//     ajuste manual (a API /api/producao só gera item nesses dias quando
+//     existe ajuste `${escola_id}_${dia}_PCQ` para a semana). Domingo
+//     continua neutro (não existe produção de PCQ no domingo).
 // LANCHE: seg→sex (D-0, mesmo dia).
 // PF_COMP: dom (entrega seg), ter (entrega qua), qui (entrega sex) — D-1.
+// Nota v9.10.4: para PCQ produção = entrega (D-0), portanto NÃO há o risco
+// de "vazamento" v9.7.5 (que era do PF, onde dia de produção ≠ dia de entrega).
 export const DIAS_PRODUCAO_POR_PRODUTO: Record<string, string[]> = {
   PF: ['domingo', 'segunda', 'terca', 'quarta', 'quinta'],
-  PCQ: ['segunda', 'quarta', 'sexta'],
+  PCQ: ['segunda', 'terca', 'quarta', 'quinta', 'sexta'],
   LANCHE: ['segunda', 'terca', 'quarta', 'quinta', 'sexta'],
   PF_COMP: ['domingo', 'terca', 'quinta'],
 }
