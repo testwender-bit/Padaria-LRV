@@ -17,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, Flame, Replace, ArrowRight, BarChart3, ArrowLeftRight
+  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, Flame, Replace, ArrowRight, BarChart3, ArrowLeftRight, CalendarSync
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -614,6 +614,13 @@ export default function CardapioEditorPage() {
   const [modoTroca, setModoTroca] = useState(false)
   const [trocaPrimeiro, setTrocaPrimeiro] = useState<CardapioItem | null>(null)
   const [trocando, setTrocando] = useState(false)
+  // ── v9.10.3: Modo Trocar Dia — troca o DIA INTEIRO de lugar ──
+  // modoTrocaDia     → ferramenta ativa (botão 📅⇄ no cabeçalho do dia)
+  // trocaDiaPrimeiro → 1º dia selecionado (value 'segunda'..'sexta')
+  // trocandoDia      → requisição em andamento (evita duplo clique)
+  const [modoTrocaDia, setModoTrocaDia] = useState(false)
+  const [trocaDiaPrimeiro, setTrocaDiaPrimeiro] = useState<string | null>(null)
+  const [trocandoDia, setTrocandoDia] = useState(false)
   // Modo mobile: mostra apenas 1 dia por vez (picker no topo)
   const [mobileDayView, setMobileDayView] = useState<string>('segunda')
   // Porções com edição inline em andamento (item_id)
@@ -832,15 +839,17 @@ export default function CardapioEditorPage() {
         e.preventDefault()
         setCurrentSemana(Number(e.key))
       }
-      // v9.10.2: ESC cancela o Modo Troca
-      else if (e.key === 'Escape' && modoTroca) {
+      // v9.10.2: ESC cancela o Modo Troca | v9.10.3: e o Modo Trocar Dia
+      else if (e.key === 'Escape' && (modoTroca || modoTrocaDia)) {
         setModoTroca(false)
         setTrocaPrimeiro(null)
+        setModoTrocaDia(false)
+        setTrocaDiaPrimeiro(null)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [addDialogOpen, copyDialogOpen, faseDialogOpen, cardapio, modoTroca])
+  }, [addDialogOpen, copyDialogOpen, faseDialogOpen, cardapio, modoTroca, modoTrocaDia])
 
   // Refeições for the current category (with schedule info)
   // v8.7: ORDENA POR HORÁRIO CRONOLÓGICO (não por tipo_refeicao.ordem).
@@ -1823,6 +1832,86 @@ export default function CardapioEditorPage() {
     }
   }
 
+  // ── v9.10.3: Modo Trocar Dia — troca o DIA INTEIRO de lugar ──
+  // Fluxo: botão 📅⇄ no cabeçalho de um dia ativa o modo COM esse dia já
+  // pré-selecionado como 1º → clique no cabeçalho (ou botão 📅⇄) de outro
+  // dia → a API troca TODAS as preparações entre os dois dias. ESC ou ✕
+  // cancela; clicar no mesmo dia de novo desmarca a seleção.
+  const diaLabel = (v: string) => DIAS_SEMANA_NUTRI.find(d => d.value === v)?.label || v
+
+  function sairModoTrocaDia() {
+    setModoTrocaDia(false)
+    setTrocaDiaPrimeiro(null)
+  }
+
+  function handleDiaHeaderClick(diaValue: string) {
+    if (trocandoDia) return
+    // Modo inativo: ativa com o dia clicado já pré-selecionado (1º dia)
+    if (!modoTrocaDia) {
+      sairModoTroca()
+      setModoTrocaDia(true)
+      setTrocaDiaPrimeiro(diaValue)
+      toast.info(`1º dia: ${diaLabel(diaValue)} — agora clique no 2º dia para trocar tudo de lugar`)
+      return
+    }
+    // Clique no mesmo dia: desmarca (cancela a seleção sem sair do modo)
+    if (trocaDiaPrimeiro === diaValue) {
+      setTrocaDiaPrimeiro(null)
+      toast.info('Seleção cancelada — clique no 1º dia novamente')
+      return
+    }
+    // Modo ativo sem 1º dia selecionado: o clique passa a ser o 1º dia
+    if (!trocaDiaPrimeiro) {
+      setTrocaDiaPrimeiro(diaValue)
+      toast.info(`1º dia: ${diaLabel(diaValue)} — agora clique no 2º dia para trocar tudo de lugar`)
+      return
+    }
+    executarTrocaDia(trocaDiaPrimeiro, diaValue)
+  }
+
+  async function executarTrocaDia(diaA: string, diaB: string) {
+    setTrocandoDia(true)
+    try {
+      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/trocar-dia`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ semana_numero: currentSemana, dia_a: diaA, dia_b: diaB }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || 'Erro ao trocar dias')
+      }
+      const data = await res.json()
+      const labelA = diaLabel(diaA)
+      const labelB = diaLabel(diaB)
+
+      // A API apaga e recria os itens (ids NOVOS no banco) — recarrega o
+      // cardápio para sincronizar os ids locais. Sem isso, uma remoção ou
+      // troca de preparação logo após a troca de dia daria 404.
+      const cardRes = await fetch(`/api/nutricao/cardapios/${cardapioId}`)
+      if (cardRes.ok) {
+        setCardapio(await cardRes.json())
+      }
+
+      toast.success(
+        data.itens_trocados > 0
+          ? `Dias trocados: ${labelA} ⇄ ${labelB} (${data.itens_trocados} ${data.itens_trocados === 1 ? 'preparação movida' : 'preparações movidas'})`
+          : 'Os dois dias estão vazios — nada para trocar'
+      )
+
+      // v8: marca a semana como diferenciada (se for cardápio de escola)
+      if (cardapio?.escola_id && cardapio?.cardapio_base_id) {
+        handleDiferenciarSemana(currentSemana, true)
+      }
+
+      sairModoTrocaDia()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao trocar dias')
+    } finally {
+      setTrocandoDia(false)
+    }
+  }
+
   // v8: Duplicar item (Alt+Drag) — cria cópia no destino sem remover origem
   async function handleDuplicateItem(item: CardapioItem, destinoSemana: number, destinoDia: string, destinoTipoRefeicaoId: string) {
     // Não duplica para o mesmo slot — dá feedback claro para o usuário
@@ -2402,6 +2491,26 @@ export default function CardapioEditorPage() {
           </button>
         </div>
       )}
+      {/* v9.10.3: Banner do Modo Trocar Dia (troca o dia inteiro de lugar) */}
+      {modoTrocaDia && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 bg-indigo-600 text-white text-xs px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
+          <CalendarSync className="w-3.5 h-3.5 flex-shrink-0" />
+          {trocandoDia ? (
+            <span>Trocando dias...</span>
+          ) : trocaDiaPrimeiro ? (
+            <span>1º dia: <b className="font-bold">{diaLabel(trocaDiaPrimeiro)}</b> — agora clique no 2º dia (no cabeçalho azul)</span>
+          ) : (
+            <span><b className="font-bold">Modo trocar dia:</b> clique no cabeçalho do 1º dia e depois no 2º — tudo troca de lugar</span>
+          )}
+          <button
+            onClick={sairModoTrocaDia}
+            className="ml-1 w-4 h-4 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center flex-shrink-0"
+            title="Cancelar modo trocar dia (ESC)"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
       {/* Top Bar */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
@@ -2742,10 +2851,26 @@ export default function CardapioEditorPage() {
               return (
                 <div
                   key={dia.value}
-                  className="bg-white rounded-xl border border-gray-200 overflow-hidden"
+                  className={`bg-white rounded-xl border overflow-hidden transition-all ${
+                    trocaDiaPrimeiro === dia.value
+                      ? 'border-violet-400 ring-2 ring-violet-300'
+                      : modoTrocaDia
+                        ? 'border-violet-200'
+                        : 'border-gray-200'
+                  }`}
                 >
-                  {/* Day Header with Copy button + traffic-light dot */}
-                  <div className="bg-[#1A3A5C] text-white py-1.5 px-2 flex items-center justify-between">
+                  {/* Day Header with Copy button + traffic-light dot
+                      v9.10.3: no Modo Trocar Dia o cabeçalho inteiro é clicável */}
+                  <div
+                    onClick={modoTrocaDia ? () => handleDiaHeaderClick(dia.value) : undefined}
+                    className={`text-white py-1.5 px-2 flex items-center justify-between transition-colors ${
+                      trocaDiaPrimeiro === dia.value
+                        ? `bg-violet-700 ${modoTrocaDia ? 'cursor-pointer hover:bg-violet-600' : ''}`
+                        : modoTrocaDia
+                          ? 'bg-[#1A3A5C] cursor-pointer hover:bg-violet-700'
+                          : 'bg-[#1A3A5C]'
+                    }`}
+                  >
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                         semaforo === 'green' ? 'bg-emerald-400' :
@@ -2765,17 +2890,26 @@ export default function CardapioEditorPage() {
                       })()}
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      {/* v9.10.2: Trocar preparações — clique em 2 e elas trocam de lugar */}
+                      {/* v9.10.2: Trocar preparações — clique em 2 e elas trocam de lugar
+                          v9.10.3: no Modo Trocar Dia fica inerte (clique cai no cabeçalho = seleciona o dia) */}
                       <button
-                        onClick={() => { if (modoTroca) { sairModoTroca() } else { setModoTroca(true); setTrocaPrimeiro(null) } }}
-                        className={`transition-colors ${modoTroca ? 'text-violet-300 hover:text-violet-200' : 'text-white/70 hover:text-white'}`}
+                        onClick={() => { if (modoTroca) { sairModoTroca() } else { sairModoTrocaDia(); setModoTroca(true); setTrocaPrimeiro(null) } }}
+                        className={`transition-colors ${modoTroca ? 'text-violet-300 hover:text-violet-200' : modoTrocaDia ? 'text-white/40 pointer-events-none' : 'text-white/70 hover:text-white'}`}
                         title="Trocar preparações: clique em uma, depois em outra — elas trocam de lugar"
                       >
                         <ArrowLeftRight className="w-3 h-3" />
                       </button>
+                      {/* v9.10.3: Trocar o DIA inteiro — clique aqui, depois em outro dia */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDiaHeaderClick(dia.value) }}
+                        className={`transition-colors flex-shrink-0 ${modoTrocaDia ? 'text-indigo-200 hover:text-white' : 'text-white/70 hover:text-white'}`}
+                        title="Trocar o dia inteiro: clique aqui, depois em outro dia — todas as preparações trocam de lugar"
+                      >
+                        <CalendarSync className="w-3 h-3" />
+                      </button>
                       <button
                         onClick={() => openCopyDialog(dia.value, currentSemana)}
-                        className="text-white/70 hover:text-white transition-colors flex-shrink-0"
+                        className={`transition-colors flex-shrink-0 ${modoTrocaDia ? 'text-white/40 pointer-events-none' : 'text-white/70 hover:text-white'}`}
                         title="Copiar refeições para outro dia"
                       >
                         <Copy className="w-3 h-3" />
@@ -2859,7 +2993,7 @@ export default function CardapioEditorPage() {
                             <div
                               key={item.id}
                               id={`cardapio-item-${item.id}`}
-                              draggable={!modoTroca}
+                              draggable={!modoTroca && !modoTrocaDia}
                               onClick={modoTroca ? () => handleTrocaClick(item) : undefined}
                               onDragStart={(e) => {
                                 setDraggedItem(item)
@@ -2876,7 +3010,9 @@ export default function CardapioEditorPage() {
                               className={`flex items-center gap-1 mb-1 p-1 rounded bg-white border text-[10px] group transition-all ${
                                 modoTroca
                                   ? 'cursor-pointer hover:border-violet-400 hover:bg-violet-50/50'
-                                  : 'cursor-grab active:cursor-grabbing'
+                                  : modoTrocaDia
+                                    ? 'cursor-default'
+                                    : 'cursor-grab active:cursor-grabbing'
                               } ${
                                 draggedItem?.id === item.id ? 'opacity-50' :
                                 // v9.10.2: 1ª preparação selecionada no Modo Troca
@@ -2888,7 +3024,9 @@ export default function CardapioEditorPage() {
                                 ? (trocaPrimeiro?.id === item.id
                                   ? '1ª selecionada — clique nela novamente para cancelar'
                                   : 'Clique para trocar de lugar com outra preparação')
-                                : 'Arraste para mover • Alt+Arraste para duplicar'}
+                                : modoTrocaDia
+                                  ? 'Modo trocar dia ativo — clique no cabeçalho dos dias'
+                                  : 'Arraste para mover • Alt+Arraste para duplicar'}
                             >
                               <GripVertical className="w-2.5 h-2.5 text-gray-300 flex-shrink-0 group-hover:text-gray-400" />
                               <span className="flex-1 truncate font-medium">{item.preparacao.nome}</span>

@@ -2,10 +2,12 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
 // ============================================================
-// POST /api/nutricao/cardapios/[id]/trocar-dia
+// POST /api/nutricao/cardapios/[id]/trocar-dia             v9.10.3
 // ============================================================
-// Troca TODOS os itens de dois dias da semana no cardápio.
-// Útil para o usuário reorganizar o cardápio sem precisar mover item por item.
+// Troca o DIA INTEIRO de lugar: todas as preparações do dia A
+// vão para o dia B e as do dia B vão para o dia A (mesma semana).
+// Usado pelo "Modo trocar dia" do editor (botão 📅⇄ no cabeçalho
+// de cada dia, ao lado do ⇄ de preparações e do Copiar).
 //
 // Body:
 //   {
@@ -14,20 +16,31 @@ import { db } from '@/lib/db'
 //     dia_b: "segunda"|"terca"|"quarta"|"quinta"|"sexta"
 //   }
 //
-// Lógica:
+// Lógica (snapshot + delete + create cruzado):
 //   1. Encontra a semana e os dois dias no cardápio
-//   2. Carrega todos os itens de cada dia (todos os slots/refeições)
-//   3. Apaga os itens de ambos os dias
-//   4. Recria os itens de dia_a no dia_b, e os de dia_b no dia_a
+//   2. Snapshot em memória dos itens de cada dia (todos os slots)
+//   3. Apaga TODOS os itens de ambos os dias
+//   4. Recria os itens de A no dia B e os de B no dia A
 //      (preservando tipo_refeicao_id, preparacao_id, porcoes, ordem)
 //
-// Como CardapioItem tem unique (dia_id, tipo_refeicao_id, preparacao_id),
-// fazemos via snapshot + delete + create (não pode só atualizar dia_id
-// porque poderia violar a constraint se ambos os dias têm a mesma preparação
-// na mesma refeição).
+// Por que delete+create (e não mover/reaproveitar linhas):
+//   - Os dois dias podem ter QUANTIDADES DIFERENTES de itens por
+//     slot (ex: Terça tem 1 item no Desjejum, Quarta tem 2) — não há
+//     correspondência 1:1 para trocar conteúdo como na trocar-itens.
+//   - CardapioItem tem unique (dia_id, tipo_refeicao_id, preparacao_id):
+//     como ZERAMOS os dois dias antes de recriar, cada dia recebe um
+//     único lote vindo de um dia válido — impossível violar a unique.
 //
-// Retorno: { success: true, itens_trocados: N }
+// PGBOUNCER (lição v9.10.1/v8.14): SEM $transaction. São no máximo
+// 2 deleteMany + 2 createMany (1 query por lote). Transação com
+// loop de creates quebrava com P2028 no pooler transaction mode.
+// Reexecutável: se algo falhar no meio, rodar a troca de novo
+// completa o movimento (dias vazios simplesmente não recriam nada).
+//
+// Retorno: { success: true, itens_trocados: N, itens_a, itens_b }
 // ============================================================
+
+const DIAS_VALIDOS = ['segunda', 'terca', 'quarta', 'quinta', 'sexta']
 
 export async function POST(
   request: Request,
@@ -46,7 +59,7 @@ export async function POST(
 
     if (body.dia_a === body.dia_b) {
       return NextResponse.json(
-        { error: 'dia_a e dia_b devem ser diferentes' },
+        { error: 'Selecione dois dias diferentes para trocar' },
         { status: 400 }
       )
     }
@@ -55,22 +68,21 @@ export async function POST(
     const diaA = body.dia_a
     const diaB = body.dia_b
 
-    // Valida dias
-    const diasValidos = ['segunda', 'terca', 'quarta', 'quinta', 'sexta']
-    if (!diasValidos.includes(diaA)) {
+    if (!DIAS_VALIDOS.includes(diaA)) {
       return NextResponse.json(
-        { error: `dia_a inválido: ${diaA}. Use: ${diasValidos.join(', ')}` },
+        { error: `dia_a inválido: ${diaA}. Use: ${DIAS_VALIDOS.join(', ')}` },
         { status: 400 }
       )
     }
-    if (!diasValidos.includes(diaB)) {
+    if (!DIAS_VALIDOS.includes(diaB)) {
       return NextResponse.json(
-        { error: `dia_b inválido: ${diaB}. Use: ${diasValidos.join(', ')}` },
+        { error: `dia_b inválido: ${diaB}. Use: ${DIAS_VALIDOS.join(', ')}` },
         { status: 400 }
       )
     }
 
-    // Encontra a semana com os dois dias
+    // Encontra a semana com os dois dias (a busca já é escopada pelo
+    // cardapio_id — dias de outro cardápio nunca são alcançados aqui)
     const semana = await db.cardapioSemanaNutri.findUnique({
       where: {
         cardapio_id_numero: {
@@ -105,52 +117,56 @@ export async function POST(
     const diaAData = semana.dias.find(d => d.dia_semana === diaA)!
     const diaBData = semana.dias.find(d => d.dia_semana === diaB)!
 
-    // Transação atômica: snapshot + delete + create cruzado
-    const result = await db.$transaction(async (tx) => {
-      // 1. Snapshot em memória dos itens de cada dia
-      const itensA = await tx.cardapioItem.findMany({ where: { dia_id: diaAData.id } })
-      const itensB = await tx.cardapioItem.findMany({ where: { dia_id: diaBData.id } })
+    // Snapshot em memória ANTES de apagar (padrão copiar/gerar-ciclo v9.10.1)
+    const itensA = diaAData.itens
+    const itensB = diaBData.itens
 
-      // 2. Apaga todos os itens de ambos os dias
-      await tx.cardapioItem.deleteMany({ where: { dia_id: diaAData.id } })
-      await tx.cardapioItem.deleteMany({ where: { dia_id: diaBData.id } })
+    // Dias ambos vazios: nada a trocar (evita writes inúteis)
+    if (itensA.length === 0 && itensB.length === 0) {
+      return NextResponse.json({
+        success: true,
+        noop: true,
+        message: 'Os dois dias estão vazios — nada para trocar',
+        itens_trocados: 0,
+        itens_a: 0,
+        itens_b: 0,
+      })
+    }
 
-      // 3. Recria itens de A no dia B (preservando tipo_refeicao_id, preparacao_id, porcoes, ordem)
-      for (const item of itensA) {
-        await tx.cardapioItem.create({
-          data: {
-            dia_id: diaBData.id,
-            tipo_refeicao_id: item.tipo_refeicao_id,
-            preparacao_id: item.preparacao_id,
-            porcoes: item.porcoes,
-            ordem: item.ordem || 0,
-          },
-        })
-      }
+    // 1. Zera os dois dias (sempre os DOIS antes de recriar — garante
+    //    que nenhum dia receba lote com conflito de unique)
+    await db.cardapioItem.deleteMany({ where: { dia_id: diaAData.id } })
+    await db.cardapioItem.deleteMany({ where: { dia_id: diaBData.id } })
 
-      // 4. Recria itens de B no dia A
-      for (const item of itensB) {
-        await tx.cardapioItem.create({
-          data: {
-            dia_id: diaAData.id,
-            tipo_refeicao_id: item.tipo_refeicao_id,
-            preparacao_id: item.preparacao_id,
-            porcoes: item.porcoes,
-            ordem: item.ordem || 0,
-          },
-        })
-      }
-
-      return {
-        itens_trocados: itensA.length + itensB.length,
-        itens_a: itensA.length,
-        itens_b: itensB.length,
-      }
-    })
+    // 2. Recria cruzado com createMany (1 query por lote — pgbouncer-safe)
+    if (itensA.length > 0) {
+      await db.cardapioItem.createMany({
+        data: itensA.map(item => ({
+          dia_id: diaBData.id,
+          tipo_refeicao_id: item.tipo_refeicao_id,
+          preparacao_id: item.preparacao_id,
+          porcoes: item.porcoes,
+          ordem: item.ordem || 0,
+        })),
+      })
+    }
+    if (itensB.length > 0) {
+      await db.cardapioItem.createMany({
+        data: itensB.map(item => ({
+          dia_id: diaAData.id,
+          tipo_refeicao_id: item.tipo_refeicao_id,
+          preparacao_id: item.preparacao_id,
+          porcoes: item.porcoes,
+          ordem: item.ordem || 0,
+        })),
+      })
+    }
 
     return NextResponse.json({
       success: true,
-      ...result,
+      itens_trocados: itensA.length + itensB.length,
+      itens_a: itensA.length,
+      itens_b: itensB.length,
     })
   } catch (error) {
     console.error('Erro ao trocar dias:', error)
