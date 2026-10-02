@@ -1,123 +1,150 @@
-# LEIA-ME — Patch v9.10.4 · PCQ em Dia Excepcional (Terça/Quinta via ajuste manual)
+# Patch v9.10.6 — Inst. Extra: escolhe o lanche + separadinho na folha de Lanches + fix do erro de ajuste
 
-**Projeto:** padaria-municipal · **Data:** 01/10/2026
-**Formato de aplicação:** extrair o zip na **raiz do projeto** (os caminhos internos já estão corretos).
+> **Este patch SUBSTITUI a v9.10.5 (que ainda não foi aplicada) — aplique SÓ este.**
+> Ele contém 100% do conteúdo da v9.10.5 (motorista no Inst. Extra) + as novidades
+> desta versão. NÃO aplique a v9.10.5 antes/depois — o `schema.prisma` desta
+> versão já inclui as duas colunas novas.
 
-```
-unzip -o patch-v9.10.4-pcq-dia-excepcional.zip -d ./padaria-municipal
-```
+**O que resolve:**
 
-**Sem migração de banco** — nenhum `prisma db push` é necessário. O schema não muda; a
-produção excepcional usa o sistema de **Ajustes** que já existe.
+1. **Erro ao ajustar quantidade de lanche de uma escola** (`Foreign key constraint
+   violated: Ajuste_escola_id_fkey` / P2003 no console): acontecia ao clicar numa
+   linha/célula de uma **instituição do Inst. Extra** (que não é escola) e o sistema
+   tentava gravar um ajuste com um id de escola que não existe. Agora:
+   - a tela **bloqueia o clique** nas linhas de extras com um aviso explicativo
+     ("Produção extra não usa ajuste — edite ou remova pelo botão Inst. Extra");
+   - a API de ajustes **valida que a escola existe** antes de gravar (resposta
+     amigável em vez de erro 500) — protege também contra tela desatualizada;
+   - "Remover Ajuste" virou idempotente (remover o que não existe não é mais erro).
 
----
+2. **Inst. Extra agora pergunta QUAL lanche/pão vai produzir** — o campo Produto
+   virou **"Produto (pão ou lanche)"** com as opções: **Pão Francês**, **Pão de
+   Cachorro Quente (PCQ)** e **todos os lanches cadastrados na página Lanches**.
+   - Se o lanche escolhido é **o mesmo da semana** (regular/bifásico): entra
+     normalmente junto com a produção de lanches (como sempre).
+   - Se o lanche escolhido é **DIFERENTE da semana**: o dialog avisa na hora
+     ("vai aparecer separadinho na folha de produção de Lanches") e, na
+     **impressão**, ele aparece num bloco próprio **"PREPARAÇÃO EXTRA — <nome do
+     lanche>"** **na MESMA folha de produção de Lanches** (mesma página, sem
+     quebra), com informação mínima: preparação, instituição, dia e quantidade —
+     **fora dos totais do lanche normal** (não mistura preparações diferentes).
+   - **No romaneio do motorista** (impressão da Produção e página Romaneio), o
+     extra continua entrando na tabela de Lanches da rota escolhida, agora com o
+     nome da preparação anotado ao lado da instituição (ex.: "Evento Cultural ·
+     Torta de Frango") — o motorista sabe o que está levando.
+   - Pão Francês e PCQ continuam exatamente como na v9.10.5 (motorista, dia de
+     entrega, bloco "Produção Extra" nas páginas de produção e romaneio).
 
-## 1. O que este patch resolve
+## Ordem de aplicação (OBRIGATÓRIA)
 
-O PCQ (pão de cachorro quente) é produzido **segunda, quarta e sexta** (produção = entrega,
-D-0). Esse padrão **continua igual** — é o fluxo normal. Mas existem **situações excepcionais**
-em que a produção precisa acontecer em **outro dia** (terça ou quinta), e o sistema simplesmente
-não permitia: a API não gerava itens de PCQ nesses dias e as colunas Ter/Qui da tabela semanal
-eram neutras ("—"), sem clique.
+1. **Backup do banco** (recomendado): use o procedimento de backup de sempre.
+2. Copie os arquivos do zip sobre a raiz do projeto (preservando os caminhos).
+3. **Aplique as novas colunas no banco (OBRIGATÓRIO — 2 colunas):**
+   ```bash
+   npx prisma db push
+   ```
+   Adiciona na tabela `ProducaoExtra`: `motorista` (v9.10.5) e `lanche_nome`
+   (v9.10.6) — ambas nullable, sem risco para os dados existentes.
+4. Gere o client Prisma e faça o build:
+   ```bash
+   npx prisma generate && npm run build
+   ```
+5. Reinicie o serviço (`npm run start` ou o supervisor de sempre).
 
-Agora é possível **adicionar produção de PCQ manualmente em Terça ou Quinta**, direto da
-tela de Produção, e ela aparece **em todo lugar de forma correta**: view Semanal, view Por Dia,
-**impressão da produção (P3 — PCQ)** e **romaneio** (entrega no mesmo dia).
+> Se o build/restart acontecer SEM o `db push` do passo 3: os extras deixam de
+> aparecer temporariamente (produção e romaneio seguem funcionando; as rotas
+> degradam graciosamente). Basta rodar o `db push` depois e recarregar.
+> **Se você já tinha aplicado a v9.10.5** (não deveria): o `db push` só adiciona
+> a `lanche_nome` — não há conflito.
 
----
+## Como usar
 
-## 2. Como usar (fluxo do dia a dia)
+1. Produção → botão **Inst. Extra** → nome da instituição, dia, motorista.
+2. **Produto (pão ou lanche):** escolha Pão Francês, PCQ ou um dos lanches
+   cadastrados (a lista vem da página **Lanches** — lanches ativos, em ordem
+   alfabética). Se escolher um lanche **diferente do lanche da semana**, o
+   sistema avisa na hora que ele vai impresso "separadinho".
+3. O extra aparece:
+   - **lanches diferentes da semana** → folha "PRODUÇÃO — LANCHES" em bloco
+     "PREPARAÇÃO EXTRA — <lanche>" no fim da mesma página + romaneio do motorista
+     com a preparação anotada ao lado da instituição;
+   - **demais extras** → como na v9.10.5 (bloco "Produção Extra" nas páginas de
+     produção e na tabela certa do romaneio do motorista escolhido).
+4. A lista "Produções Extras" mostra o lanche escolhido (badge "Lanche: <nome>")
+   e selo âmbar **"Fora da semana"** quando a preparação é diferente da semana.
+5. A tabela de Lanches da visão Semanal ganhou uma nota quando há extras fora
+   da semana (eles não entram nos totais do lanche da semana — é intencional).
 
-1. Na página **Produção**, na view **Semanal**, na tabela **Pão de Cachorro Quente**:
-   as colunas **Ter** e **Qui** agora são clicáveis (com um **+** discreto nas células vazias);
-2. Clique na célula **Ter** (ou **Qui**) da escola desejada → abre o **Ajustar Quantidade**
-   (o mesmo dialog de ajustes que já existia);
-3. Informe a **Quantidade Final** (ex.: 40 formas) e o **Motivo** (obrigatório — ex.:
-   "Evento na escola") → **Salvar Ajuste**;
-4. Pronto: a produção de PCQ aparece **na terça** — na view Semanal, na view Por Dia (card
-   da terça), no **Total PCQ** do dia e da semana, na **impressão da produção (P3)** e no
-   **romaneio** (o motorista leva na terça, pois PCQ é produção = entrega);
-5. O ajuste fica **destacado em âmbar com ●** (passe o mouse para ver original e motivo) e
-   vale **só para aquela semana** (sem conflito com as demais). Para remover, clique na
-   célula → **Remover Ajuste** — a terça volta a ficar vazia automaticamente.
+### Regras de negócio
 
-**Zerar um dia padrão:** se precisar *mover* a produção da quarta para a terça, basta também
-ajustar a quarta para 0 (fluxo de ajuste normal, já existente).
+- O nome do lanche é gravado como **snapshot** (sem vínculo com a tabela Lanches):
+  renomear ou remover o lanche depois NÃO quebra o extra já cadastrado.
+- O nome do lanche é comparado com o lanche da semana **na hora de imprimir**
+  (ignora maiúsculas/minúsculas e espaços): se a semana mudar de lanche, a
+  classificação (mesmo/separado) acompanha a semana impressa.
+- **Registros antigos** (antes da v9.10.6, produto Lanche sem lanche escolhido)
+  continuam valendo como "lanche da semana" — sem separação, sem anotação.
+- Extras **não são afetados por feriado nem por ajuste** (cadastro manual pontual,
+  como sempre). PF: o dia do cadastro é o dia de ENTREGA (produção D-1);
+  PCQ/Lanche: produção = entrega (D-0).
+- **Instituições extras NÃO têm ajuste**: ao clicar na linha delas na Produção
+  (Por Dia ou Semanal) aparece um aviso — a edição é remover e recadastrar no
+  botão Inst. Extra (é isso que evitava o erro de FK no console).
+- Totais da folha de Lanches (linha de dia e TOTAL GERAL) continuam sendo só do
+  lanche da semana; cada bloco "PREPARAÇÃO EXTRA" tem o seu próprio total.
 
----
-
-## 3. Como funciona por dentro (seguro)
-
-- **API `/api/producao`:** dias padrão (seg/qua/sex) continuam gerando PCQ para TODAS as
-  escolas que recebem (comportamento v9.7.3 preservado). Nos dias **excepcionais (ter/qui)**,
-  o bloco PCQ passa a rodar **apenas quando existir pelo menos um ajuste de PCQ para aquele
-  dia naquela semana** — e gera itens **somente para as escolas ajustadas**. Assim a view
-  Por Dia não fica poluída com dezenas de linhas zeradas numa terça "normal".
-  Checagem em memória (a lista de ajustes já era carregada) — **zero queries novas**.
-- **Quantidade base 0 na ter/qui:** o schema não tem `prod_terca`/`prod_quinta` (por design —
-  não são dias padrão), então a quantidade vem **do ajuste**; sem ajuste, não existe item.
-- **Feriado × ajuste:** com feriado que zera PCQ na terça, a produção excepcional **não é
-  criada automaticamente** (nada muda para quem não ajustou). Se houver ajuste manual, ele
-  **vence o feriado** — quem escreveu o motivo manda (mesma prioridade dos ajustes dos dias
-  padrão, validada nos testes).
-- **API `/api/romaneio`:** nos dias ter/qui, o ajuste de PCQ vira **entrega no mesmo dia**
-  (PCQ é D-0), alinhado com a produção — o romaneio do motorista e a impressão dele mostram
-  a quantidade na terça/quinta, sem divergência.
-- **Consolidador semanal e impressão:** a view Semanal, a linha "Total PCQ" e a impressão
-  P3 já renderizavam qualquer coluna com valor — agora os dados chegam preenchidos e tudo
-  aparece **sem nenhuma mudança na impressão** (o valor da terça entra na coluna Ter, com o
-  "—" sumindo naturalmente; a legenda "(N) = pães" das unidades Busca Própria também funciona
-  nos dias excepcionais).
-- **Regra v9.7.5 (anti-vazamento) preservada:** PF continua sem produção na sexta e com
-  colunas neutras certas. Para PCQ não há risco, pois produção = entrega (D-0): um ajuste
-  `escola_terca_PCQ` só aparece na coluna Ter da tabela de PCQ.
-- **Domingo continua neutro** para PCQ (não existe produção de PCQ no domingo).
-
----
-
-## 4. Arquivos modificados
+## Arquivos do patch
 
 | Arquivo | Mudança |
 |---|---|
-| `src/lib/producao-utils.ts` | `DIAS_PRODUCAO_POR_PRODUTO.PCQ` agora inclui `terca` e `quinta` (células clicáveis na view Semanal; domingo continua fora). PF/LANCHE/PF_COMP intocados. |
-| `src/app/api/producao/route.ts` | Bloco PCQ do loop de dias: aceita dias excepcionais (ter/qui) quando há ajuste PCQ do dia na semana; gera itens só para escolas ajustadas; `pcqConfig` opcional (qtd base 0, entrega = próprio dia). |
-| `src/app/api/romaneio/route.ts` | Dias sem config padrão (ter/qui): aplica ajuste `PCQ` como entrega no mesmo dia. |
-| `src/app/(app)/producao/page.tsx` | Tabela PCQ da view Semanal: células Ter/Qui clicáveis com "+", title dinâmico ("Clique para adicionar produção excepcional de PCQ neste dia") e nota de legenda no rodapé do card. |
+| `prisma/schema.prisma` | `ProducaoExtra.lanche_nome String?` (v9.10.6, **requer db push**) + `motorista String?` (v9.10.5, requerido pelo mesmo db push) |
+| `src/app/api/ajustes/route.ts` | **FIX P2003**: valida existência da escola antes do upsert (400 amigável); DELETE idempotente (P2025) |
+| `src/components/ajuste-dialog.tsx` | Mostra a mensagem de erro da API no toast |
+| `src/app/api/producao/extra/route.ts` | POST aceita/valida `lanche_nome` (obrigatório quando LANCHE, snapshot máx 80); motorista da v9.10.5 intacto |
+| `src/app/api/romaneio/route.ts` | Pseudo-escola do extra leva `extra_lanche` (nome do lanche quando FORA da semana) |
+| `src/lib/romaneio-utils.ts` | `EscolaRomaneio.extra_lanche?` tipado |
+| `src/lib/producao-semana-utils.ts` | (v9.10.5, incluído por ser cumulativo) `EscolaConsolidada.categoria` |
+| `src/app/(app)/producao/page.tsx` | Guarda extra\_ nos cliques de ajuste; select "Produto (pão ou lanche)" com os lanches cadastrados; aviso no dialog; blocos "PREPARAÇÃO EXTRA" na P4 (mesma folha); badges na lista; células de extra não-clicáveis na Semanal; anotação no romaneio impresso |
+| `src/app/(app)/romaneio/page.tsx` | Anotação "· <lanche>" ao lado da instituição nos extras fora da semana (impressão + tela) |
 
----
+## Como testar
 
-## 5. Validação (antes de aplicar)
+1. `npx prisma db push` → `npx prisma generate` → `npm run build` → restart.
+2. **Teste do fix do ajuste:** Produção → Semanal → clique numa célula de uma
+   linha de instituição extra (ou no item dela em Por Dia) → deve aparecer o
+   aviso "Produção extra não usa ajuste..." e NENHUM erro P2003 no console.
+   Ajuste de escola real continua funcionando normalmente.
+3. **Teste do lanche separadinho:** Inst. Extra → "Evento Teste", produto
+   **<um lanche DIFERENTE do lanche da semana>**, dia quinta, motorista José,
+   quantidade 50 → o dialog avisa que vai separadinho. Imprimir (Produção):
+   - folha "PRODUÇÃO — LANCHES": após a tabela do lanche da semana, bloco
+     "PREPARAÇÃO EXTRA — <LANCHE>" na MESMA página com "Qui · Evento Teste — 50"
+     e "TOTAL EXTRA 50"; os totais do lanche normal NÃO incluem os 50;
+   - romaneio "ROTA MOTORISTA JOSÉ — PCQ E LANCHES": linha do extra na tabela de
+     lanches (coluna Qui) com "· <lanche>" ao lado do nome, somando no total do
+     dia (o motorista leva mesmo).
+4. Repita com o **lanche da semana** (mesmo nome) → entra na tabela normal, sem
+   bloco separado, sem badge "Fora da semana".
+5. Cadastre extra **LANCHE sem lanche escolhido** via API → 400 com mensagem
+   amigável (o dialog da UI já impede).
+6. Remova os extras de teste (lixeira na lista de Produções Extras).
 
-- `npx tsc --noEmit` → 0 erros;
-- `npm run build` → OK;
-- Suíte nova `test-pcq-excepcional-v9104.ts` → **50/50**:
-  - Parte A (14): simulação fiel do bloco PCQ — dia excepcional com/sem ajuste, dia padrão
-    inalterado, ajuste vence feriado, guard por escola, Busca Própria;
-  - Parte B (20): asserts de fonte nos 5 arquivos;
-  - Parte C (16): consolidador REAL + impressão + 200 semanas aleatórias com 0 violações
-    (item em ter/qui só com ajuste; somas batem; escola sem PCQ nunca aparece).
-- Regressões históricas: v9.9.5 16/16 · v9.9.6 18/18 · v9.9.7 44/44 · v9.9.8 21/21 ·
-  v9.9.9 46/46 · v9.10.0 88/88 · v9.10.1 49/49 · v9.10.2 61/61 · v9.10.3 70/70.
+## Commit
 
-## 6. Como testar após aplicar
+```bash
+git add prisma/schema.prisma src/app/api/ajustes/route.ts src/components/ajuste-dialog.tsx src/app/api/producao/extra/route.ts src/app/api/romaneio/route.ts src/lib/romaneio-utils.ts src/lib/producao-semana-utils.ts "src/app/(app)/producao/page.tsx" "src/app/(app)/romaneio/page.tsx"
+git commit -m "v9.10.6: Inst. Extra escolhe o lanche (PF/PCQ/lanches cadastrados); lanche fora da semana impresso separadinho na folha de Lanches; fix P2003 no ajuste de escolas"
+```
 
-1. `npm run build` (ou rode dev) e abra **Produção** numa semana com PCQ configurado;
-2. Na tabela de PCQ, clique no **+** de uma escola na coluna **Ter** → digite 40 e um motivo → Salvar;
-3. Confira: célula da terça mostra **40** com destaque âmbar; card da **terça** na view Por Dia
-   tem o card PCQ; **Imprimir** → página P3 (PCQ) mostra 40 na coluna Ter (e o total do dia);
-4. Abra **Romaneio** → a tabela da rota da escola mostra o PCQ na terça (impressão do motorista também);
-5. Clique na célula ajustada → **Remover Ajuste** → a terça volta a ficar vazia em todos os lugares.
+## Validação aplicada antes do envio
 
----
-
-## 7. Observações
-
-- O cadastro padrão (**Configurações → PCQ**) **continua com os dias seg/qua/sex** — é
-  intencional; a produção excepcional é pontual, por semana, e fica registrada como ajuste
-  com motivo (rastreável no sistema de ajustes).
-- O ajuste grava quantidade **inteira** (limitação existente do sistema de ajustes para todos
-  os produtos). Produções excepcionais fracionárias (ex.: 0,5 forma) não são suportadas pelo
-  ajuste — se precisar disso no futuro, é uma evolução separada (converter Ajuste para Float).
-- A **previsão de custos** (Controle de Estoque) continua estimando PCQ pelos dias padrão
-  seg/qua/sex — é uma ferramenta de projeção da configuração fixa, não considera ajustes
-  pontuais (comportamento anterior mantido).
+- `prisma generate` OK · `tsc --noEmit`: 0 erros · `next build`: OK
+- `test-extra-lanche-v9106.ts`: **113/113** (classificador, split da injeção,
+  grupos da P4, anotação do romaneio, guarda extra\_, pre-check do ajuste,
+  asserts de fonte, consolidador real + 200 semanas aleatórias + contra-prova)
+- Regressões: v9.9.0 ✅, v9.9.1 15/15, v9.9.2 31/31, v9.9.3 58/58, v9.9.4 35/35,
+  v9.9.6 18/18, v9.9.7 44/44, v9.9.8 21/21, v9.9.9 46/46, v9.10.0 88/88,
+  v9.10.1 49/49, v9.10.2 61/61, v9.10.3 70/70, v9.10.4 50/50, v9.10.5 106/106
+- Nota: `test-ordenacao-v6` (fora da suíte desde a era v6) tem 3 falhas
+  pré-existentes de ordenação canônica — sem relação com este patch (nenhum
+  arquivo de ordenação foi tocado).

@@ -15,6 +15,11 @@ export interface EscolaRomaneio {
   // Usado para diferenciar creches (PF só agrupado em PCQ) de bifásicas
   // (PF regular na tabela PF + PF Complemento agrupado em PCQ).
   categoria?: string
+  // v9.10.6: só preenchido em pseudo-escolas do Inst. Extra com produto LANCHE
+  // cujo lanche escolhido é DIFERENTE do lanche da semana — o nome da preparação
+  // é exibido ao lado da instituição no romaneio (o motorista precisa saber o
+  // que está levando). Nulo/vazio = sem anotação.
+  extra_lanche?: string | null
   pf: Record<DiaSemana, number>
   pcq: Record<DiaSemana, number>
   lanche: Record<DiaSemana, number>

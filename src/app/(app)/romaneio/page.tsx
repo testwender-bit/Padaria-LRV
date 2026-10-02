@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, Fragment } from 'react'
 import { motion } from 'framer-motion'
 import { SeletorSemana } from '@/components/seletor-semana'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -100,12 +100,21 @@ export default function RomaneioPage() {
                     <th className="print-col-total">TOTAL</th>
                   </tr></thead>
                   <tbody>
-                    {romaneio.escolas.filter((e) => e.total_pf > 0).map((escola) => (
-                      <tr key={escola.id}>
-                        <td className="print-col-escola">{escola.nome_curto}</td>
-                        {DIAS_SEMANA.map((d) => (<td key={d} className="print-col-dia">{escola.pf[d] > 0 ? escola.pf[d] : '—'}</td>))}
-                        <td className="print-col-total">{escola.total_pf.toLocaleString('pt-BR')}</td>
-                      </tr>
+                    {romaneio.escolas.filter((e) => e.total_pf > 0).map((escola, idx, arr) => (
+                      <Fragment key={escola.id}>
+                        {/* v9.10.5: separador antes do primeiro extra (categoria EXTRA =
+                            instituição avulsa do botão Inst. Extra com motorista definido) */}
+                        {escola.categoria === 'EXTRA' && (idx === 0 || arr[idx - 1].categoria !== 'EXTRA') && (
+                          <tr className="print-row-separator-black">
+                            <td colSpan={7}>Produção Extra</td>
+                          </tr>
+                        )}
+                        <tr>
+                          <td className="print-col-escola">{escola.nome_curto}</td>
+                          {DIAS_SEMANA.map((d) => (<td key={d} className="print-col-dia">{escola.pf[d] > 0 ? escola.pf[d] : '—'}</td>))}
+                          <td className="print-col-total">{escola.total_pf.toLocaleString('pt-BR')}</td>
+                        </tr>
+                      </Fragment>
                     ))}
                     <tr className="print-row-total">
                       <td className="print-col-escola">TOTAL GERAL (UNID.)</td>
@@ -168,12 +177,20 @@ export default function RomaneioPage() {
                           const ob = b.ordem_pcq ?? 0
                           if (oa !== ob) return oa - ob
                           return (a.nome_curto || '').localeCompare(b.nome_curto || '')
-                        }).map((escola) => (
-                          <tr key={escola.id}>
-                            <td className="print-col-escola">{escola.nome_curto}</td>
-                            {DIAS_SEMANA.map((d) => (<td key={d} className="print-col-dia">{escola.pcq[d] > 0 ? escola.pcq[d] : '—'}</td>))}
-                            <td className="print-col-total">{escola.total_pcq.toLocaleString('pt-BR')}</td>
-                          </tr>
+                        }).map((escola, idx, arr) => (
+                          <Fragment key={escola.id}>
+                            {/* v9.10.5: separador antes do primeiro extra (categoria EXTRA) */}
+                            {escola.categoria === 'EXTRA' && (idx === 0 || arr[idx - 1].categoria !== 'EXTRA') && (
+                              <tr className="print-row-separator-black">
+                                <td colSpan={7}>Produção Extra</td>
+                              </tr>
+                            )}
+                            <tr>
+                              <td className="print-col-escola">{escola.nome_curto}</td>
+                              {DIAS_SEMANA.map((d) => (<td key={d} className="print-col-dia">{escola.pcq[d] > 0 ? escola.pcq[d] : '—'}</td>))}
+                              <td className="print-col-total">{escola.total_pcq.toLocaleString('pt-BR')}</td>
+                            </tr>
+                          </Fragment>
                         ))}
                         <tr className="print-row-subtotal">
                           <td className="print-col-escola">TOTAL GERAL (FORMAS)</td>
@@ -198,12 +215,27 @@ export default function RomaneioPage() {
                         <th className="print-col-total">TOTAL</th>
                       </tr></thead>
                       <tbody>
-                        {romaneio.escolas.filter((e) => e.total_lanche > 0).map((escola) => (
-                          <tr key={escola.id}>
-                            <td className="print-col-escola">{escola.nome_curto}</td>
-                            {DIAS_SEMANA.map((d) => (<td key={d} className="print-col-dia">{escola.lanche[d] > 0 ? escola.lanche[d] : '—'}</td>))}
-                            <td className="print-col-total">{escola.total_lanche.toLocaleString('pt-BR')}</td>
-                          </tr>
+                        {romaneio.escolas.filter((e) => e.total_lanche > 0).map((escola, idx, arr) => (
+                          <Fragment key={escola.id}>
+                            {/* v9.10.5: separador antes do primeiro extra (categoria EXTRA) */}
+                            {escola.categoria === 'EXTRA' && (idx === 0 || arr[idx - 1].categoria !== 'EXTRA') && (
+                              <tr className="print-row-separator-black">
+                                <td colSpan={7}>Produção Extra</td>
+                              </tr>
+                            )}
+                            <tr>
+                              <td className="print-col-escola">
+                                {escola.nome_curto}
+                                {/* v9.10.6: lanche fora da semana — anota a preparação
+                                    ao lado da instituição (o motorista sabe o que leva) */}
+                                {escola.extra_lanche && (
+                                  <span style={{ fontSize: '8pt', color: '#777' }}> · {escola.extra_lanche}</span>
+                                )}
+                              </td>
+                              {DIAS_SEMANA.map((d) => (<td key={d} className="print-col-dia">{escola.lanche[d] > 0 ? escola.lanche[d] : '—'}</td>))}
+                              <td className="print-col-total">{escola.total_lanche.toLocaleString('pt-BR')}</td>
+                            </tr>
+                          </Fragment>
                         ))}
                         <tr className="print-row-subtotal">
                           <td className="print-col-escola">TOTAL GERAL</td>
@@ -269,7 +301,13 @@ function RomaneioRotaCard({ romaneio, lancheRegular }: { romaneio: RomaneioMotor
         </div>
         <div>
           <h2 className="text-lg font-bold text-[#1A3A5C]">{romaneio.rota_label}</h2>
-          <p className="text-sm text-muted-foreground">{romaneio.escolas.length} escolas</p>
+          {/* v9.10.5: conta extras (categoria EXTRA = instituição avulsa do Inst. Extra) */}
+          <p className="text-sm text-muted-foreground">
+            {romaneio.escolas.filter((e) => e.categoria !== 'EXTRA').length} escolas
+            {romaneio.escolas.some((e) => e.categoria === 'EXTRA')
+              ? ` · ${romaneio.escolas.filter((e) => e.categoria === 'EXTRA').length} inst. extra`
+              : ''}
+          </p>
         </div>
       </div>
 
@@ -362,7 +400,13 @@ function RomaneioRotaCard({ romaneio, lancheRegular }: { romaneio: RomaneioMotor
                 <tbody>
                   {romaneio.escolas.filter((e) => e.total_lanche > 0).map((escola) => (
                     <tr key={escola.id} className="border-b border-muted/30 hover:bg-muted/20">
-                      <td className="p-2 font-medium text-sm">{escola.nome_curto}</td>
+                      <td className="p-2 font-medium text-sm">
+                        {escola.nome_curto}
+                        {/* v9.10.6: lanche fora da semana — anota a preparação */}
+                        {escola.extra_lanche && (
+                          <span className="ml-1 text-[10px] text-muted-foreground font-normal">· {escola.extra_lanche}</span>
+                        )}
+                      </td>
                       {DIAS_SEMANA.map((d) => (<td key={d} className="p-2 text-center font-mono text-sm">{escola.lanche[d] || ''}</td>))}
                       <td className="p-2 text-right font-mono font-semibold bg-pink-50">{escola.total_lanche.toLocaleString('pt-BR')}</td>
                     </tr>

@@ -245,6 +245,19 @@ model ProducaoExtra {
   nome_instituicao String
   produto          String   // 'PF' | 'PCQ' | 'LANCHE'
   dia_semana       String   // segunda, terca, quarta, quinta, sexta
+  // v9.10.5: motorista responsável pela entrega do extra ('JOSE' | 'AROLDO' |
+  // 'BUSCA_PROPRIA'). Nulo = sem motorista definido (registros anteriores à
+  // v9.10.5) — aparecem na produção, mas NÃO entram no romaneio até serem
+  // recadastrados com o motorista.
+  motorista        String?
+  // v9.10.6: quando produto = 'LANCHE', nome do lanche cadastrado escolhido no
+  // Inst. Extra (opções: Pão Francês, PCQ ou um lanche da página Lanches).
+  // Snapshot desnormalizado (sem FK) — sobrevive a renomear/remover o lanche.
+  // Nulo = lanche genérico (registros anteriores à v9.10.6 são tratados como
+  // "lanche da semana"). Se o nome escolhido for DIFERENTE do lanche da semana
+  // (regular/bifásico), o extra aparece "separadinho" na folha de produção de
+  // Lanches, fora dos totais do lanche normal.
+  lanche_nome      String?
   quantidade       Int      @default(0)
   observacao       String?
   criado_em        DateTime @default(now())

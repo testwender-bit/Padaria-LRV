@@ -38,6 +38,21 @@ export async function POST(request: Request) {
     if (typeof body.qtd_final !== 'number' || body.qtd_final < 0) {
       return NextResponse.json({ error: 'qtd_final deve ser um número não negativo' }, { status: 400 })
     }
+    // v9.10.6: valida a existência da escola ANTES do upsert — evita o erro
+    // P2003 "Foreign key constraint violated: Ajuste_escola_id_fkey" quando a
+    // UI manda um id que não existe na tabela Escola (ex.: pseudo-escola
+    // "extra_..." do Inst. Extra clicada por engano, ou escola removida com a
+    // tela desatualizada). Resposta amigável em vez de 500 no console.
+    const escolaExiste = await db.escola.findUnique({
+      where: { id: body.escola_id },
+      select: { id: true },
+    })
+    if (!escolaExiste) {
+      return NextResponse.json(
+        { error: 'Escola não encontrada para este ajuste. Atualize a página e tente de novo. (Instituições cadastradas no "Inst. Extra" não usam ajuste — edite pelo botão "Inst. Extra" na Produção.)' },
+        { status: 400 }
+      )
+    }
     const ajuste = await db.ajuste.upsert({
       where: {
         ano_semana_escola_id_dia_semana_produto: {
@@ -83,13 +98,21 @@ export async function DELETE(request: Request) {
     const produto = searchParams.get('produto') || ''
 
     if (ano && semana && escola_id && dia_semana && produto) {
-      await db.ajuste.delete({
-        where: {
-          ano_semana_escola_id_dia_semana_produto: {
-            ano, semana, escola_id, dia_semana, produto,
+      try {
+        await db.ajuste.delete({
+          where: {
+            ano_semana_escola_id_dia_semana_produto: {
+              ano, semana, escola_id, dia_semana, produto,
+            },
           },
-        },
-      })
+        })
+      } catch (err: any) {
+        // v9.10.6: P2025 (ajuste já não existe) — remoção idempotente, não é erro
+        if (err?.code === 'P2025') {
+          return NextResponse.json({ success: true })
+        }
+        throw err
+      }
       return NextResponse.json({ success: true })
     }
     

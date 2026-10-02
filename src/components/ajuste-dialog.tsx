@@ -85,7 +85,9 @@ export function AjusteDialog({
         onSaved()
         onOpenChange(false)
       } else {
-        toast.error('Erro ao salvar ajuste')
+        // v9.10.6: mostra a mensagem da API (ex.: escola inexistente — P2003)
+        const json = await res.json().catch(() => ({}))
+        toast.error(json.error || 'Erro ao salvar ajuste')
       }
     } catch {
       toast.error('Erro de conexão')

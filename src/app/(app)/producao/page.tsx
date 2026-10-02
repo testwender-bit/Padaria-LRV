@@ -77,13 +77,28 @@ export default function ProducaoPage() {
   const [romaneios, setRomaneios] = useState<RomaneioMotorista[]>([])
   const [ajusteOpen, setAjusteOpen] = useState(false)
   // v9.5: produção extra (instituições avulsas)
+  // v9.10.5: campo motorista ('JOSE' | 'AROLDO' | 'BUSCA_PROPRIA' | null —
+  // null = registro anterior à v9.10.5, sem motorista definido)
   const [producaoExtra, setProducaoExtra] = useState<Array<{
-    id: string; nome_instituicao: string; produto: string; dia_semana: string; quantidade: number; observacao?: string | null
+    id: string; nome_instituicao: string; produto: string; dia_semana: string; motorista?: string | null; lanche_nome?: string | null; quantidade: number; observacao?: string | null
   }>>([])
   const [extraDialogOpen, setExtraDialogOpen] = useState(false)
   const [extraForm, setExtraForm] = useState({
-    nome_instituicao: '', produto: 'PF', dia_semana: 'segunda', quantidade: 0, observacao: '',
+    nome_instituicao: '', produto: 'PF', dia_semana: 'segunda', motorista: '', quantidade: 0, observacao: '',
   })
+  // v9.10.6: lanches cadastrados (página Lanches) — alimentam o select do
+  // Inst. Extra: o usuário escolhe Pão Francês, PCQ ou um lanche cadastrado.
+  const [lanchesCadastrados, setLanchesCadastrados] = useState<Array<{ id: string; nome: string }>>([])
+  useEffect(() => {
+    fetch('/api/lanches')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((json) => setLanchesCadastrados(
+        Array.isArray(json)
+          ? json.filter((l: any) => l && l.nome).map((l: any) => ({ id: l.id, nome: l.nome }))
+          : []
+      ))
+      .catch(() => setLanchesCadastrados([]))
+  }, [])
   // v9.7.5: edição inline do "Aviso da Semana" (obs do cardápio semestral)
   const [avisoDialogOpen, setAvisoDialogOpen] = useState(false)
   const [avisoEditando, setAvisoEditando] = useState('')
@@ -129,6 +144,21 @@ export default function ProducaoPage() {
       toast.error('Preencha nome e quantidade')
       return
     }
+    // v9.10.5: motorista é obrigatório — é ele que define em qual romaneio
+    // o extra vai aparecer (sem motorista, o extra fica só na produção)
+    if (!extraForm.motorista) {
+      toast.error('Selecione o motorista que vai levar o extra')
+      return
+    }
+    // v9.10.6: decodifica o select de produto — 'lanche:<nome>' = lanche
+    // cadastrado escolhido; PF/PCQ continuam diretos.
+    const ehLancheCadastrado = extraForm.produto.startsWith('lanche:')
+    const produto = ehLancheCadastrado ? 'LANCHE' : extraForm.produto
+    const lanche_nome = ehLancheCadastrado ? extraForm.produto.slice('lanche:'.length) : ''
+    if (produto === 'LANCHE' && !lanche_nome) {
+      toast.error('Selecione qual lanche será produzido')
+      return
+    }
     try {
       const inicio = semanaReferencia ? new Date(semanaReferencia + 'T12:00:00') : new Date()
       const ano = inicio.getFullYear()
@@ -136,13 +166,26 @@ export default function ProducaoPage() {
       const res = await fetch('/api/producao/extra', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...extraForm, ano, semana }),
+        body: JSON.stringify({
+          nome_instituicao: extraForm.nome_instituicao,
+          produto,
+          lanche_nome,
+          dia_semana: extraForm.dia_semana,
+          motorista: extraForm.motorista,
+          quantidade: extraForm.quantidade,
+          observacao: extraForm.observacao,
+          ano,
+          semana,
+        }),
       })
       if (res.ok) {
         toast.success('Produção extra adicionada!')
         setExtraDialogOpen(false)
-        setExtraForm({ nome_instituicao: '', produto: 'PF', dia_semana: 'segunda', quantidade: 0, observacao: '' })
+        setExtraForm({ nome_instituicao: '', produto: 'PF', dia_semana: 'segunda', motorista: '', quantidade: 0, observacao: '' })
         loadData()
+      } else {
+        const json = await res.json().catch(() => ({}))
+        toast.error(json.error || 'Erro ao salvar')
       }
     } catch { toast.error('Erro ao salvar') }
   }
@@ -200,6 +243,13 @@ export default function ProducaoPage() {
   }
 
   function openAjuste(item: ItemProducao) {
+    // v9.10.6: instituições extras (Inst. Extra) não são escolas — o POST de
+    // ajuste com o id delas ("extra_...") violava a FK Ajuste_escola_id_fkey
+    // (P2003). O ajuste delas não existe: edita/remove pelo botão Inst. Extra.
+    if (item.escola_id?.startsWith('extra_')) {
+      toast.info('Produção extra não usa ajuste — edite ou remova pelo botão "Inst. Extra"')
+      return
+    }
     setAjusteTarget({
       escolaId: item.escola_id, escolaNome: item.escola_nome,
       diaSemana: item.dia_entrega || '', produto: item.produto,
@@ -209,6 +259,12 @@ export default function ProducaoPage() {
   }
 
   function openAjusteFromWeekly(escolaId: string, escolaNome: string, diaProd: DiaProducao, produto: 'PF' | 'PCQ' | 'LANCHE', quantidade: number) {
+    // v9.10.6: mesma guarda do openAjuste — linhas de instituições extras na
+    // view Semanal não são escolas (evita P2003 no /api/ajustes)
+    if (escolaId?.startsWith('extra_')) {
+      toast.info('Produção extra não usa ajuste — edite ou remova pelo botão "Inst. Extra"')
+      return
+    }
     // v9.4: permite ajustar mesmo se quantidade for 0 (célula vazia)
     const diaEntrega = entregaFromProducao(diaProd, produto)
 
@@ -241,8 +297,22 @@ export default function ProducaoPage() {
   // (silenciosamente — aparecem junto com as escolas na produção e impressão)
   // IMPORTANTE: este useMemo fica ANTES do early return para respeitar
   // as Rules of Hooks do React (não pode haver hook depois de return).
+  // v9.10.6: extras de LANCHE cujo lanche escolhido é DIFERENTE do lanche da
+  // semana (regular/bifásico) NÃO são injetados — não podem misturar com a
+  // produção normal de lanches (totais/tabelas). Eles aparecem "separadinhos"
+  // na folha de produção de Lanches (bloco próprio, mesma página) e anotados
+  // no romaneio do motorista.
   const diasComExtra = useMemo<ProducaoDia[]>(() => {
     if (!data || producaoExtra.length === 0) return data?.dias || []
+    // v9.10.6: nomes dos lanches da semana (regular + bifásico) para comparar
+    const lanchesDaSemana = [data.lancheRegular, data.lancheBifasica]
+      .filter((n): n is string => !!n && !!n.trim())
+      .map((n) => n.trim().toLowerCase())
+    const ehLancheForaDaSemana = (extra: { produto: string; lanche_nome?: string | null }) =>
+      extra.produto === 'LANCHE' && !!extra.lanche_nome?.trim() &&
+      !lanchesDaSemana.includes(extra.lanche_nome.trim().toLowerCase())
+    const extrasParaInjetar = producaoExtra.filter((extra) => !ehLancheForaDaSemana(extra))
+    if (extrasParaInjetar.length === 0) return data.dias || []
     // Deep copy dos dias com seus arrays de itens (para não mutar o estado)
     const novosDias: ProducaoDia[] = (data.dias || []).map((d) => ({
       ...d,
@@ -255,7 +325,7 @@ export default function ProducaoPage() {
     Object.entries(PF_PRODUCAO_PARA_ENTREGA).forEach(([prodKey, entregaKey]) => {
       entregaParaProducaoPF[entregaKey] = prodKey
     })
-    for (const extra of producaoExtra) {
+    for (const extra of extrasParaInjetar) {
       let diaKeyAlvo: string | null = null
       if (extra.produto === 'PF') {
         diaKeyAlvo = entregaParaProducaoPF[extra.dia_semana] || null
@@ -346,6 +416,36 @@ export default function ProducaoPage() {
 
   // Lanche name
   const lancheNome = data.lancheRegular || data.lancheBifasica || 'Lanche'
+
+  // v9.10.6: extras de lanche FORA da semana (preparação diferente da semana).
+  // Não entram na injeção (diasComExtra) — portanto não misturam com os totais
+  // do lanche normal — e aparecem "separadinhos" na folha de produção de
+  // Lanches (P4), agrupados pelo lanche escolhido, na MESMA página.
+  const lanchesDaSemanaNomes = [data.lancheRegular, data.lancheBifasica]
+    .filter((n): n is string => !!n && !!n.trim())
+    .map((n) => n.trim().toLowerCase())
+  const DIAS_ENTREGA_EXTRA = ['segunda', 'terca', 'quarta', 'quinta', 'sexta']
+  function extraEhLancheDiferente(nome: string | null | undefined): boolean {
+    if (!nome || !nome.trim()) return false
+    return !lanchesDaSemanaNomes.includes(nome.trim().toLowerCase())
+  }
+  const extrasLancheDiferente = (producaoExtra || []).filter((extra) =>
+    extra.produto === 'LANCHE' &&
+    extraEhLancheDiferente(extra.lanche_nome) &&
+    DIAS_ENTREGA_EXTRA.includes(extra.dia_semana) &&
+    extra.quantidade > 0)
+  // Agrupado por lanche (case-insensitive) → blocos compactos na P4, ordenados
+  // por nome; extras dentro do bloco ordenados por dia da semana.
+  const gruposLancheExtra: Array<{ lanche: string; extras: typeof extrasLancheDiferente }> = []
+  for (const e of extrasLancheDiferente) {
+    const nome = (e.lanche_nome || '').trim()
+    let g = gruposLancheExtra.find((x) => x.lanche.toLowerCase() === nome.toLowerCase())
+    if (!g) { g = { lanche: nome, extras: [] }; gruposLancheExtra.push(g) }
+    g.extras.push(e)
+  }
+  gruposLancheExtra.sort((a, b) => a.lanche.localeCompare(b.lanche))
+  gruposLancheExtra.forEach((g) =>
+    g.extras.sort((a, b) => DIAS_ENTREGA_EXTRA.indexOf(a.dia_semana) - DIAS_ENTREGA_EXTRA.indexOf(b.dia_semana)))
 
   // Data/hora de geração
   const geradoEm = format(new Date(), "dd/MM/yyyy 'às' HH:mm")
@@ -563,26 +663,37 @@ export default function ProducaoPage() {
               <tbody>
                 {/* v9.9.1: unidades Busca Própria mostram a conversão em pães —
                     "1 (60)" = 1 forma = 60 pães de cachorro quente */}
-                {escolasPCQ.map((escola) => {
+                {escolasPCQ.map((escola, idx, arr) => {
                   const bp = ehBuscaPropria(escola)
+                  // v9.10.5: separador antes do primeiro extra (categoria EXTRA =
+                  // instituição avulsa do botão Inst. Extra) — mesmo padrão da
+                  // página de Pão Francês
+                  const mostraSeparador = escola.categoria === 'EXTRA' && (idx === 0 || arr[idx - 1].categoria !== 'EXTRA')
                   return (
-                    <tr key={escola.id}>
-                      <td className="print-col-escola">{escola.nome_curto}</td>
-                      {DIAS_PRODUCAO.map((d) => (
-                        <td key={d} className="print-col-dia">
-                          {escola.pcq[d] > 0 ? (
-                            <>
-                              {formatarFormas(escola.pcq[d])}
-                              {bp && <span style={{ fontSize: '8pt', color: '#888', marginLeft: '1px' }}>{legendaPcqPaes(escola.pcq[d])}</span>}
-                            </>
-                          ) : '—'}
+                    <Fragment key={escola.id}>
+                      {mostraSeparador && (
+                        <tr className="print-row-separator-black">
+                          <td colSpan={8}>Produção Extra</td>
+                        </tr>
+                      )}
+                      <tr>
+                        <td className="print-col-escola">{escola.nome_curto}</td>
+                        {DIAS_PRODUCAO.map((d) => (
+                          <td key={d} className="print-col-dia">
+                            {escola.pcq[d] > 0 ? (
+                              <>
+                                {formatarFormas(escola.pcq[d])}
+                                {bp && <span style={{ fontSize: '8pt', color: '#888', marginLeft: '1px' }}>{legendaPcqPaes(escola.pcq[d])}</span>}
+                              </>
+                            ) : '—'}
+                          </td>
+                        ))}
+                        <td className="print-col-total">
+                          {escola.total_pcq.toLocaleString('pt-BR')}
+                          {bp && escola.total_pcq > 0 && <span style={{ fontSize: '8pt', color: '#888', marginLeft: '1px' }}>{legendaPcqPaes(escola.total_pcq)}</span>}
                         </td>
-                      ))}
-                      <td className="print-col-total">
-                        {escola.total_pcq.toLocaleString('pt-BR')}
-                        {bp && escola.total_pcq > 0 && <span style={{ fontSize: '8pt', color: '#888', marginLeft: '1px' }}>{legendaPcqPaes(escola.total_pcq)}</span>}
-                      </td>
-                    </tr>
+                      </tr>
+                    </Fragment>
                   )
                 })}
                 <tr className="print-row-subtotal">
@@ -612,7 +723,9 @@ export default function ProducaoPage() {
         )}
 
         {/* ==================== PÁGINA 4: LANCHES (página separada) ==================== */}
-        {consolidado.total_lanche > 0 && (
+        {/* v9.10.6: também imprime quando só há extras de lanche FORA da semana
+            (preparação diferente) — tudo na MESMA folha, sem quebrar página */}
+        {(consolidado.total_lanche > 0 || extrasLancheDiferente.length > 0) && (
           <div className="print-page-break">
             {/* Header */}
             <div className="print-doc-header">
@@ -643,6 +756,11 @@ export default function ProducaoPage() {
               </div>
             </div>
 
+            {/* v9.10.6: seção do lanche da semana só quando há produção regular —
+                os extras de lanche FORA da semana têm blocos próprios abaixo,
+                "separadinhos" na MESMA folha (sem quebrar página) */}
+            {consolidado.total_lanche > 0 && (
+            <>
             {/* Lanche Section — tabela compacta com escolas agrupadas por dia */}
             <div className="print-section-header">
               <span className="print-section-title-text">{(lancheNome || 'Lanche').toUpperCase()} — ENTREGAS POR DIA</span>
@@ -676,6 +794,47 @@ export default function ProducaoPage() {
                 ))}
               </tbody>
             </table>
+            </>
+            )}
+
+            {/* v9.10.6: blocos "separadinhos" das preparações extras FORA da
+                semana — mesma folha de produção de Lanches, mesma página,
+                informação mínima: preparação, instituição, dia e quantidade. */}
+            {gruposLancheExtra.map((g) => {
+              const totalGrupo = g.extras.reduce((s, e) => s + (e.quantidade || 0), 0)
+              return (
+                <Fragment key={g.lanche}>
+                  <div className="print-section-header print-section-spacer" style={{ paddingTop: '1.5mm' }}>
+                    <span className="print-section-title-text" style={{ fontSize: '9.5pt' }}>
+                      PREPARAÇÃO EXTRA — {g.lanche.toUpperCase()}
+                    </span>
+                    <span className="print-section-total">Total: {totalGrupo.toLocaleString('pt-BR')} unid.</span>
+                  </div>
+                  <table className="print-table" style={{ tableLayout: 'fixed', width: '100%' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '65%', textAlign: 'left', padding: '1mm 1.5mm', fontSize: '9pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>DIA / INSTITUIÇÃO</th>
+                        <th style={{ width: '35%', textAlign: 'center', padding: '1mm 1.5mm', fontSize: '9pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>QUANTIDADE</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {g.extras.map((e) => (
+                        <tr key={e.id}>
+                          <td style={{ padding: '0.8mm 1.5mm 0.8mm 6mm', fontSize: '10pt' }}>
+                            {DIAS_LABEL_CURTO_PRODUCAO[e.dia_semana as DiaProducao] || e.dia_semana} · {e.nome_instituicao.length > 25 ? e.nome_instituicao.substring(0, 25) : e.nome_instituicao}
+                          </td>
+                          <td style={{ textAlign: 'center', padding: '0.8mm 1.5mm', fontSize: '10pt' }}>{e.quantidade}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ borderTop: '1pt solid #000' }}>
+                        <td style={{ fontWeight: 700, fontSize: '9.5pt', padding: '1mm 1.5mm' }}>TOTAL EXTRA</td>
+                        <td style={{ fontWeight: 700, fontSize: '9.5pt', textAlign: 'center', padding: '1mm 1.5mm' }}>{totalGrupo.toLocaleString('pt-BR')}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </Fragment>
+              )
+            })}
 
             {/* v9.8.2: Aviso da Semana removido da impressão */}
 
@@ -738,22 +897,32 @@ export default function ProducaoPage() {
                     <th className="print-col-total">TOTAL</th>
                   </tr></thead>
                   <tbody>
-                    {romaneio.escolas.filter((e) => e.total_pf > 0).map((escola) => {
+                    {romaneio.escolas.filter((e) => e.total_pf > 0).map((escola, idx, arr) => {
                       // v9.8.4/v9.8.5: creches (têm pf_comp) — PF vai agrupado com PCQ,
                       // mostro "—" em todos os dias da tabela de PF do motorista.
                       // Bifásicas também têm pf_comp agrupado em PCQ, MAS continuam
                       // aparecendo na tabela de PF com seu PF regular do café da manhã.
                       const isCreche = escola.categoria === 'CRECHE'
+                      // v9.10.5: separador antes do primeiro extra (categoria EXTRA =
+                      // instituição avulsa do botão Inst. Extra com motorista definido)
+                      const mostraSeparador = escola.categoria === 'EXTRA' && (idx === 0 || arr[idx - 1].categoria !== 'EXTRA')
                       return (
-                        <tr key={escola.id}>
-                          <td className="print-col-escola">{escola.nome_curto}</td>
-                          {DIAS_SEMANA.map((d) => (
-                            <td key={d} className="print-col-dia">
-                              {isCreche ? '—' : (escola.pf[d] > 0 ? escola.pf[d] : '—')}
-                            </td>
-                          ))}
-                          <td className="print-col-total">{isCreche ? '—' : escola.total_pf.toLocaleString('pt-BR')}</td>
-                        </tr>
+                        <Fragment key={escola.id}>
+                          {mostraSeparador && (
+                            <tr className="print-row-separator-black">
+                              <td colSpan={7}>Produção Extra</td>
+                            </tr>
+                          )}
+                          <tr>
+                            <td className="print-col-escola">{escola.nome_curto}</td>
+                            {DIAS_SEMANA.map((d) => (
+                              <td key={d} className="print-col-dia">
+                                {isCreche ? '—' : (escola.pf[d] > 0 ? escola.pf[d] : '—')}
+                              </td>
+                            ))}
+                            <td className="print-col-total">{isCreche ? '—' : escola.total_pf.toLocaleString('pt-BR')}</td>
+                          </tr>
+                        </Fragment>
                       )
                     })}
                     <tr className="print-row-total">
@@ -820,30 +989,39 @@ export default function ProducaoPage() {
                           const ob = (b as any).ordem_pcq ?? 0
                           if (oa !== ob) return oa - ob
                           return (a.nome_curto || '').localeCompare(b.nome_curto || '')
-                        }).map((escola) => {
+                        }).map((escola, idx, arr) => {
                           // v9.8.4/v9.8.5: creches E bifásicas têm pf_comp agrupado em PCQ.
                           // Mostro "PCQ + PF XX" nos dias com PCQ (seg/qua/sex).
                           // Demais dias: "—" como sempre.
                           const temPfCompAgrupado = escola.categoria === 'CRECHE' || escola.categoria === 'BIFASICA'
+                          // v9.10.5: separador antes do primeiro extra (categoria EXTRA)
+                          const mostraSeparador = escola.categoria === 'EXTRA' && (idx === 0 || arr[idx - 1].categoria !== 'EXTRA')
                           return (
-                            <tr key={escola.id}>
-                              <td className="print-col-escola">{escola.nome_curto}</td>
-                              {DIAS_SEMANA.map((d) => {
-                                if (escola.pcq[d] > 0) {
-                                  if (temPfCompAgrupado && (escola as any).pf_comp?.[d] > 0) {
-                                    // Creche/Bifásica em dia de PCQ com PF Complemento: "40 + PF 25"
-                                    return (
-                                      <td key={d} className="print-col-dia">
-                                        {escola.pcq[d]} + PF {(escola as any).pf_comp[d]}
-                                      </td>
-                                    )
+                            <Fragment key={escola.id}>
+                              {mostraSeparador && (
+                                <tr className="print-row-separator-black">
+                                  <td colSpan={7}>Produção Extra</td>
+                                </tr>
+                              )}
+                              <tr>
+                                <td className="print-col-escola">{escola.nome_curto}</td>
+                                {DIAS_SEMANA.map((d) => {
+                                  if (escola.pcq[d] > 0) {
+                                    if (temPfCompAgrupado && (escola as any).pf_comp?.[d] > 0) {
+                                      // Creche/Bifásica em dia de PCQ com PF Complemento: "40 + PF 25"
+                                      return (
+                                        <td key={d} className="print-col-dia">
+                                          {escola.pcq[d]} + PF {(escola as any).pf_comp[d]}
+                                        </td>
+                                      )
+                                    }
+                                    return <td key={d} className="print-col-dia">{escola.pcq[d]}</td>
                                   }
-                                  return <td key={d} className="print-col-dia">{escola.pcq[d]}</td>
-                                }
-                                return <td key={d} className="print-col-dia">—</td>
-                              })}
-                              <td className="print-col-total">{escola.total_pcq.toLocaleString('pt-BR')}</td>
-                            </tr>
+                                  return <td key={d} className="print-col-dia">—</td>
+                                })}
+                                <td className="print-col-total">{escola.total_pcq.toLocaleString('pt-BR')}</td>
+                              </tr>
+                            </Fragment>
                           )
                         })}
                         <tr className="print-row-subtotal">
@@ -893,7 +1071,14 @@ export default function ProducaoPage() {
                             </tr>
                             {romaneio.escolas.filter((e) => e.lanche[d] > 0).map((escola) => (
                               <tr key={`${d}-${escola.id}`}>
-                                <td style={{ padding: '0.8mm 1.5mm 0.8mm 6mm', fontSize: '10.5pt' }}>{escola.nome_curto}</td>
+                                <td style={{ padding: '0.8mm 1.5mm 0.8mm 6mm', fontSize: '10.5pt' }}>
+                                  {escola.nome_curto}
+                                  {/* v9.10.6: lanche fora da semana — anota a preparação
+                                      ao lado da instituição (info mínima, mesma linha) */}
+                                  {escola.extra_lanche && (
+                                    <span style={{ fontSize: '8pt', color: '#777' }}> · {escola.extra_lanche}</span>
+                                  )}
+                                </td>
                                 <td style={{ textAlign: 'center', padding: '0.8mm 1.5mm', fontSize: '10.5pt' }}>{escola.lanche[d]}</td>
                               </tr>
                             ))}
@@ -1064,6 +1249,9 @@ export default function ProducaoPage() {
                         {DIAS_PRODUCAO.map((d) => {
                           const diaValido = ehDiaProducaoDoProduto(d, 'PF')
                           const ajuste = getAjusteInfo(escola.id, d, 'PF')
+                          // v9.10.6: extras (Inst. Extra) não são escolas — célula
+                          // sem cursor de clique (ajuste daria P2003 no /api/ajustes)
+                          const ehExtra = escola.categoria === 'EXTRA'
                           // v9.7.5: sexta não é dia de produção de PF — célula neutra e não-clicável
                           if (!diaValido) {
                             return (
@@ -1073,8 +1261,10 @@ export default function ProducaoPage() {
                             )
                           }
                           return (
-                          <td key={d} className={`p-2 text-center font-mono text-sm cursor-pointer hover:bg-amber-50 rounded ${ajuste ? 'bg-amber-100 text-amber-700 font-semibold' : ''}`}
-                            title={ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : 'Clique para ajustar'}
+                          <td key={d} className={`p-2 text-center font-mono text-sm ${ehExtra ? '' : 'cursor-pointer hover:bg-amber-50 rounded'} ${ajuste ? 'bg-amber-100 text-amber-700 font-semibold' : ''}`}
+                            title={ehExtra
+                              ? 'Produção extra — edite pelo botão "Inst. Extra"'
+                              : ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : 'Clique para ajustar'}
                             onClick={() => openAjusteFromWeekly(escola.id, escola.nome, d, 'PF', escola.pf[d])}>
                             {escola.pf[d] > 0 ? escola.pf[d] : ''}
                             {ajuste && <span className="ml-0.5 text-[8px] text-amber-600">●</span>}
@@ -1131,6 +1321,9 @@ export default function ProducaoPage() {
                           // via ajuste manual (situação excepcional); célula vazia mostra
                           // "+" para indicar que é clicável.
                           const ehDiaExtra = d === 'terca' || d === 'quinta'
+                          // v9.10.6: extras (Inst. Extra) não são escolas — célula
+                          // sem cursor de clique (ajuste daria P2003 no /api/ajustes)
+                          const ehExtra = escola.categoria === 'EXTRA'
                           // v9.7.5/v9.10.4: domingo continua neutro (não existe PCQ no domingo)
                           if (!diaValido) {
                             return (
@@ -1140,8 +1333,10 @@ export default function ProducaoPage() {
                             )
                           }
                           return (
-                          <td key={d} className={`p-2 text-center font-mono text-sm cursor-pointer hover:bg-orange-50 rounded ${ajuste ? 'bg-amber-100 text-amber-700 font-semibold' : ''}`}
-                            title={ajuste
+                          <td key={d} className={`p-2 text-center font-mono text-sm ${ehExtra ? '' : 'cursor-pointer hover:bg-orange-50 rounded'} ${ajuste ? 'bg-amber-100 text-amber-700 font-semibold' : ''}`}
+                            title={ehExtra
+                              ? 'Produção extra — edite pelo botão "Inst. Extra"'
+                              : ajuste
                               ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}`
                               : (ehDiaExtra && !escola.pcq[d] ? 'Clique para adicionar produção excepcional de PCQ neste dia' : 'Clique para ajustar')}
                             onClick={() => openAjusteFromWeekly(escola.id, escola.nome, d, 'PCQ', escola.pcq[d])}>
@@ -1213,6 +1408,9 @@ export default function ProducaoPage() {
                         {DIAS_PRODUCAO.map((d) => {
                           const diaValido = ehDiaProducaoDoProduto(d, 'LANCHE')
                           const ajuste = getAjusteInfo(escola.id, d, 'LANCHE')
+                          // v9.10.6: extras (Inst. Extra) não são escolas — célula
+                          // sem cursor de clique (ajuste daria P2003 no /api/ajustes)
+                          const ehExtra = escola.categoria === 'EXTRA'
                           // v9.7.5: lanche só é produzido seg-sex (não no domingo)
                           if (!diaValido) {
                             return (
@@ -1222,8 +1420,10 @@ export default function ProducaoPage() {
                             )
                           }
                           return (
-                          <td key={d} className={`p-2 text-center font-mono text-sm cursor-pointer hover:bg-pink-50 rounded ${ajuste ? 'bg-amber-100 text-amber-700 font-semibold' : ''}`}
-                            title={ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : 'Clique para ajustar'}
+                          <td key={d} className={`p-2 text-center font-mono text-sm ${ehExtra ? '' : 'cursor-pointer hover:bg-pink-50 rounded'} ${ajuste ? 'bg-amber-100 text-amber-700 font-semibold' : ''}`}
+                            title={ehExtra
+                              ? 'Produção extra — edite pelo botão "Inst. Extra"'
+                              : ajuste ? `Original: ${ajuste.qtd_original} | Motivo: ${ajuste.motivo}` : 'Clique para ajustar'}
                             onClick={() => openAjusteFromWeekly(escola.id, escola.nome, d, 'LANCHE', escola.lanche[d])}>
                             {escola.lanche[d] > 0 ? escola.lanche[d] : ''}
                             {ajuste && <span className="ml-0.5 text-[8px] text-amber-600">●</span>}
@@ -1242,6 +1442,17 @@ export default function ProducaoPage() {
                     </tr>
                   </tbody>
                 </table>
+                {/* v9.10.6: extras de lanche FORA da semana não entram nesta tabela
+                    (são outra preparação) — aparecem separados na impressão de
+                    Lanches e na lista "Produções Extras" */}
+                {extrasLancheDiferente.length > 0 && (
+                  <p className="px-2 pb-2 text-[10px] text-muted-foreground/70">
+                    {extrasLancheDiferente.length === 1
+                      ? '1 extra com preparação diferente do lanche da semana'
+                      : `${extrasLancheDiferente.length} extras com preparação diferente do lanche da semana`}
+                    {' '}— veja na lista "Produções Extras" (na impressão, aparecem separados na folha de Lanches).
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1266,9 +1477,36 @@ export default function ProducaoPage() {
             <div className="space-y-1">
               {producaoExtra.map((extra) => (
                 <div key={extra.id} className="flex items-center gap-3 p-2 bg-blue-50/50 rounded border border-blue-100 text-sm">
-                  <Badge variant="outline" className="text-[9px]">{extra.produto}</Badge>
+                  {/* v9.10.6: lanche escolhido aparece no badge; fora da semana ganha selo âmbar */}
+                  <Badge variant="outline" className="text-[9px]">
+                    {extra.lanche_nome ? `Lanche: ${extra.lanche_nome}` : extra.produto}
+                  </Badge>
+                  {extra.produto === 'LANCHE' && extraEhLancheDiferente(extra.lanche_nome) && (
+                    <Badge
+                      variant="outline"
+                      className="text-[9px] border-amber-300 text-amber-700 bg-amber-50"
+                      title="Preparação diferente do lanche da semana — aparece separada na folha de produção de Lanches"
+                    >
+                      Fora da semana
+                    </Badge>
+                  )}
                   <span className="font-medium flex-1 truncate">{extra.nome_instituicao}</span>
                   <span className="text-xs text-muted-foreground capitalize">{extra.dia_semana}</span>
+                  {/* v9.10.5: motorista responsável pela entrega — registros antigos
+                      (sem motorista) ficam em destaque âmbar e NÃO aparecem no romaneio */}
+                  {extra.motorista ? (
+                    <Badge variant="outline" className="text-[9px] bg-white">
+                      {extra.motorista === 'JOSE' ? 'Motorista José' : extra.motorista === 'AROLDO' ? 'Motorista Aroldo' : 'Busca Própria'}
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="text-[9px] border-amber-300 text-amber-700 bg-amber-50"
+                      title="Registro antigo sem motorista — não aparece no romaneio. Remova e cadastre de novo para escolher."
+                    >
+                      Sem motorista
+                    </Badge>
+                  )}
                   <span className="font-mono font-semibold">{extra.quantidade}</span>
                   <Button size="sm" variant="ghost" className="h-6 text-red-400 hover:text-red-600" onClick={() => handleDeleteExtra(extra.id)}>
                     <Trash2 className="w-3 h-3" />
@@ -1298,13 +1536,23 @@ export default function ProducaoPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs">Produto</Label>
+                <Label className="text-xs">Produto (pão ou lanche)</Label>
                 <Select value={extraForm.produto} onValueChange={(v) => setExtraForm({ ...extraForm, produto: v })}>
                   <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="PF">Pão Francês</SelectItem>
                     <SelectItem value="PCQ">Pão de Cachorro Quente</SelectItem>
-                    <SelectItem value="LANCHE">Lanche</SelectItem>
+                    {/* v9.10.6: lanches cadastrados (página Lanches) — cada um é uma
+                        preparação própria; 'lanche:<nome>' identifica a escolha */}
+                    {lanchesCadastrados.length > 0 ? (
+                      lanchesCadastrados.map((l) => (
+                        <SelectItem key={l.id} value={`lanche:${l.nome}`}>{l.nome}</SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="_sem_lanche" disabled>
+                        Nenhum lanche cadastrado
+                      </SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -1322,16 +1570,39 @@ export default function ProducaoPage() {
                 </Select>
               </div>
             </div>
-            <div>
-              <Label className="text-xs">Quantidade</Label>
-              <Input
-                type="number"
-                min={1}
-                value={extraForm.quantidade || ''}
-                onChange={(e) => setExtraForm({ ...extraForm, quantidade: parseInt(e.target.value) || 0 })}
-                placeholder="0"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Motorista</Label>
+                <Select value={extraForm.motorista} onValueChange={(v) => setExtraForm({ ...extraForm, motorista: v })}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="JOSE">Motorista José</SelectItem>
+                    <SelectItem value="AROLDO">Motorista Aroldo</SelectItem>
+                    <SelectItem value="BUSCA_PROPRIA">Busca Própria (retira)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Quantidade</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={extraForm.quantidade || ''}
+                  onChange={(e) => setExtraForm({ ...extraForm, quantidade: parseInt(e.target.value) || 0 })}
+                  placeholder="0"
+                />
+              </div>
             </div>
+            {/* v9.10.5: dica do papel do motorista no extra */}
+            <p className="text-[10px] text-muted-foreground -mt-1">
+              O extra entra no romaneio do motorista escolhido, no dia de entrega selecionado.
+            </p>
+            {/* v9.10.6: aviso quando o lanche escolhido é diferente da semana */}
+            {extraForm.produto.startsWith('lanche:') && extraEhLancheDiferente(extraForm.produto.slice('lanche:'.length)) && (
+              <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 -mt-1">
+                Lanche diferente da semana — vai aparecer <strong>separadinho</strong> na folha de produção de Lanches.
+              </p>
+            )}
             <div>
               <Label className="text-xs">Observação (opcional)</Label>
               <Input

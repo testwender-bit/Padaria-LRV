@@ -7,6 +7,13 @@ import { produtoZerado, type FeriadoData } from '@/lib/feriado-utils'
 import { tipoPaoEfetivoEscola, escolaPulaLanche } from '@/lib/producao-utils'  // v9.8.6 / v9.9.0
 import { addDays } from 'date-fns'
 
+// v9.10.5: produção extra (instituições avulsas) — registro lido da tabela
+// ProducaoExtra e injetado como pseudo-escola no romaneio do motorista escolhido
+// no cadastro (campo motorista: 'JOSE' | 'AROLDO' | 'BUSCA_PROPRIA').
+// v9.10.6: extra_lanche = nome do lanche escolhido quando DIFERENTE do lanche
+// da semana (anotado ao lado da instituição na tabela de lanches do motorista).
+type EscolaRomaneioExtra = EscolaRomaneio & { motorista?: string | null }
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -262,19 +269,110 @@ export async function GET(request: Request) {
       { key: 'BUSCA_PROPRIA', label: 'Busca Própria' },
     ]
 
+    // v9.10.5: produções extras da semana (instituições avulsas cadastradas no
+    // botão "Inst. Extra" da Produção). Antes elas apareciam SOMENTE nas páginas
+    // de produção (injeção client-side em diasComExtra) e NUNCA no romaneio do
+    // motorista. Agora cada extra com motorista definido vira uma pseudo-escola
+    // (categoria 'EXTRA') dentro do romaneio da rota escolhida, aparecendo no
+    // lugar certo conforme o produto (PF na tabela de PF, PCQ na de PCQ, Lanche
+    // na de lanche) e no dia de entrega correspondente.
+    // Regras:
+    //  - PF: dia_semana do extra é o dia de ENTREGA (a produção é D-1 — mesma
+    //    semântica do cadastro; as páginas de produção já fazem a inversão).
+    //    PCQ/Lanche: produção = entrega (D-0), mesmo dia.
+    //  - Extras NÃO são afetados por feriado/ajuste — são cadastros manuais
+    //    pontuais, exatamente como já se comportam nas páginas de produção.
+    //  - Extras SEM motorista (registros anteriores à v9.10.5) continuam
+    //    aparecendo na produção, mas NÃO entram no romaneio até serem
+    //    recadastrados com o motorista.
+    let extrasSemana: any[] = []
+    try {
+      extrasSemana = await (db as any).producaoExtra.findMany({
+        where: { ano, semana },
+        orderBy: [{ produto: 'asc' }, { dia_semana: 'asc' }],
+      })
+    } catch {
+      // Coluna motorista pode não existir ainda (db push pendente) — ignora
+      // silenciosamente para não derrubar o romaneio.
+      extrasSemana = []
+    }
+
+    const extrasRomaneio: EscolaRomaneioExtra[] = []
+    for (const extra of extrasSemana) {
+      if (!extra.motorista || !DIAS_SEMANA.includes(extra.dia_semana as DiaSemana)) continue
+      if (!(extra.quantidade > 0)) continue
+      const diaEntrega = extra.dia_semana as DiaSemana
+      const pf = diasVazios()
+      const pcq = diasVazios()
+      const lanche = diasVazios()
+      if (extra.produto === 'PF') {
+        pf[diaEntrega] = extra.quantidade
+      } else if (extra.produto === 'PCQ') {
+        pcq[diaEntrega] = extra.quantidade
+      } else if (extra.produto === 'LANCHE') {
+        lanche[diaEntrega] = extra.quantidade
+      } else {
+        continue
+      }
+      // v9.10.6: lanche específico escolhido no cadastro. Se for DIFERENTE do
+      // lanche da semana (regular/bifásico), o romaneio anota o nome da
+      // preparação ao lado da instituição — o motorista precisa saber o que
+      // está levando. Lanche igual ao da semana (ou registro antigo sem nome)
+      // = sem anotação, comportamento normal.
+      let extraLanche: string | null = null
+      if (extra.produto === 'LANCHE' && typeof extra.lanche_nome === 'string' && extra.lanche_nome.trim()) {
+        const nomeEscolhido = extra.lanche_nome.trim().toLowerCase()
+        const lanchesDaSemana = [lancheRegular?.nome, lancheBifasica?.nome]
+          .filter((n): n is string => !!n && !!n.trim())
+          .map((n) => n.trim().toLowerCase())
+        if (!lanchesDaSemana.includes(nomeEscolhido)) {
+          extraLanche = extra.lanche_nome.trim()
+        }
+      }
+      extrasRomaneio.push({
+        id: `extra_${extra.id}`,
+        nome: extra.nome_instituicao,
+        nome_curto: extra.nome_instituicao.length > 25
+          ? extra.nome_instituicao.substring(0, 25)
+          : extra.nome_instituicao,
+        rota: extra.motorista,
+        ordem_rota: 9999,  // sempre por último dentro da rota (padrão v9.5.2)
+        ordem_pcq: 9999,   // padrão v9.6.3/v9.6.5
+        categoria: 'EXTRA',
+        pf,
+        pcq,
+        lanche,
+        pf_comp: diasVazios(),
+        feriado_pf: diasVaziosStr(),
+        feriado_pcq: diasVaziosStr(),
+        feriado_lanche: diasVaziosStr(),
+        total_pf: somaDias(pf),
+        total_pcq: somaDias(pcq),
+        total_lanche: somaDias(lanche),
+        extra_lanche: extraLanche,  // v9.10.6: anotação do lanche fora da semana
+        motorista: extra.motorista,
+      })
+    }
+
     const romaneios: RomaneioMotorista[] = rotas.map((rota) => {
       // v9.5.2: filtrar e ordenar DEFINITIVAMENTE por ordem_rota → nome_curto
-      const escolasDaRota = escolasRomaneio
-        .filter((e) => {
-          const escola = escolas.find((es) => es.id === e.id)
-          return escola?.rota === rota.key
-        })
-        .sort((a, b) => {
-          const oa = a.ordem_rota ?? 0
-          const ob = b.ordem_rota ?? 0
-          if (oa !== ob) return oa - ob
-          return (a.nome_curto || '').localeCompare(b.nome_curto || '')
-        })
+      // v9.10.5: extras da rota entram APÓS as escolas (ordem_rota 9999 garante
+      // que fiquem no fim mesmo se algum dia mudarem de posição no array).
+      const extrasDaRota = extrasRomaneio.filter((x) => x.motorista === rota.key)
+      const escolasDaRota: EscolaRomaneio[] = [
+        ...escolasRomaneio
+          .filter((e) => {
+            const escola = escolas.find((es) => es.id === e.id)
+            return escola?.rota === rota.key
+          })
+          .sort((a, b) => {
+            const oa = a.ordem_rota ?? 0
+            const ob = b.ordem_rota ?? 0
+            if (oa !== ob) return oa - ob
+            return (a.nome_curto || '').localeCompare(b.nome_curto || '')
+          }),
+        ...extrasDaRota,
+      ]
 
       const totais_pf = diasVazios()
       const totais_pcq = diasVazios()

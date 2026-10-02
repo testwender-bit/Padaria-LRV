@@ -12,6 +12,10 @@ export interface EscolaConsolidada {
   nome: string
   nome_curto: string
   rota: string
+  // v9.10.5: categoria propagada do item (escola real: REGULAR/CRECHE/...;
+  // instituição avulsa do Inst. Extra: 'EXTRA') — usada pela impressão para
+  // inserir o separador "Produção Extra" antes das instituições avulsas.
+  categoria?: string
   ordem: number
   ordem_rota: number  // v9.5: para ordenação correta (PF)
   ordem_pcq: number  // v9.6.3: ordenação ESPECÍFICA para PCQ
@@ -64,6 +68,7 @@ export function consolidarProducaoSemana(
         nome: item.escola_nome,
         nome_curto: item.escola_curto,
         rota: item.rota,
+        categoria: item.categoria,  // v9.10.5: propaga categoria do item
         ordem: ordensEscola?.get(item.escola_id) ?? 999,
         // v9.5.2: ordem_rota agora é campo obrigatório em ItemProducao.
         // Fallback 0 só para segurança (não deve acontecer).
