@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { inicioSemana, numeroSemana, anoSemana, dataISO, type DiaSemana, DIAS_SEMANA } from '@/lib/date-utils'
-import type { EscolaRomaneio, RomaneioMotorista } from '@/lib/romaneio-utils'
+import type { EscolaRomaneio, RomaneioMotorista, ExtraLancheFora } from '@/lib/romaneio-utils'
 import { diasVazios, diasVaziosStr, somaDias } from '@/lib/romaneio-utils'
 import { produtoZerado, type FeriadoData } from '@/lib/feriado-utils'
 import { tipoPaoEfetivoEscola, escolaPulaLanche } from '@/lib/producao-utils'  // v9.8.6 / v9.9.0
@@ -298,6 +298,11 @@ export async function GET(request: Request) {
     }
 
     const extrasRomaneio: EscolaRomaneioExtra[] = []
+    // v9.10.7: lanches extras FORA da semana — vão num campo próprio por rota
+    // (extras_lanche_fora) para o bloco "PREPARAÇÃO EXTRA" da folha do motorista
+    // e são EXCLUÍDOS dos totais do lanche da semana (mesma regra da folha de
+    // produção de Lanches da v9.10.6: não mistura preparações diferentes).
+    const extrasLancheFora: Array<ExtraLancheFora & { motorista: string }> = []
     for (const extra of extrasSemana) {
       if (!extra.motorista || !DIAS_SEMANA.includes(extra.dia_semana as DiaSemana)) continue
       if (!(extra.quantidade > 0)) continue
@@ -352,6 +357,22 @@ export async function GET(request: Request) {
         extra_lanche: extraLanche,  // v9.10.6: anotação do lanche fora da semana
         motorista: extra.motorista,
       })
+      // v9.10.7: lanche FORA da semana → folha do motorista mostra "separadinho"
+      // (bloco próprio FORA dos totais do lanche da semana). Continua também na
+      // lista de escolas acima (com extra_lanche) para as telas contabilizarem.
+      if (extra.produto === 'LANCHE' && extraLanche) {
+        extrasLancheFora.push({
+          id: `extra_${extra.id}`,
+          nome: extra.nome_instituicao,
+          nome_curto: extra.nome_instituicao.length > 25
+            ? extra.nome_instituicao.substring(0, 25)
+            : extra.nome_instituicao,
+          dia_semana: diaEntrega,
+          quantidade: extra.quantidade,
+          lanche_nome: extraLanche,
+          motorista: extra.motorista,
+        })
+      }
     }
 
     const romaneios: RomaneioMotorista[] = rotas.map((rota) => {
@@ -383,7 +404,10 @@ export async function GET(request: Request) {
         for (const dia of dias) {
           totais_pf[dia] += e.pf[dia]
           totais_pcq[dia] += e.pcq[dia]
-          totais_lanche[dia] += e.lanche[dia]
+          // v9.10.7: lanche FORA da semana (extra_lanche) não soma no total do
+          // lanche da semana — aparece separadinho em extras_lanche_fora (a
+          // pseudo-escola extra só tem quantidade no lanche, pf/pcq zerados)
+          if (!e.extra_lanche) totais_lanche[dia] += e.lanche[dia]
           totais_pf_comp[dia] += e.pf_comp[dia]  // v9.8.4
         }
       }
@@ -399,6 +423,18 @@ export async function GET(request: Request) {
         total_pf: somaDias(totais_pf),
         total_pcq: somaDias(totais_pcq),
         total_lanche: somaDias(totais_lanche),
+        // v9.10.7: lanches extras fora da semana da rota (bloco separadinho na
+        // folha do motorista, fora dos totais do lanche da semana)
+        extras_lanche_fora: extrasLancheFora
+          .filter((x) => x.motorista === rota.key)
+          .map((x) => ({
+            id: x.id,
+            nome: x.nome,
+            nome_curto: x.nome_curto,
+            dia_semana: x.dia_semana,
+            quantidade: x.quantidade,
+            lanche_nome: x.lanche_nome,
+          })),
       }
     })
 

@@ -11,6 +11,7 @@ import { Truck, Printer, Wheat, Package, Cookie, AlertTriangle } from 'lucide-re
 import Link from 'next/link'
 import { formatarPeriodoSemana, inicioSemana, fimSemana, DIAS_SEMANA, DIAS_LABEL_CURTO } from '@/lib/date-utils'
 import type { RomaneioMotorista } from '@/lib/romaneio-utils'
+import { agruparExtrasLancheFora } from '@/lib/romaneio-utils'
 import { useAppStore } from '@/store/app-store'
 import { format } from 'date-fns'
 
@@ -128,7 +129,9 @@ export default function RomaneioPage() {
             )}
 
             {/* PCQ + Lanche */}
-            {(romaneio.total_pcq > 0 || romaneio.total_lanche > 0) && (
+            {/* v9.10.7: || extras_lanche_fora — rota que só tem lanche extra fora
+                da semana também imprime a folha PCQ/Lanches */}
+            {(romaneio.total_pcq > 0 || romaneio.total_lanche > 0 || (romaneio.extras_lanche_fora || []).length > 0) && (
               <div className="print-page-break">
                 {/* Header */}
                 <div className="print-doc-header">
@@ -215,7 +218,10 @@ export default function RomaneioPage() {
                         <th className="print-col-total">TOTAL</th>
                       </tr></thead>
                       <tbody>
-                        {romaneio.escolas.filter((e) => e.total_lanche > 0).map((escola, idx, arr) => (
+                        {/* v9.10.7: !e.extra_lanche — lanches extras FORA da semana
+                            saem da tabela do lanche da semana (bloco próprio abaixo,
+                            fora dos totais — mesma regra da folha de produção) */}
+                        {romaneio.escolas.filter((e) => e.total_lanche > 0 && !e.extra_lanche).map((escola, idx, arr) => (
                           <Fragment key={escola.id}>
                             {/* v9.10.5: separador antes do primeiro extra (categoria EXTRA) */}
                             {escola.categoria === 'EXTRA' && (idx === 0 || arr[idx - 1].categoria !== 'EXTRA') && (
@@ -246,6 +252,46 @@ export default function RomaneioPage() {
                     </table>
                   </>
                 )}
+
+                {/* v9.10.7: blocos "separadinhos" dos lanches extras FORA da semana —
+                    MESMA folha do motorista (mesma página), mesmo padrão da folha
+                    de produção de Lanches (v9.10.6): preparação, instituição, dia e
+                    quantidade, com total próprio FORA dos totais do lanche da semana. */}
+                {(romaneio.extras_lanche_fora || []).length > 0 && agruparExtrasLancheFora(romaneio).map((g) => {
+                  const totalGrupo = g.extras.reduce((s, x) => s + (x.quantidade || 0), 0)
+                  return (
+                    <Fragment key={g.lanche}>
+                      <div className="print-section-header print-section-spacer" style={{ paddingTop: '1.5mm' }}>
+                        <span className="print-section-title-text" style={{ fontSize: '9.5pt' }}>
+                          PREPARAÇÃO EXTRA — {g.lanche.toUpperCase()}
+                        </span>
+                        <span className="print-section-total">Total: {totalGrupo.toLocaleString('pt-BR')} unid.</span>
+                      </div>
+                      <table className="print-table" style={{ tableLayout: 'fixed', width: '100%' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ width: '65%', textAlign: 'left', padding: '1mm 1.5mm', fontSize: '9pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>DIA / INSTITUIÇÃO</th>
+                            <th style={{ width: '35%', textAlign: 'center', padding: '1mm 1.5mm', fontSize: '9pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>QUANTIDADE</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {g.extras.map((x) => (
+                            <tr key={x.id}>
+                              <td style={{ padding: '0.8mm 1.5mm 0.8mm 6mm', fontSize: '10pt' }}>
+                                {DIAS_LABEL_CURTO[x.dia_semana]} · {x.nome_curto}
+                              </td>
+                              <td style={{ textAlign: 'center', padding: '0.8mm 1.5mm', fontSize: '10pt' }}>{x.quantidade}</td>
+                            </tr>
+                          ))}
+                          <tr style={{ borderTop: '1pt solid #000' }}>
+                            <td style={{ fontWeight: 700, fontSize: '9.5pt', padding: '1mm 1.5mm' }}>TOTAL EXTRA</td>
+                            <td style={{ fontWeight: 700, fontSize: '9.5pt', textAlign: 'center', padding: '1mm 1.5mm' }}>{totalGrupo.toLocaleString('pt-BR')}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </Fragment>
+                  )
+                })}
 
                 <div className="print-footer">Sistema de Gestão da Padaria Escolar Municipal — Lucas do Rio Verde / MT</div>
               </div>
@@ -386,7 +432,8 @@ function RomaneioRotaCard({ romaneio, lancheRegular }: { romaneio: RomaneioMotor
       )}
 
       {/* Lanche */}
-      {romaneio.escolas.some((e) => e.total_lanche > 0) && (
+      {/* v9.10.7: || extras_lanche_fora — card aparece mesmo quando só há extra fora da semana */}
+      {(romaneio.escolas.some((e) => e.total_lanche > 0) || (romaneio.extras_lanche_fora || []).length > 0) && (
         <Card className="border-pink-200">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold text-pink-900 flex items-center gap-2"><Cookie className="w-4 h-4" /> Lanche — {lancheRegular || 'Não definido'}</CardTitle></CardHeader>
           <CardContent className="p-0">
@@ -398,7 +445,8 @@ function RomaneioRotaCard({ romaneio, lancheRegular }: { romaneio: RomaneioMotor
                   <th className="text-right p-2 text-xs font-medium text-muted-foreground bg-pink-50">Total</th>
                 </tr></thead>
                 <tbody>
-                  {romaneio.escolas.filter((e) => e.total_lanche > 0).map((escola) => (
+                  {/* v9.10.7: !e.extra_lanche — extras FORA da semana ficam no bloco abaixo */}
+                  {romaneio.escolas.filter((e) => e.total_lanche > 0 && !e.extra_lanche).map((escola) => (
                     <tr key={escola.id} className="border-b border-muted/30 hover:bg-muted/20">
                       <td className="p-2 font-medium text-sm">
                         {escola.nome_curto}
@@ -419,6 +467,27 @@ function RomaneioRotaCard({ romaneio, lancheRegular }: { romaneio: RomaneioMotor
                 </tbody>
               </table>
             </div>
+            {/* v9.10.7: lanches extras FORA da semana — separadinhos do lanche da
+                semana, mesmo critério da impressão (bloco com total próprio) */}
+            {(romaneio.extras_lanche_fora || []).length > 0 && (
+              <div className="px-4 py-3 border-t border-pink-100 bg-pink-50/30 space-y-1">
+                {agruparExtrasLancheFora(romaneio).map((g) => (
+                  <div key={g.lanche}>
+                    <p className="text-xs font-semibold text-pink-900">
+                      Preparação extra — {g.lanche}
+                      <span className="ml-2 font-mono text-[11px] text-muted-foreground font-normal">
+                        Total extra: {g.extras.reduce((s, x) => s + (x.quantidade || 0), 0).toLocaleString('pt-BR')}
+                      </span>
+                    </p>
+                    {g.extras.map((x) => (
+                      <p key={x.id} className="text-xs text-muted-foreground ml-3">
+                        • {DIAS_LABEL_CURTO[x.dia_semana]} · {x.nome_curto} — {x.quantidade}
+                      </p>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

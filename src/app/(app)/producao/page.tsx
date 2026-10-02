@@ -32,6 +32,7 @@ import { PF_PRODUCAO_PARA_ENTREGA, ehDiaProducaoDoProduto } from '@/lib/producao
 import { ehBuscaPropria, legendaPcqPaes, FORMA_PCQ_PAES, formatarFormas } from '@/lib/producao-utils'
 import { consolidarProducaoSemana } from '@/lib/producao-semana-utils'
 import type { RomaneioMotorista } from '@/lib/romaneio-utils'
+import { agruparExtrasLancheFora } from '@/lib/romaneio-utils'  // v9.10.7
 import { useAppStore } from '@/store/app-store'
 import { addDays, format } from 'date-fns'
 import { Input } from '@/components/ui/input'
@@ -938,7 +939,9 @@ export default function ProducaoPage() {
             )}
 
             {/* PCQ + Lanche Romaneio */}
-            {(romaneio.total_pcq > 0 || romaneio.total_lanche > 0) && (
+            {/* v9.10.7: || extras_lanche_fora — rota que só tem lanche extra fora da
+                semana também imprime a folha PCQ/Lanches do motorista */}
+            {(romaneio.total_pcq > 0 || romaneio.total_lanche > 0 || (romaneio.extras_lanche_fora || []).length > 0) && (
               <div className="print-page-break">
                 {/* Header */}
                 <div className="print-doc-header">
@@ -1069,12 +1072,15 @@ export default function ProducaoPage() {
                                 {romaneio.totais_lanche[d]} unid.
                               </td>
                             </tr>
-                            {romaneio.escolas.filter((e) => e.lanche[d] > 0).map((escola) => (
+                            {romaneio.escolas.filter((e) => e.lanche[d] > 0 && !e.extra_lanche).map((escola) => (
                               <tr key={`${d}-${escola.id}`}>
                                 <td style={{ padding: '0.8mm 1.5mm 0.8mm 6mm', fontSize: '10.5pt' }}>
                                   {escola.nome_curto}
                                   {/* v9.10.6: lanche fora da semana — anota a preparação
-                                      ao lado da instituição (info mínima, mesma linha) */}
+                                      ao lado da instituição (info mínima, mesma linha).
+                                      v9.10.7: linhas com extra_lanche saíram daqui — ficam
+                                      no bloco "PREPARAÇÃO EXTRA" logo abaixo; a anotação
+                                      fica como fallback defensivo. */}
                                   {escola.extra_lanche && (
                                     <span style={{ fontSize: '8pt', color: '#777' }}> · {escola.extra_lanche}</span>
                                   )}
@@ -1088,6 +1094,46 @@ export default function ProducaoPage() {
                     </table>
                   </>
                 )}
+
+                {/* v9.10.7: blocos "separadinhos" dos lanches extras FORA da semana —
+                    MESMA folha do motorista (mesma página), mesmo padrão da folha
+                    de produção de Lanches (v9.10.6): preparação, instituição, dia e
+                    quantidade, com total próprio FORA dos totais do lanche da semana. */}
+                {(romaneio.extras_lanche_fora || []).length > 0 && agruparExtrasLancheFora(romaneio).map((g) => {
+                  const totalGrupo = g.extras.reduce((s, x) => s + (x.quantidade || 0), 0)
+                  return (
+                    <Fragment key={g.lanche}>
+                      <div className="print-section-header print-section-spacer" style={{ paddingTop: '1.5mm' }}>
+                        <span className="print-section-title-text" style={{ fontSize: '9.5pt' }}>
+                          PREPARAÇÃO EXTRA — {g.lanche.toUpperCase()}
+                        </span>
+                        <span className="print-section-total">Total: {totalGrupo.toLocaleString('pt-BR')} unid.</span>
+                      </div>
+                      <table className="print-table" style={{ tableLayout: 'fixed', width: '100%' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ width: '65%', textAlign: 'left', padding: '1mm 1.5mm', fontSize: '9pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>DIA / INSTITUIÇÃO</th>
+                            <th style={{ width: '35%', textAlign: 'center', padding: '1mm 1.5mm', fontSize: '9pt', textTransform: 'uppercase', borderBottom: '1.5pt solid #000' }}>QUANTIDADE</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {g.extras.map((x) => (
+                            <tr key={x.id}>
+                              <td style={{ padding: '0.8mm 1.5mm 0.8mm 6mm', fontSize: '10pt' }}>
+                                {DIAS_LABEL_CURTO[x.dia_semana]} · {x.nome_curto}
+                              </td>
+                              <td style={{ textAlign: 'center', padding: '0.8mm 1.5mm', fontSize: '10pt' }}>{x.quantidade}</td>
+                            </tr>
+                          ))}
+                          <tr style={{ borderTop: '1pt solid #000' }}>
+                            <td style={{ fontWeight: 700, fontSize: '9.5pt', padding: '1mm 1.5mm' }}>TOTAL EXTRA</td>
+                            <td style={{ fontWeight: 700, fontSize: '9.5pt', textAlign: 'center', padding: '1mm 1.5mm' }}>{totalGrupo.toLocaleString('pt-BR')}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </Fragment>
+                  )
+                })}
 
                 {/* v9.8.2: Aviso da Semana removido da impressão */}
                 <div className="print-footer">Sistema de Gestão da Padaria Escolar Municipal — Lucas do Rio Verde / MT</div>

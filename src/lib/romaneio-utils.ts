@@ -34,6 +34,20 @@ export interface EscolaRomaneio {
   total_lanche: number
 }
 
+// v9.10.7: lanche extra FORA da semana (produto LANCHE com preparação diferente
+// do lanche regular/bifásico) — sai da tabela do lanche da semana e aparece
+// "separadinho" num bloco próprio "PREPARAÇÃO EXTRA — <lanche>" na MESMA folha
+// do motorista (mesmo padrão da folha de produção de Lanches da v9.10.6),
+// FORA dos totais do lanche da semana.
+export interface ExtraLancheFora {
+  id: string
+  nome: string
+  nome_curto: string
+  dia_semana: DiaSemana
+  quantidade: number
+  lanche_nome: string
+}
+
 export interface RomaneioMotorista {
   rota: 'JOSE' | 'AROLDO' | 'BUSCA_PROPRIA'
   rota_label: string
@@ -46,9 +60,33 @@ export interface RomaneioMotorista {
   total_pf: number
   total_pcq: number
   total_lanche: number
+  // v9.10.7: instituições com lanche FORA da semana da rota (opcional — API
+  // /api/romaneio sempre envia; telas usam `|| []` por segurança)
+  extras_lanche_fora?: ExtraLancheFora[]
 }
 
+// v9.10.7: DIAS também usado por agruparExtrasLancheFora (ordenação por dia)
 const DIAS: DiaSemana[] = ['segunda', 'terca', 'quarta', 'quinta', 'sexta']
+
+// v9.10.7: agrupa os extras de lanche FORA da semana por preparação (case-
+// insensitive) para os blocos "PREPARAÇÃO EXTRA" da folha de lanches do
+// motorista — mesmo padrão dos blocos da P4 de produção (v9.10.6): grupos
+// ordenados por nome, extras dentro do grupo ordenados por dia da semana.
+export function agruparExtrasLancheFora(
+  rom: Pick<RomaneioMotorista, 'extras_lanche_fora'>
+): Array<{ lanche: string; extras: ExtraLancheFora[] }> {
+  const grupos: Array<{ lanche: string; extras: ExtraLancheFora[] }> = []
+  for (const x of rom.extras_lanche_fora || []) {
+    const nome = (x.lanche_nome || '').trim()
+    let g = grupos.find((gg) => gg.lanche.toLowerCase() === nome.toLowerCase())
+    if (!g) { g = { lanche: nome, extras: [] }; grupos.push(g) }
+    g.extras.push(x)
+  }
+  grupos.sort((a, b) => a.lanche.localeCompare(b.lanche))
+  grupos.forEach((g) =>
+    g.extras.sort((a, b) => DIAS.indexOf(a.dia_semana) - DIAS.indexOf(b.dia_semana)))
+  return grupos
+}
 
 export function diasVazios(): Record<DiaSemana, number> {
   return { segunda: 0, terca: 0, quarta: 0, quinta: 0, sexta: 0 }

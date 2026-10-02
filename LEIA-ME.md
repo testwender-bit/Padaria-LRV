@@ -1,150 +1,108 @@
-# Patch v9.10.6 — Inst. Extra: escolhe o lanche + separadinho na folha de Lanches + fix do erro de ajuste
+# Patch v9.10.7 — Lanche extra também separadinho na folha do motorista
 
-> **Este patch SUBSTITUI a v9.10.5 (que ainda não foi aplicada) — aplique SÓ este.**
-> Ele contém 100% do conteúdo da v9.10.5 (motorista no Inst. Extra) + as novidades
-> desta versão. NÃO aplique a v9.10.5 antes/depois — o `schema.prisma` desta
-> versão já inclui as duas colunas novas.
+> **Arquivo:** `patch-v9.10.7.zip` · **Requisito:** aplicar por cima da
+> **v9.10.6** (sem mudanças de banco — nada de `prisma db push` nesta versão).
 
 **O que resolve:**
 
-1. **Erro ao ajustar quantidade de lanche de uma escola** (`Foreign key constraint
-   violated: Ajuste_escola_id_fkey` / P2003 no console): acontecia ao clicar numa
-   linha/célula de uma **instituição do Inst. Extra** (que não é escola) e o sistema
-   tentava gravar um ajuste com um id de escola que não existe. Agora:
-   - a tela **bloqueia o clique** nas linhas de extras com um aviso explicativo
-     ("Produção extra não usa ajuste — edite ou remova pelo botão Inst. Extra");
-   - a API de ajustes **valida que a escola existe** antes de gravar (resposta
-     amigável em vez de erro 500) — protege também contra tela desatualizada;
-   - "Remover Ajuste" virou idempotente (remover o que não existe não é mais erro).
+Na v9.10.6 o lanche extra FORA da semana (preparação diferente do lanche da
+semana) passou a aparecer separadinho na **folha de produção de Lanches**, mas
+na **folha do motorista (romaneio)** ele ainda aparecia **misturado** dentro dos
+blocos do dia do lanche da semana — só com uma anotação cinza minúscula ao lado
+da instituição — e ainda **inflava os totais do dia** (ex.: "■ QUARTA — 370
+unid." somavam 270 do lanche da semana + 100 do extra, uma preparação
+diferente). O motorista não conseguia ver claramente o que levar.
 
-2. **Inst. Extra agora pergunta QUAL lanche/pão vai produzir** — o campo Produto
-   virou **"Produto (pão ou lanche)"** com as opções: **Pão Francês**, **Pão de
-   Cachorro Quente (PCQ)** e **todos os lanches cadastrados na página Lanches**.
-   - Se o lanche escolhido é **o mesmo da semana** (regular/bifásico): entra
-     normalmente junto com a produção de lanches (como sempre).
-   - Se o lanche escolhido é **DIFERENTE da semana**: o dialog avisa na hora
-     ("vai aparecer separadinho na folha de produção de Lanches") e, na
-     **impressão**, ele aparece num bloco próprio **"PREPARAÇÃO EXTRA — <nome do
-     lanche>"** **na MESMA folha de produção de Lanches** (mesma página, sem
-     quebra), com informação mínima: preparação, instituição, dia e quantidade —
-     **fora dos totais do lanche normal** (não mistura preparações diferentes).
-   - **No romaneio do motorista** (impressão da Produção e página Romaneio), o
-     extra continua entrando na tabela de Lanches da rota escolhida, agora com o
-     nome da preparação anotado ao lado da instituição (ex.: "Evento Cultural ·
-     Torta de Frango") — o motorista sabe o que está levando.
-   - Pão Francês e PCQ continuam exatamente como na v9.10.5 (motorista, dia de
-     entrega, bloco "Produção Extra" nas páginas de produção e romaneio).
+Agora a folha do motorista recebe o **mesmo tratamento da folha de produção**:
 
-## Ordem de aplicação (OBRIGATÓRIA)
+1. **Tabela do lanche da semana** (por dia / cruzada) mostra **só o lanche da
+   semana** — os extras fora da semana saíram das linhas e dos **totais do dia
+   e do TOTAL GERAL** (não mistura preparações diferentes; o "■ QUARTA" volta a
+   significar lanche da semana).
+2. **Bloco próprio "PREPARAÇÃO EXTRA — <nome do lanche>"** na **MESMA folha do
+   motorista** (mesma página, sem quebra), logo abaixo da tabela do lanche:
+   DIA / INSTITUIÇÃO · QUANTIDADE + **TOTAL EXTRA** próprio — mesmo formato do
+   bloco da folha de produção de Lanches (v9.10.6). Vários lanches diferentes =
+   um bloco por preparação (agrupamento ignora maiúsculas/minúsculas, extras
+   ordenados por dia).
+3. Funciona nas **duas impressões**: a saída pelo botão Imprimir da **Produção**
+   (romaneio impresso no fim) e a página **Romaneio** (/romaneio) — impressão e
+   tela (na tela, o bloco aparece dentro do card de Lanches, abaixo da tabela).
+4. **Rota que só tem lanche extra fora da semana** (sem lanche da semana
+   nenhum) agora imprime a folha PCQ/Lanches do motorista só com o bloco do
+   extra (antes a folha inteira desaparecia se não houvesse lanche de escolas).
+5. Extras de **Pão Francês e PCQ** não mudam nada (seguem com o separador
+   "Produção Extra" nas tabelas de PF e PCQ do motorista — v9.10.5/6).
+6. Lanche extra **igual ao da semana** (regular/bifásico) não muda: entra
+   normalmente nas linhas e nos totais (é o lanche da semana mesmo).
 
-1. **Backup do banco** (recomendado): use o procedimento de backup de sempre.
-2. Copie os arquivos do zip sobre a raiz do projeto (preservando os caminhos).
-3. **Aplique as novas colunas no banco (OBRIGATÓRIO — 2 colunas):**
-   ```bash
-   npx prisma db push
-   ```
-   Adiciona na tabela `ProducaoExtra`: `motorista` (v9.10.5) e `lanche_nome`
-   (v9.10.6) — ambas nullable, sem risco para os dados existentes.
-4. Gere o client Prisma e faça o build:
-   ```bash
-   npx prisma generate && npm run build
-   ```
-5. Reinicie o serviço (`npm run start` ou o supervisor de sempre).
+## Ordem de aplicação (GitHub Codespace)
 
-> Se o build/restart acontecer SEM o `db push` do passo 3: os extras deixam de
-> aparecer temporariamente (produção e romaneio seguem funcionando; as rotas
-> degradam graciosamente). Basta rodar o `db push` depois e recarregar.
-> **Se você já tinha aplicado a v9.10.5** (não deveria): o `db push` só adiciona
-> a `lanche_nome` — não há conflito.
+Com o terminal aberto **na raiz do projeto** (pasta que contém `package.json`),
+envie o arquivo `patch-v9.10.7.zip` para dentro dela e rode:
 
-## Como usar
+```bash
+# 1) Extrai por cima, sobrescrevendo os arquivos (caminhos preservados):
+unzip -o patch-v9.10.7.zip
 
-1. Produção → botão **Inst. Extra** → nome da instituição, dia, motorista.
-2. **Produto (pão ou lanche):** escolha Pão Francês, PCQ ou um dos lanches
-   cadastrados (a lista vem da página **Lanches** — lanches ativos, em ordem
-   alfabética). Se escolher um lanche **diferente do lanche da semana**, o
-   sistema avisa na hora que ele vai impresso "separadinho".
-3. O extra aparece:
-   - **lanches diferentes da semana** → folha "PRODUÇÃO — LANCHES" em bloco
-     "PREPARAÇÃO EXTRA — <lanche>" no fim da mesma página + romaneio do motorista
-     com a preparação anotada ao lado da instituição;
-   - **demais extras** → como na v9.10.5 (bloco "Produção Extra" nas páginas de
-     produção e na tabela certa do romaneio do motorista escolhido).
-4. A lista "Produções Extras" mostra o lanche escolhido (badge "Lanche: <nome>")
-   e selo âmbar **"Fora da semana"** quando a preparação é diferente da semana.
-5. A tabela de Lanches da visão Semanal ganhou uma nota quando há extras fora
-   da semana (eles não entram nos totais do lanche da semana — é intencional).
+# 2) Esta versão NÃO altera o schema — NÃO precisa de `prisma db push`.
+
+# 3) Gere o build e reinicie:
+npm run build
+npm run start   # ou o supervisor de sempre
+```
+
+> O `unzip -o` substitui os 4 arquivos listados em "Arquivos do patch" e deixa
+> o `LEIA-ME.md` na raiz com o histórico desta versão.
+
+## Como conferir
+
+1. Cadastre um Inst. Extra com **produto = um lanche diferente do lanche da
+   semana**, motorista José ou Aroldo.
+2. Imprima a Produção: na folha do motorista escolhido, a seção de lanches do
+   dia mostra só o lanche da semana e, logo abaixo, o bloco
+   "PREPARAÇÃO EXTRA — <lanche>" com a instituição, o dia e a quantidade.
+3. O mesmo aparece na página Romaneio (impressão e tela).
+4. Os totais do dia e o TOTAL GERAL da tabela de lanches voltam a conter só o
+   lanche da semana; o extra soma no "Total:" do bloco dele.
 
 ### Regras de negócio
 
-- O nome do lanche é gravado como **snapshot** (sem vínculo com a tabela Lanches):
-  renomear ou remover o lanche depois NÃO quebra o extra já cadastrado.
-- O nome do lanche é comparado com o lanche da semana **na hora de imprimir**
-  (ignora maiúsculas/minúsculas e espaços): se a semana mudar de lanche, a
-  classificação (mesmo/separado) acompanha a semana impressa.
-- **Registros antigos** (antes da v9.10.6, produto Lanche sem lanche escolhido)
-  continuam valendo como "lanche da semana" — sem separação, sem anotação.
-- Extras **não são afetados por feriado nem por ajuste** (cadastro manual pontual,
-  como sempre). PF: o dia do cadastro é o dia de ENTREGA (produção D-1);
-  PCQ/Lanche: produção = entrega (D-0).
-- **Instituições extras NÃO têm ajuste**: ao clicar na linha delas na Produção
-  (Por Dia ou Semanal) aparece um aviso — a edição é remover e recadastrar no
-  botão Inst. Extra (é isso que evitava o erro de FK no console).
-- Totais da folha de Lanches (linha de dia e TOTAL GERAL) continuam sendo só do
-  lanche da semana; cada bloco "PREPARAÇÃO EXTRA" tem o seu próprio total.
+- O total do dia na folha do motorista é **do lanche da semana**; cada bloco
+  "PREPARAÇÃO EXTRA" tem **total próprio** (mesma regra da folha de produção).
+- A classificação mesmo/fora-da-semana é **dinâmica** (compara com o lanche da
+  semana impresso, ignorando maiúsculas/minúsculas e espaços): se a semana
+  mudar de lanche, o extra pode migrar do bloco para dentro da tabela (e
+  vice-versa) automaticamente.
+- O extra continua **entrando no romaneio** (é entrega real, soma para o
+  motorista levar) — só não mistura com os totais do lanche da semana.
+- Extras de lanche fora da semana seguem **sem ajuste/feriado** (cadastro
+  manual pontual) e **aparecem na tela** de Romaneio com a preparação listada.
+- Registros antigos (sem motorista) continuam fora do romaneio até serem
+  recadastrados (regra da v9.10.5, inalterada).
 
 ## Arquivos do patch
 
 | Arquivo | Mudança |
 |---|---|
-| `prisma/schema.prisma` | `ProducaoExtra.lanche_nome String?` (v9.10.6, **requer db push**) + `motorista String?` (v9.10.5, requerido pelo mesmo db push) |
-| `src/app/api/ajustes/route.ts` | **FIX P2003**: valida existência da escola antes do upsert (400 amigável); DELETE idempotente (P2025) |
-| `src/components/ajuste-dialog.tsx` | Mostra a mensagem de erro da API no toast |
-| `src/app/api/producao/extra/route.ts` | POST aceita/valida `lanche_nome` (obrigatório quando LANCHE, snapshot máx 80); motorista da v9.10.5 intacto |
-| `src/app/api/romaneio/route.ts` | Pseudo-escola do extra leva `extra_lanche` (nome do lanche quando FORA da semana) |
-| `src/lib/romaneio-utils.ts` | `EscolaRomaneio.extra_lanche?` tipado |
-| `src/lib/producao-semana-utils.ts` | (v9.10.5, incluído por ser cumulativo) `EscolaConsolidada.categoria` |
-| `src/app/(app)/producao/page.tsx` | Guarda extra\_ nos cliques de ajuste; select "Produto (pão ou lanche)" com os lanches cadastrados; aviso no dialog; blocos "PREPARAÇÃO EXTRA" na P4 (mesma folha); badges na lista; células de extra não-clicáveis na Semanal; anotação no romaneio impresso |
-| `src/app/(app)/romaneio/page.tsx` | Anotação "· <lanche>" ao lado da instituição nos extras fora da semana (impressão + tela) |
+| `src/lib/romaneio-utils.ts` | `ExtraLancheFora` + `RomaneioMotorista.extras_lanche_fora?` + `agruparExtrasLancheFora()` (agrupa por preparação, ordena por dia) |
+| `src/app/api/romaneio/route.ts` | API calcula `extras_lanche_fora` por rota (lanche fora da semana) e **exclui** esses extras dos totais do lanche da semana; extras continuam em `escolas` com `extra_lanche` (compat) |
+| `src/app/(app)/producao/page.tsx` | Folha do motorista (romaneio impresso da Produção): linhas do dia excluem extras fora da semana + blocos "PREPARAÇÃO EXTRA" com total próprio na mesma folha |
+| `src/app/(app)/romaneio/page.tsx` | Mesmo tratamento na página Romaneio (impressão PF/PCQ/Lanches + tela no card de Lanches); folha imprime mesmo quando a rota só tem extra fora da semana |
 
-## Como testar
+## Validação e commit
 
-1. `npx prisma db push` → `npx prisma generate` → `npm run build` → restart.
-2. **Teste do fix do ajuste:** Produção → Semanal → clique numa célula de uma
-   linha de instituição extra (ou no item dela em Por Dia) → deve aparecer o
-   aviso "Produção extra não usa ajuste..." e NENHUM erro P2003 no console.
-   Ajuste de escola real continua funcionando normalmente.
-3. **Teste do lanche separadinho:** Inst. Extra → "Evento Teste", produto
-   **<um lanche DIFERENTE do lanche da semana>**, dia quinta, motorista José,
-   quantidade 50 → o dialog avisa que vai separadinho. Imprimir (Produção):
-   - folha "PRODUÇÃO — LANCHES": após a tabela do lanche da semana, bloco
-     "PREPARAÇÃO EXTRA — <LANCHE>" na MESMA página com "Qui · Evento Teste — 50"
-     e "TOTAL EXTRA 50"; os totais do lanche normal NÃO incluem os 50;
-   - romaneio "ROTA MOTORISTA JOSÉ — PCQ E LANCHES": linha do extra na tabela de
-     lanches (coluna Qui) com "· <lanche>" ao lado do nome, somando no total do
-     dia (o motorista leva mesmo).
-4. Repita com o **lanche da semana** (mesmo nome) → entra na tabela normal, sem
-   bloco separado, sem badge "Fora da semana".
-5. Cadastre extra **LANCHE sem lanche escolhido** via API → 400 com mensagem
-   amigável (o dialog da UI já impede).
-6. Remova os extras de teste (lixeira na lista de Produções Extras).
-
-## Commit
-
+- Testes: `scripts/test-extra-romaneio-v9107.ts` (74 asserts: rota real com db
+  mockado, asserts de fonte e 200 semanas aleatórias) + regressões completas
+  v9.9.0→v9.10.6 (855 asserts) — todos verdes; `tsc --noEmit` 0 erros;
+  `npm run build` OK.
+- Sugestão de commit (rode na raiz do projeto, após conferir o build):
 ```bash
-git add prisma/schema.prisma src/app/api/ajustes/route.ts src/components/ajuste-dialog.tsx src/app/api/producao/extra/route.ts src/app/api/romaneio/route.ts src/lib/romaneio-utils.ts src/lib/producao-semana-utils.ts "src/app/(app)/producao/page.tsx" "src/app/(app)/romaneio/page.tsx"
-git commit -m "v9.10.6: Inst. Extra escolhe o lanche (PF/PCQ/lanches cadastrados); lanche fora da semana impresso separadinho na folha de Lanches; fix P2003 no ajuste de escolas"
+git add .
+git commit -m "v9.10.7: lanche extra fora da semana separadinho também na folha do motorista (bloco PREPARAÇÃO EXTRA na mesma folha, fora dos totais do lanche da semana; tela e impressão da Produção e do Romaneio)"
+git push
 ```
 
-## Validação aplicada antes do envio
-
-- `prisma generate` OK · `tsc --noEmit`: 0 erros · `next build`: OK
-- `test-extra-lanche-v9106.ts`: **113/113** (classificador, split da injeção,
-  grupos da P4, anotação do romaneio, guarda extra\_, pre-check do ajuste,
-  asserts de fonte, consolidador real + 200 semanas aleatórias + contra-prova)
-- Regressões: v9.9.0 ✅, v9.9.1 15/15, v9.9.2 31/31, v9.9.3 58/58, v9.9.4 35/35,
-  v9.9.6 18/18, v9.9.7 44/44, v9.9.8 21/21, v9.9.9 46/46, v9.10.0 88/88,
-  v9.10.1 49/49, v9.10.2 61/61, v9.10.3 70/70, v9.10.4 50/50, v9.10.5 106/106
-- Nota: `test-ordenacao-v6` (fora da suíte desde a era v6) tem 3 falhas
-  pré-existentes de ordenação canônica — sem relação com este patch (nenhum
-  arquivo de ordenação foi tocado).
+> `git add .` (a partir da raiz) já pega os arquivos sobrescritos pelo
+> `unzip -o` e o `LEIA-ME.md` atualizado. Se quiser conferir antes:
+> `git status` e `git diff --stat`.
