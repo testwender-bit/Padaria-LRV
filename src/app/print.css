@@ -1317,7 +1317,7 @@
        centrado — presença clara sem cobrir cantos com conteúdo denso */
     width: 130mm !important;
     height: auto !important;
-    opacity: 0.08 !important;
+    opacity: 0.12 !important;
     /* por cima do conteúdo (fundo branco das células não o esconde);
        pointer-events none → nunca intercepta cliques/seleção */
     z-index: 2147483647 !important;
