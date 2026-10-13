@@ -691,6 +691,20 @@ export default function CardapioPdfPage() {
         </motion.div>
       )}
 
+      {/* v9.10.8: MARCA D'ÁGUA — brasão da Prefeitura em TODAS as páginas
+          impressas do cardápio. Um único <img> com position:fixed (fora do
+          .semana-page para NÃO herdar o zoom da escala v9.5.5): o navegador
+          repete elementos fixos em cada folha impressa. Escondido na tela
+          (print.css), opacity 8% + pointer-events:none — não atrapalha o
+          conteúdo. PNG com fundo transparente (traços do brasão apenas). */}
+      <img
+        src="/brasao-marca-dagua.png"
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        className="cardapio-watermark"
+      />
+
       {/* Print Pages */}
       <div className="print-container">
         {semanasToPrint.map((semana, idx) => (

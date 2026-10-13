@@ -1284,3 +1284,46 @@
     line-height: 1.2;
   }
 }
+
+/* ============================================================
+   v9.10.8 — MARCA D'ÁGUA (BRASÃO DA PREFEITURA) NO CARDÁPIO
+   ============================================================
+   Usada SOMENTE pela página de impressão do cardápio
+   (nutricao/cardapios/[id]/pdf), que renderiza um único
+   <img class="cardapio-watermark"> FORA do .semana-page
+   (para não herdar o zoom da escala v9.5.5).
+
+   position:fixed na impressão → o navegador repete o elemento
+   em TODAS as folhas impressas (Semana e Semestral), sempre
+   centrado na página, por cima do conteúdo com opacity 8%
+   (brasão visível como marca d'água sem atrapalhar a leitura;
+   PNG tem fundo transparente — só os traços são carimbados).
+
+   Produção/Romaneio NÃO renderizam esse <img> — sem efeito lá. */
+
+/* Tela: a marca d'água não existe (só na impressão) */
+.cardapio-watermark {
+  display: none;
+}
+
+@media print {
+  .cardapio-watermark {
+    display: block !important;
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    /* A4 paisagem (297×210mm): brasão de 130mm de largura (~112mm alto),
+       centrado — presença clara sem cobrir cantos com conteúdo denso */
+    width: 130mm !important;
+    height: auto !important;
+    opacity: 0.08 !important;
+    /* por cima do conteúdo (fundo branco das células não o esconde);
+       pointer-events none → nunca intercepta cliques/seleção */
+    z-index: 2147483647 !important;
+    pointer-events: none !important;
+    user-select: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

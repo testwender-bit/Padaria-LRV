@@ -1,49 +1,39 @@
-# Patch v9.10.7 — Lanche extra também separadinho na folha do motorista
+# Patch v9.10.8 — Brasão da Prefeitura como marca d'água na impressão do cardápio
 
-> **Arquivo:** `patch-v9.10.7.zip` · **Requisito:** aplicar por cima da
-> **v9.10.6** (sem mudanças de banco — nada de `prisma db push` nesta versão).
+> **Arquivo:** `patch-v9.10.8.zip` · **Requisito:** aplicar por cima da
+> **v9.10.7** (sem mudanças de banco — nada de `prisma db push` nesta versão).
 
 **O que resolve:**
 
-Na v9.10.6 o lanche extra FORA da semana (preparação diferente do lanche da
-semana) passou a aparecer separadinho na **folha de produção de Lanches**, mas
-na **folha do motorista (romaneio)** ele ainda aparecia **misturado** dentro dos
-blocos do dia do lanche da semana — só com uma anotação cinza minúscula ao lado
-da instituição — e ainda **inflava os totais do dia** (ex.: "■ QUARTA — 370
-unid." somavam 270 do lanche da semana + 100 do extra, uma preparação
-diferente). O motorista não conseguia ver claramente o que levar.
+Na impressão do cardápio (Nutrição → Cardápios → PDF), as folhas saíam sem
+nenhuma identificação visual da Prefeitura além do cabeçalho. Este patch
+adiciona o **brasão de Lucas do Rio Verde como marca d'água no fundo de cada
+página impressa do cardápio**, sutil o suficiente para não atrapalhar a leitura
+do conteúdo.
 
-Agora a folha do motorista recebe o **mesmo tratamento da folha de produção**:
-
-1. **Tabela do lanche da semana** (por dia / cruzada) mostra **só o lanche da
-   semana** — os extras fora da semana saíram das linhas e dos **totais do dia
-   e do TOTAL GERAL** (não mistura preparações diferentes; o "■ QUARTA" volta a
-   significar lanche da semana).
-2. **Bloco próprio "PREPARAÇÃO EXTRA — <nome do lanche>"** na **MESMA folha do
-   motorista** (mesma página, sem quebra), logo abaixo da tabela do lanche:
-   DIA / INSTITUIÇÃO · QUANTIDADE + **TOTAL EXTRA** próprio — mesmo formato do
-   bloco da folha de produção de Lanches (v9.10.6). Vários lanches diferentes =
-   um bloco por preparação (agrupamento ignora maiúsculas/minúsculas, extras
-   ordenados por dia).
-3. Funciona nas **duas impressões**: a saída pelo botão Imprimir da **Produção**
-   (romaneio impresso no fim) e a página **Romaneio** (/romaneio) — impressão e
-   tela (na tela, o bloco aparece dentro do card de Lanches, abaixo da tabela).
-4. **Rota que só tem lanche extra fora da semana** (sem lanche da semana
-   nenhum) agora imprime a folha PCQ/Lanches do motorista só com o bloco do
-   extra (antes a folha inteira desaparecia se não houvesse lanche de escolas).
-5. Extras de **Pão Francês e PCQ** não mudam nada (seguem com o separador
-   "Produção Extra" nas tabelas de PF e PCQ do motorista — v9.10.5/6).
-6. Lanche extra **igual ao da semana** (regular/bifásico) não muda: entra
-   normalmente nas linhas e nos totais (é o lanche da semana mesmo).
+1. **Todas as páginas** recebem o brasão: tanto no modo **Semana** (1 folha)
+   quanto no **Semestral** (uma folha por semana — o brasão se repete em cada
+   uma delas automaticamente).
+2. **Centrado na folha**, com cerca de 13 cm de largura e **opacity 8%** —
+   aparece como um carimbo claro no fundo da folha; o cardápio continua 100%
+   legível (incluindo em impressão preto e branco).
+3. **Não atrapalha em nada**: é apenas uma imagem decorativa (`pointer-events:
+   none`, invisível na tela — só existe na impressão), não muda texto, números,
+   nutrientes, alérgenos, layout, escala/zoom nem paginação.
+4. Usa um **PNG com fundo transparente** (`/brasao-marca-dagua.png`, derivado
+   do brasão oficial): só os traços do brasão são carimbados — sem véu
+   retangular sobre tabelas ou sobre o cabeçalho escuro.
+5. **Só no cardápio**: as impressões de Produção e Romaneio não mudam (o
+   cabeçalho delas continua com o brasão colorido original `/brasao.jpg`).
 
 ## Ordem de aplicação (GitHub Codespace)
 
 Com o terminal aberto **na raiz do projeto** (pasta que contém `package.json`),
-envie o arquivo `patch-v9.10.7.zip` para dentro dela e rode:
+envie o arquivo `patch-v9.10.8.zip` para dentro dela e rode:
 
 ```bash
-# 1) Extrai por cima, sobrescrevendo os arquivos (caminhos preservados):
-unzip -o patch-v9.10.7.zip
+# 1) Extrai por cima, sobrescrevendo os arquivos (o PNG novo é criado):
+unzip -o patch-v9.10.8.zip
 
 # 2) Esta versão NÃO altera o schema — NÃO precisa de `prisma db push`.
 
@@ -52,57 +42,56 @@ npm run build
 npm run start   # ou o supervisor de sempre
 ```
 
-> O `unzip -o` substitui os 4 arquivos listados em "Arquivos do patch" e deixa
-> o `LEIA-ME.md` na raiz com o histórico desta versão.
+> O `unzip -o` substitui `print.css` e `pdf/page.tsx`, cria o
+> `public/brasao-marca-dagua.png` e deixa o `LEIA-ME.md` na raiz com o
+> histórico desta versão.
 
 ## Como conferir
 
-1. Cadastre um Inst. Extra com **produto = um lanche diferente do lanche da
-   semana**, motorista José ou Aroldo.
-2. Imprima a Produção: na folha do motorista escolhido, a seção de lanches do
-   dia mostra só o lanche da semana e, logo abaixo, o bloco
-   "PREPARAÇÃO EXTRA — <lanche>" com a instituição, o dia e a quantidade.
-3. O mesmo aparece na página Romaneio (impressão e tela).
-4. Os totais do dia e o TOTAL GERAL da tabela de lanches voltam a conter só o
-   lanche da semana; o extra soma no "Total:" do bloco dele.
+1. Abra **Nutrição → Cardápios → (um cardápio) → PDF**.
+2. Clique em **Imprimir / Salvar PDF**: o brasão aparece centrado, claro, no
+   fundo de cada folha — atrás do conteúdo, sem cobrir nada.
+3. Troque para o modo **Semestral** e confira: TODAS as semanas saem com a
+   marca d'água.
+4. Na tela (fora da impressão) nada muda — a marca d'água só existe no papel/PDF.
+5. Imprima uma **Produção** e confirme que ela continua exatamente como antes
+   (a marca d'água é exclusiva do cardápio).
 
 ### Regras de negócio
 
-- O total do dia na folha do motorista é **do lanche da semana**; cada bloco
-  "PREPARAÇÃO EXTRA" tem **total próprio** (mesma regra da folha de produção).
-- A classificação mesmo/fora-da-semana é **dinâmica** (compara com o lanche da
-  semana impresso, ignorando maiúsculas/minúsculas e espaços): se a semana
-  mudar de lanche, o extra pode migrar do bloco para dentro da tabela (e
-  vice-versa) automaticamente.
-- O extra continua **entrando no romaneio** (é entrega real, soma para o
-  motorista levar) — só não mistura com os totais do lanche da semana.
-- Extras de lanche fora da semana seguem **sem ajuste/feriado** (cadastro
-  manual pontual) e **aparecem na tela** de Romaneio com a preparação listada.
-- Registros antigos (sem motorista) continuam fora do romaneio até serem
-  recadastrados (regra da v9.10.5, inalterada).
+- A marca d'água é **estática e decorativa**: não aparece na tela, não entra
+  nos dados, não afeta escala de impressão, nutrientes, alérgenos ou paginação.
+- Opacidade/tamanho ficam em `src/app/print.css` (`.cardapio-watermark`):
+  `opacity: 0.08` e `width: 130mm`. Para deixar mais clara/escura ou maior/
+  menor, basta ajustar esses dois valores.
+- O elemento é um único `<img position:fixed>` fora do `.semana-page` — por
+  isso **não herda o zoom** da escala de impressão (v9.5.5) e o navegador o
+  **repete em todas as folhas** automaticamente (Semana e Semestral).
+- O `public/brasao.jpg` original permanece intacto (cabeçalho da impressão de
+  Produção) — a marca d'água usa o novo `public/brasao-marca-dagua.png`.
 
 ## Arquivos do patch
 
 | Arquivo | Mudança |
 |---|---|
-| `src/lib/romaneio-utils.ts` | `ExtraLancheFora` + `RomaneioMotorista.extras_lanche_fora?` + `agruparExtrasLancheFora()` (agrupa por preparação, ordena por dia) |
-| `src/app/api/romaneio/route.ts` | API calcula `extras_lanche_fora` por rota (lanche fora da semana) e **exclui** esses extras dos totais do lanche da semana; extras continuam em `escolas` com `extra_lanche` (compat) |
-| `src/app/(app)/producao/page.tsx` | Folha do motorista (romaneio impresso da Produção): linhas do dia excluem extras fora da semana + blocos "PREPARAÇÃO EXTRA" com total próprio na mesma folha |
-| `src/app/(app)/romaneio/page.tsx` | Mesmo tratamento na página Romaneio (impressão PF/PCQ/Lanches + tela no card de Lanches); folha imprime mesmo quando a rota só tem extra fora da semana |
+| `public/brasao-marca-dagua.png` | **NOVO** — brasão em traços transparentes (1200×1031, RGBA, derivado do `brasao.jpg` oficial) |
+| `src/app/print.css` | Classe `.cardapio-watermark`: escondida na tela; na impressão, `position:fixed` centrada, 130mm, opacity 8%, `pointer-events:none`, z-index máximo |
+| `src/app/(app)/nutricao/cardapios/[id]/pdf/page.tsx` | `<img class="cardapio-watermark">` único, fora do `.semana-page` (não herda o zoom; vale p/ Semana e Semestral) |
 
 ## Validação e commit
 
-- Testes: `scripts/test-extra-romaneio-v9107.ts` (74 asserts: rota real com db
-  mockado, asserts de fonte e 200 semanas aleatórias) + regressões completas
-  v9.9.0→v9.10.6 (855 asserts) — todos verdes; `tsc --noEmit` 0 erros;
+- Testes: `scripts/test-marca-dagua-v9108.ts` (47 asserts: asset RGBA com
+  transparência real, posicionamento FORA do SemanaPrintPage, regras CSS,
+  exclusividade no cardápio, preservação v9.10.5/6/7, simulador de paginação)
+  + regressão completa v9.9.x→v9.10.7 — todos verdes; `tsc --noEmit` 0 erros;
   `npm run build` OK.
 - Sugestão de commit (rode na raiz do projeto, após conferir o build):
 ```bash
 git add .
-git commit -m "v9.10.7: lanche extra fora da semana separadinho também na folha do motorista (bloco PREPARAÇÃO EXTRA na mesma folha, fora dos totais do lanche da semana; tela e impressão da Produção e do Romaneio)"
+git commit -m "v9.10.8: brasão da Prefeitura como marca d'água na impressão do cardápio (todas as páginas, centrado, opacity 8%, PNG transparente; sem afetar Produção/Romaneio nem a tela)"
 git push
 ```
 
 > `git add .` (a partir da raiz) já pega os arquivos sobrescritos pelo
-> `unzip -o` e o `LEIA-ME.md` atualizado. Se quiser conferir antes:
-> `git status` e `git diff --stat`.
+> `unzip -o`, o PNG novo e o `LEIA-ME.md` atualizado. Se quiser conferir
+> antes: `git status` e `git diff --stat`.
