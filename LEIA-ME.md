@@ -1,39 +1,57 @@
-# Patch v9.10.8 — Brasão da Prefeitura como marca d'água na impressão do cardápio
+# Patch v9.10.9 — PCQ + complemento p/ todas as unidades + página Romaneio inativada
 
-> **Arquivo:** `patch-v9.10.8.zip` · **Requisito:** aplicar por cima da
-> **v9.10.7** (sem mudanças de banco — nada de `prisma db push` nesta versão).
+> **Arquivo:** `patch-v9.10.9.zip` · **Requisito:** aplicar por cima da
+> **v9.10.8** (sem mudanças de banco — nada de `prisma db push` nesta versão).
 
-**O que resolve:**
+**O que resolve (2 ajustes):**
 
-Na impressão do cardápio (Nutrição → Cardápios → PDF), as folhas saíam sem
-nenhuma identificação visual da Prefeitura além do cabeçalho. Este patch
-adiciona o **brasão de Lucas do Rio Verde como marca d'água no fundo de cada
-página impressa do cardápio**, sutil o suficiente para não atrapalhar a leitura
-do conteúdo.
+**Ajuste 1 — PF Complemento agrupado com o PCQ para TODAS as unidades.**
+Na folha do motorista (impressão da Produção), o "PCQ + PF Complemento" das
+unidades aparecia no formato **"2 + PF 20"** (2 formas de PCQ + 20 pães
+franceses de complemento) — mas isso valia **só para creches e bifásicas**.
+Qualquer outra unidade com PCQ + complemento cadastrados tinha o complemento
+**somado dentro do PF regular** (número escondido, sem o formato agrupado).
 
-1. **Todas as páginas** recebem o brasão: tanto no modo **Semana** (1 folha)
-   quanto no **Semestral** (uma folha por semana — o brasão se repete em cada
-   uma delas automaticamente).
-2. **Centrado na folha**, com cerca de 13 cm de largura e **opacity 8%** —
-   aparece como um carimbo claro no fundo da folha; o cardápio continua 100%
-   legível (incluindo em impressão preto e branco).
-3. **Não atrapalha em nada**: é apenas uma imagem decorativa (`pointer-events:
-   none`, invisível na tela — só existe na impressão), não muda texto, números,
-   nutrientes, alérgenos, layout, escala/zoom nem paginação.
-4. Usa um **PNG com fundo transparente** (`/brasao-marca-dagua.png`, derivado
-   do brasão oficial): só os traços do brasão são carimbados — sem véu
-   retangular sobre tabelas ou sobre o cabeçalho escuro.
-5. **Só no cardápio**: as impressões de Produção e Romaneio não mudam (o
-   cabeçalho delas continua com o brasão colorido original `/brasao.jpg`).
+Agora **toda unidade cadastrada com PCQ + complemento** (pf_comp
+segunda/quarta/sexta > 0 em Configurações → PCQ) segue o mesmo formato:
+
+1. Na tabela **PCQ** da folha do motorista, o dia mostra **"2 + PF 20"**
+   (formas + complemento) — para **qualquer categoria** (Fundamental, Médio,
+   Interior, Creche, Bifásica...).
+2. O **TOTAL GERAL (FORMAS)** do dia mostra **"X + PF YY"** quando houver
+   complemento no dia (somando todas as escolas da rota).
+3. O complemento **não soma mais no PF regular** da unidade (o PF da tabela de
+   Pão Francês passa a ser só o PF do café da manhã — para creches/bifásicas
+   isso já era assim; agora é para todas).
+4. Regras preservadas: complemento só faz sentido com PCQ (PCQ zerado por
+   ajuste/feriado zera o complemento — v9.8.7); unidades **sem** complemento
+   cadastrado não mudam NADA; unidades INTERIOR especiais seguem como estavam
+   (v9.9.0); totais da folha somam todas as unidades.
+
+**Ajuste 2 — Página Romaneio (/romaneio) INATIVADA.**
+O romaneio do motorista já sai na impressão da Produção (botão Imprimir) e a
+página separada não era usada. Acessos removidos:
+
+1. **Menu lateral (desktop e mobile)**: item "Romaneio" removido (restam
+   Dashboard, Produção, Cardápio).
+2. **Produção**: o botão **"Romaneio →"** (que ficava ao lado de Imprimir) foi
+   removido.
+3. **Dashboard**: o card de acesso rápido "Romaneio" foi removido (ficam
+   Produção, Cardápio e Configurações).
+4. **/romaneio agora redireciona para /producao** — links antigos/favoritos
+   não quebram (mesmo padrão da /lanches na v9.9.0). O código da página antiga
+   está no histórico do git e pode voltar se um dia precisar.
+5. **A API /api/romaneio continua ATIVA** — é ela que alimenta a folha do
+   motorista impressa pela Produção.
 
 ## Ordem de aplicação (GitHub Codespace)
 
 Com o terminal aberto **na raiz do projeto** (pasta que contém `package.json`),
-envie o arquivo `patch-v9.10.8.zip` para dentro dela e rode:
+envie o arquivo `patch-v9.10.9.zip` para dentro dela e rode:
 
 ```bash
-# 1) Extrai por cima, sobrescrevendo os arquivos (o PNG novo é criado):
-unzip -o patch-v9.10.8.zip
+# 1) Extrai por cima, sobrescrevendo os arquivos:
+unzip -o patch-v9.10.9.zip
 
 # 2) Esta versão NÃO altera o schema — NÃO precisa de `prisma db push`.
 
@@ -42,56 +60,59 @@ npm run build
 npm run start   # ou o supervisor de sempre
 ```
 
-> O `unzip -o` substitui `print.css` e `pdf/page.tsx`, cria o
-> `public/brasao-marca-dagua.png` e deixa o `LEIA-ME.md` na raiz com o
-> histórico desta versão.
-
 ## Como conferir
 
-1. Abra **Nutrição → Cardápios → (um cardápio) → PDF**.
-2. Clique em **Imprimir / Salvar PDF**: o brasão aparece centrado, claro, no
-   fundo de cada folha — atrás do conteúdo, sem cobrir nada.
-3. Troque para o modo **Semestral** e confira: TODAS as semanas saem com a
-   marca d'água.
-4. Na tela (fora da impressão) nada muda — a marca d'água só existe no papel/PDF.
-5. Imprima uma **Produção** e confirme que ela continua exatamente como antes
-   (a marca d'água é exclusiva do cardápio).
+1. **Complemento geral**: cadastre PCQ + complemento (pf_comp) em uma unidade
+   que NÃO seja creche (Configurações → PCQ). Imprima a Produção: na folha do
+   motorista, a unidade aparece na tabela de PCQ como **"2 + PF 20"** nos dias
+   com PCQ — e o total do dia mostra "X + PF YY".
+2. **PF da unidade**: na mesma folha, a tabela de Pão Francês mostra só o PF
+   regular da unidade (sem o complemento somado).
+3. **Creches/bifásicas**: continuam exatamente como estavam.
+4. **Romaneio**: o item sumiu do menu lateral, o botão sumiu da Produção, o
+   card sumiu do Dashboard — e acessar /romaneio pelo navegador cai na
+   página de Produção.
+5. **Impressão da Produção**: a folha do motorista continua saindo no final
+   da impressão, agora como ÚNICA fonte do romaneio.
 
 ### Regras de negócio
 
-- A marca d'água é **estática e decorativa**: não aparece na tela, não entra
-  nos dados, não afeta escala de impressão, nutrientes, alérgenos ou paginação.
-- Opacidade/tamanho ficam em `src/app/print.css` (`.cardapio-watermark`):
-  `opacity: 0.08` e `width: 130mm`. Para deixar mais clara/escura ou maior/
-  menor, basta ajustar esses dois valores.
-- O elemento é um único `<img position:fixed>` fora do `.semana-page` — por
-  isso **não herda o zoom** da escala de impressão (v9.5.5) e o navegador o
-  **repete em todas as folhas** automaticamente (Semana e Semestral).
-- O `public/brasao.jpg` original permanece intacto (cabeçalho da impressão de
-  Produção) — a marca d'água usa o novo `public/brasao-marca-dagua.png`.
+- O formato agrupado **"X + PF YY"** aparece **somente nos dias em que a
+  unidade tem PCQ > 0 E complemento > 0**; dias sem PCQ continuam "—".
+- A **coluna TOTAL** da tabela de PCQ continua mostrando só as FORMAS (o
+  complemento é indicado nos dias e no total do dia, como já era nas creches).
+- Unidades **sem complemento configurado**: nenhum comportamento muda (nem na
+  tabela de PF, nem na de PCQ).
+- **Feriado/ajuste** zerando o PCQ do dia zera também o complemento
+  (v9.8.7, inalterada) — nunca aparece "0 + PF 20".
+- A página /romaneio **não tem mais lógica própria**: qualquer acesso cai em
+  /producao. Mudanças futuras na folha do motorista são feitas SOMENTE na
+  impressão da página de Produção.
 
 ## Arquivos do patch
 
 | Arquivo | Mudança |
 |---|---|
-| `public/brasao-marca-dagua.png` | **NOVO** — brasão em traços transparentes (1200×1031, RGBA, derivado do `brasao.jpg` oficial) |
-| `src/app/print.css` | Classe `.cardapio-watermark`: escondida na tela; na impressão, `position:fixed` centrada, 130mm, opacity 8%, `pointer-events:none`, z-index máximo |
-| `src/app/(app)/nutricao/cardapios/[id]/pdf/page.tsx` | `<img class="cardapio-watermark">` único, fora do `.semana-page` (não herda o zoom; vale p/ Semana e Semestral) |
+| `src/app/api/romaneio/route.ts` | **Ajuste 1**: pf_comp vai SEPARADO (agrupado no PCQ) para QUALQUER escola com complemento — removida a restrição creche/bifásica/interior |
+| `src/app/(app)/producao/page.tsx` | **Ajuste 1**: formato "PCQ + PF XX" sem checagem de categoria + **Ajuste 2**: botão "Romaneio →" e import Link removidos |
+| `src/lib/menu-config.ts` | **Ajuste 2**: item "Romaneio" removido do menu principal (desktop + mobile) |
+| `src/app/(app)/dashboard/page.tsx` | **Ajuste 2**: card "Romaneio" e import Truck removidos |
+| `src/app/(app)/romaneio/page.tsx` | **Ajuste 2**: página substituída por `redirect('/producao')` (código antigo no git) |
 
 ## Validação e commit
 
-- Testes: `scripts/test-marca-dagua-v9108.ts` (47 asserts: asset RGBA com
-  transparência real, posicionamento FORA do SemanaPrintPage, regras CSS,
-  exclusividade no cardápio, preservação v9.10.5/6/7, simulador de paginação)
-  + regressão completa v9.9.x→v9.10.7 — todos verdes; `tsc --noEmit` 0 erros;
-  `npm run build` OK.
+- Testes: `scripts/test-complemento-romaneio-v9109.ts` (45 asserts: ROTA REAL
+  com db mockado — complemento separado p/ FUNDAMENTAL/CRECHE/INTERIOR, PF sem
+  complemento somado, totais, PCQ zerado zera complemento; fonte do menu/
+  botão/card/redirect; preservação v9.10.5–v9.10.8) + regressão completa
+  sincronizada — todos verdes; `tsc --noEmit` 0 erros; `npm run build` OK.
 - Sugestão de commit (rode na raiz do projeto, após conferir o build):
 ```bash
 git add .
-git commit -m "v9.10.8: brasão da Prefeitura como marca d'água na impressão do cardápio (todas as páginas, centrado, opacity 8%, PNG transparente; sem afetar Produção/Romaneio nem a tela)"
+git commit -m "v9.10.9: PCQ + complemento agrupado ('X + PF YY') para todas as unidades na folha do motorista + página /romaneio inativada (menu, botão e card removidos; redirect para /producao; API ativa)"
 git push
 ```
 
 > `git add .` (a partir da raiz) já pega os arquivos sobrescritos pelo
-> `unzip -o`, o PNG novo e o `LEIA-ME.md` atualizado. Se quiser conferir
-> antes: `git status` e `git diff --stat`.
+> `unzip -o` e o `LEIA-ME.md` atualizado. Se quiser conferir antes:
+> `git status` e `git diff --stat`.

@@ -10,7 +10,7 @@ import Link from 'next/link'
 import {
   Wheat,
   ClipboardList,
-  Truck,
+  // v9.10.9: Truck removido — card do Romaneio inativado junto com a página
   CalendarOff,
   TrendingUp,
   Package,
@@ -346,13 +346,9 @@ export default function DashboardPage() {
                     <p className="text-xs text-amber-600">Planejar semana</p>
                   </div>
                 </Link>
-                <Link href="/romaneio">
-                  <div className="p-4 rounded-xl bg-gradient-to-br from-green-50 to-green-100/50 border border-green-200 hover:shadow-md transition-all cursor-pointer group">
-                    <Truck className="w-6 h-6 text-green-600 mb-2 group-hover:scale-110 transition-transform" />
-                    <p className="text-sm font-semibold text-green-900">Romaneio</p>
-                    <p className="text-xs text-green-600">Entregas do dia</p>
-                  </div>
-                </Link>
+                {/* v9.10.9: card "Romaneio" removido — a página /romaneio foi
+                    inativada (o romaneio do motorista sai na impressão da
+                    Produção). O código segue acessível via histórico do git. */}
                 <Link href="/cardapio">
                   <div className="p-4 rounded-xl bg-gradient-to-br from-purple-50 to-purple-100/50 border border-purple-200 hover:shadow-md transition-all cursor-pointer group">
                     <CalendarDays className="w-6 h-6 text-purple-600 mb-2 group-hover:scale-110 transition-transform" />

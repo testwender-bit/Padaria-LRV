@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   ClipboardList,
   CalendarDays,
-  Truck,
   CalendarOff,
   DollarSign,
   History,
@@ -12,10 +11,13 @@ import {
 // v9.9.0: "Lanches" removido do menu principal — agora é uma aba dentro de
 // /configuracoes (junto com Escolas, PF e PCQ). A rota /lanches redireciona
 // para /configuracoes?tab=lanches (compatibilidade com links antigos).
+// v9.10.9: "Romaneio" removido do menu principal — a página /romaneio foi
+// inativada (o romaneio do motorista já sai na impressão da Produção, que é
+// o único fluxo usado). /romaneio redireciona para /producao (mesmo padrão
+// da /lanches); a API /api/romaneio segue ativa (alimenta a impressão).
 export const menuPrincipal = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, color: 'text-amber-500' },
   { href: '/producao', label: 'Produção', icon: ClipboardList, color: 'text-amber-600', destaque: true },
-  { href: '/romaneio', label: 'Romaneio', icon: Truck, color: 'text-green-500' },
   { href: '/cardapio', label: 'Cardápio', icon: CalendarDays, color: 'text-purple-500' },
 ]
 

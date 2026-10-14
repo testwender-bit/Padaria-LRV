@@ -123,16 +123,13 @@ export async function GET(request: Request) {
       const feriado_pcq = diasVaziosStr()
       const feriado_lanche = diasVaziosStr()
 
-      // v9.8.4: Para creches, o PF Complemento vai agrupado com PCQ na tabela
-      // do motorista. Para demais escolas, comportamento antigo (PF + PF_COMP somados).
-      // v9.8.5: Bifásicas também têm pf_comp separado (vai agrupado em PCQ), MAS
-      // continuam aparecendo na tabela de PF com seu PF regular do café da manhã.
-      // v9.9.0: escola INTERIOR marcada como especial também agrupa pf_comp com
-      // PCQ (comportamento espelhado da bifásica).
-      const isCreche = escola.categoria === 'CRECHE'
-      const isBifasica = escola.categoria === 'BIFASICA'
-      const isInteriorEspecial = (escola as any).interior_especial === true && !isBifasica
-      const temPfCompSeparado = isCreche || isBifasica || isInteriorEspecial
+      // v9.8.4: PF Complemento com histórico de restrição por categoria —
+      //   v9.8.4/5: só creche/bifásica; v9.9.0: + interior especial; resto somava em PF.
+      // v9.10.9: o complemento agora vai SEPARADO (agrupado com PCQ na tabela do
+      // motorista, formato "X + PF YY") para QUALQUER unidade que tenha PCQ +
+      // complemento cadastrados (pf_comp_segunda/quarta/sexta > 0) — não importa
+      // a categoria. Escolas sem complemento configurado não mudam nada (pf_comp
+      // fica 0 e o comportamento é idêntico ao de antes).
 
       // PF + PF Complemento (integrado, sem distinção)
       if (escola.recebe_pf) {
@@ -163,8 +160,9 @@ export async function GET(request: Request) {
       }
 
       // PCQ + PF Complemento
-      // v9.8.4: para creches, pf_comp vai SEPARADO (não somado em pf) — vai agrupado
-      // na tabela de PCQ do motorista. Para demais escolas, comportamento antigo (somado em pf).
+      // v9.8.4: pf_comp vai SEPARADO (não somado em pf) — agrupado na tabela de
+      // PCQ do motorista. v9.10.9: para TODAS as escolas (antes só creche/
+      // bifásica/interior especial; as demais somavam o complemento no PF).
       // v9.8.7: se o PCQ for zerado (por ajuste ou feriado), o PF Complemento também
       // deve ser zerado — não faz sentido o motorista levar "0 + PF 25" (PF Comp sem PCQ).
       if (escola.recebe_pcq && escola.pcq_quantidades[0]) {
@@ -205,14 +203,10 @@ export async function GET(request: Request) {
             if (qtdFinalPcq === 0) {
               qtdFinalComp = 0
             }
-            if (temPfCompSeparado) {
-              // v9.8.4/v9.8.5: creche OU bifásica — pf_comp vai SEPARADO
-              // (para agrupar com PCQ na impressão do motorista)
-              pf_comp[dia] = qtdFinalComp
-            } else {
-              // Demais escolas — comportamento antigo: pf_comp somado em pf
-              pf[dia] += qtdFinalComp
-            }
+            // v9.8.4: pf_comp SEPARADO — v9.10.9: para TODAS as escolas com
+            // complemento cadastrado (agrupa com PCQ como "X + PF YY" na folha
+            // do motorista; escolas sem complemento seguem com pf_comp 0)
+            pf_comp[dia] = qtdFinalComp
           }
         }
       }

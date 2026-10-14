@@ -23,7 +23,7 @@ import {
   Save,
   CalendarOff,
 } from 'lucide-react'
-import Link from 'next/link'
+// v9.10.9: import Link removido — só servia ao botão "Romaneio →" (inativado)
 import { formatarData, numeroSemana, anoSemana, inicioSemana, fimSemana, formatarPeriodoSemana, dataISO, DIAS_SEMANA, DIAS_LABEL_CURTO, DIAS_PRODUCAO, DIAS_LABEL_CURTO_PRODUCAO, type DiaSemana, type DiaProducao } from '@/lib/date-utils'
 import type { ProducaoDia, ItemProducao } from '@/lib/producao-utils'
 import { PF_PRODUCAO_PARA_ENTREGA, ehDiaProducaoDoProduto } from '@/lib/producao-utils'
@@ -993,10 +993,12 @@ export default function ProducaoPage() {
                           if (oa !== ob) return oa - ob
                           return (a.nome_curto || '').localeCompare(b.nome_curto || '')
                         }).map((escola, idx, arr) => {
-                          // v9.8.4/v9.8.5: creches E bifásicas têm pf_comp agrupado em PCQ.
-                          // Mostro "PCQ + PF XX" nos dias com PCQ (seg/qua/sex).
+                          // v9.8.4/v9.8.5: escolas com PF Complemento mostram
+                          // "PCQ + PF XX" nos dias com PCQ (seg/qua/sex).
+                          // v9.10.9: para TODAS as unidades com pcq + complemento
+                          // cadastrados (antes: só creches e bifásicas — a API
+                          // agora separa o pf_comp de qualquer categoria).
                           // Demais dias: "—" como sempre.
-                          const temPfCompAgrupado = escola.categoria === 'CRECHE' || escola.categoria === 'BIFASICA'
                           // v9.10.5: separador antes do primeiro extra (categoria EXTRA)
                           const mostraSeparador = escola.categoria === 'EXTRA' && (idx === 0 || arr[idx - 1].categoria !== 'EXTRA')
                           return (
@@ -1010,8 +1012,9 @@ export default function ProducaoPage() {
                                 <td className="print-col-escola">{escola.nome_curto}</td>
                                 {DIAS_SEMANA.map((d) => {
                                   if (escola.pcq[d] > 0) {
-                                    if (temPfCompAgrupado && (escola as any).pf_comp?.[d] > 0) {
-                                      // Creche/Bifásica em dia de PCQ com PF Complemento: "40 + PF 25"
+                                    if ((escola as any).pf_comp?.[d] > 0) {
+                                      // Escola com PCQ + PF Complemento: "40 + PF 25"
+                                      // (v9.10.9: qualquer categoria, não só creche)
                                       return (
                                         <td key={d} className="print-col-dia">
                                           {escola.pcq[d]} + PF {(escola as any).pf_comp[d]}
@@ -1033,7 +1036,8 @@ export default function ProducaoPage() {
                             const totalPfCompDia = (romaneio as any).totais_pf_comp?.[d] || 0
                             if (romaneio.totais_pcq[d] > 0 && totalPfCompDia > 0) {
                               // v9.8.4: total do dia mostra "PCQ + PF XX" para indicar
-                              // que o motorista leva PCQ + PF agrupado das creches
+                              // que o motorista leva PCQ + PF agrupado das escolas
+                              // com complemento (v9.10.9: qualquer categoria)
                               return (
                                 <td key={d} className="print-col-dia">
                                   {romaneio.totais_pcq[d]} + PF {totalPfCompDia}
@@ -1166,9 +1170,8 @@ export default function ProducaoPage() {
               <Table2 className="w-3 h-3 mr-1" /> Semanal
             </Button>
           </div>
-          <Link href="/romaneio">
-            <Button variant="outline" size="sm" className="border-green-200 text-green-700 hover:bg-green-50">Romaneio →</Button>
-          </Link>
+          {/* v9.10.9: botão "Romaneio →" removido — a página /romaneio foi inativada;
+              o romaneio do motorista sai na impressão da Produção (botão Imprimir) */}
           <Button variant="outline" size="sm" onClick={() => window.print()} className="border-amber-200">
             <Printer className="w-4 h-4 mr-1" /> Imprimir
           </Button>
