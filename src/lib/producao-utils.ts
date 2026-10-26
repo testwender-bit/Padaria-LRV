@@ -70,6 +70,29 @@ export function formatarFormas(valor: number): string {
   return valor.toLocaleString('pt-BR', { maximumFractionDigits: 2 })
 }
 
+// v9.10.10: Formata uma quantidade de Pão Francês que pode conter Pão
+// Complemento para a impressão da folha de produção (ambas as vias).
+// O total impresso continua o MESMO (soma base + complemento), mas quando a
+// célula contém complemento ele aparece SEPARADO: "150 + 10" (= 160).
+// Regras:
+//  - total <= 0 → "—" (célula vazia, como sempre).
+//  - complemento > 0 E base (total − complemento) > 0 → "base + complemento".
+//  - complemento > 0 mas base = 0 → mostra só o total (nada a separar;
+//    evita o estranho "0 + 10").
+//  - sem complemento → número puro, exatamente como antes.
+// O formatador é injetado para manter o estilo de cada posição da tabela
+// (células de dia usam número puro; coluna TOTAL usa toLocaleString pt-BR).
+export function formatarPfComComplemento(
+  total: number,
+  complemento: number,
+  formatar: (n: number) => string = (n) => String(n)
+): string {
+  if (!(total > 0)) return '—'
+  const base = total - complemento
+  if (complemento > 0 && base > 0) return `${formatar(base)} + ${formatar(complemento)}`
+  return formatar(total)
+}
+
 // Dia de produção do LANCHE = MESMO DIA de entrega (D-0)
 export const LANCHE_PRODUCAO_PARA_ENTREGA: Record<string, DiaSemana> = {
   segunda: 'segunda',
@@ -195,6 +218,10 @@ export interface ItemProducao {
   ordem_pcq: number  // v9.6.3: ordenação ESPECÍFICA para PCQ (pão de cachorro quente)
   busca_propria: boolean
   produto: 'PF' | 'PCQ' | 'LANCHE' | 'PF_COMP'
+  // v9.10.10: true quando o item de PF é Pão Complemento (pf_comp — unidades
+  // com PCQ). Continua somando no PF normalmente; o flag existe para a
+  // impressão da produção mostrar "base + complemento" separados ("150 + 10").
+  complemento?: boolean
   quantidade: number
   unidade: string
   obs?: string

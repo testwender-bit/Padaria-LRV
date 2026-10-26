@@ -1,57 +1,44 @@
-# Patch v9.10.9 — PCQ + complemento p/ todas as unidades + página Romaneio inativada
+# Patch v9.10.10 — Complemento separado na folha de produção ("150 + 10")
 
-> **Arquivo:** `patch-v9.10.9.zip` · **Requisito:** aplicar por cima da
-> **v9.10.8** (sem mudanças de banco — nada de `prisma db push` nesta versão).
+> **Arquivo:** `patch-v9.10.10.zip` · **Requisito:** aplicar por cima da
+> **v9.10.9** (sem mudanças de banco — nada de `prisma db push` nesta versão).
 
-**O que resolve (2 ajustes):**
+**O que resolve (1 ajuste):**
 
-**Ajuste 1 — PF Complemento agrupado com o PCQ para TODAS as unidades.**
-Na folha do motorista (impressão da Produção), o "PCQ + PF Complemento" das
-unidades aparecia no formato **"2 + PF 20"** (2 formas de PCQ + 20 pães
-franceses de complemento) — mas isso valia **só para creches e bifásicas**.
-Qualquer outra unidade com PCQ + complemento cadastrados tinha o complemento
-**somado dentro do PF regular** (número escondido, sem o formato agrupado).
+Na folha de impressão **PRODUÇÃO — PÃO FRANCÊS** (as duas vias: 1ª e 2ª), o
+Pão Complemento aparecia **somado** junto com o pão francês normal da escola.
+Se a escola tinha 150 pães de produção da semana + 10 de complemento, a folha
+mostrava só **160** — sem dar para saber quanto era complemento.
 
-Agora **toda unidade cadastrada com PCQ + complemento** (pf_comp
-segunda/quarta/sexta > 0 em Configurações → PCQ) segue o mesmo formato:
+Agora, **onde houver complemento, o número aparece separado**:
 
-1. Na tabela **PCQ** da folha do motorista, o dia mostra **"2 + PF 20"**
-   (formas + complemento) — para **qualquer categoria** (Fundamental, Médio,
-   Interior, Creche, Bifásica...).
-2. O **TOTAL GERAL (FORMAS)** do dia mostra **"X + PF YY"** quando houver
-   complemento no dia (somando todas as escolas da rota).
-3. O complemento **não soma mais no PF regular** da unidade (o PF da tabela de
-   Pão Francês passa a ser só o PF do café da manhã — para creches/bifásicas
-   isso já era assim; agora é para todas).
-4. Regras preservadas: complemento só faz sentido com PCQ (PCQ zerado por
-   ajuste/feriado zera o complemento — v9.8.7); unidades **sem** complemento
-   cadastrado não mudam NADA; unidades INTERIOR especiais seguem como estavam
-   (v9.9.0); totais da folha somam todas as unidades.
-
-**Ajuste 2 — Página Romaneio (/romaneio) INATIVADA.**
-O romaneio do motorista já sai na impressão da Produção (botão Imprimir) e a
-página separada não era usada. Acessos removidos:
-
-1. **Menu lateral (desktop e mobile)**: item "Romaneio" removido (restam
-   Dashboard, Produção, Cardápio).
-2. **Produção**: o botão **"Romaneio →"** (que ficava ao lado de Imprimir) foi
-   removido.
-3. **Dashboard**: o card de acesso rápido "Romaneio" foi removido (ficam
-   Produção, Cardápio e Configurações).
-4. **/romaneio agora redireciona para /producao** — links antigos/favoritos
-   não quebram (mesmo padrão da /lanches na v9.9.0). O código da página antiga
-   está no histórico do git e pode voltar se um dia precisar.
-5. **A API /api/romaneio continua ATIVA** — é ela que alimenta a folha do
-   motorista impressa pela Produção.
+1. **Célula do dia**: escola com 100 pães base + 30 de complemento produzidos
+   na terça mostra **"100 + 30"** (a soma continua 130 — nada mudou no total).
+2. **Coluna TOTAL da escola**: complemento no decorrer da semana aparece
+   desdobrado, ex. **"510 + 50"** (antes mostrava só "560").
+3. **Linha TOTAL GERAL**: os totais do dia e da semana também desdobram o
+   complemento quando houver (ex. **"1.200 + 30"**), sempre batendo com a soma
+   das escolas acima.
+4. Vale para **TODAS as escolas** com complemento cadastrado (creche,
+   fundamental, interior — qualquer uma) e para as **duas vias** da impressão
+   (1ª e 2ª), que usam a mesma folha.
+5. **Escolas sem complemento não mudam NADA** (número puro, como sempre).
+   Caso a escola tenha só complemento no dia (sem pão base), a célula mostra
+   o número normal (nada a separar — nunca aparece "0 + 10").
+6. **A tela (view Semanal/Por Dia) continua igual** — o formato separado é só
+   na folha impressa.
+7. Regras preservadas: v9.8.7 (PCQ zerado por ajuste/feriado zera o
+   complemento), v9.10.9 (formato "X + PF YY" na folha do motorista), extras
+   de instituições avulsas sem complemento saem como sempre.
 
 ## Ordem de aplicação (GitHub Codespace)
 
 Com o terminal aberto **na raiz do projeto** (pasta que contém `package.json`),
-envie o arquivo `patch-v9.10.9.zip` para dentro dela e rode:
+envie o arquivo `patch-v9.10.10.zip` para dentro dela e rode:
 
 ```bash
 # 1) Extrai por cima, sobrescrevendo os arquivos:
-unzip -o patch-v9.10.9.zip
+unzip -o patch-v9.10.10.zip
 
 # 2) Esta versão NÃO altera o schema — NÃO precisa de `prisma db push`.
 
@@ -62,54 +49,51 @@ npm run start   # ou o supervisor de sempre
 
 ## Como conferir
 
-1. **Complemento geral**: cadastre PCQ + complemento (pf_comp) em uma unidade
-   que NÃO seja creche (Configurações → PCQ). Imprima a Produção: na folha do
-   motorista, a unidade aparece na tabela de PCQ como **"2 + PF 20"** nos dias
-   com PCQ — e o total do dia mostra "X + PF YY".
-2. **PF da unidade**: na mesma folha, a tabela de Pão Francês mostra só o PF
-   regular da unidade (sem o complemento somado).
-3. **Creches/bifásicas**: continuam exatamente como estavam.
-4. **Romaneio**: o item sumiu do menu lateral, o botão sumiu da Produção, o
-   card sumiu do Dashboard — e acessar /romaneio pelo navegador cai na
-   página de Produção.
-5. **Impressão da Produção**: a folha do motorista continua saindo no final
-   da impressão, agora como ÚNICA fonte do romaneio.
+1. Abra **Produção** → **Imprimir**. Na folha **PRODUÇÃO — PÃO FRANCÊS (1ª
+   via)**, a escola com complemento mostra o dia desdobrado (ex. **"100 + 30"**)
+   e a coluna TOTAL desdobrada (ex. **"510 + 50"**).
+2. A **2ª via** (página seguinte) mostra exatamente o mesmo formato.
+3. A linha **TOTAL GERAL** do dia mostra o complemento separado quando houver
+   (ex. **"1.200 + 30"**) e bate com a soma das escolas.
+4. Escolas **sem** complemento continuam com o número puro (ex. **"150"**).
+5. A folha do motorista (PCQ, no fim da impressão) continua com o formato
+   "2 + PF 20" da v9.10.9 — nada mudou lá.
+6. Na **tela** da Produção (view Semanal), os números continuam somados como
+   sempre — a mudança é só na impressão.
 
 ### Regras de negócio
 
-- O formato agrupado **"X + PF YY"** aparece **somente nos dias em que a
-  unidade tem PCQ > 0 E complemento > 0**; dias sem PCQ continuam "—".
-- A **coluna TOTAL** da tabela de PCQ continua mostrando só as FORMAS (o
-  complemento é indicado nos dias e no total do dia, como já era nas creches).
-- Unidades **sem complemento configurado**: nenhum comportamento muda (nem na
-  tabela de PF, nem na de PCQ).
-- **Feriado/ajuste** zerando o PCQ do dia zera também o complemento
-  (v9.8.7, inalterada) — nunca aparece "0 + PF 20".
-- A página /romaneio **não tem mais lógica própria**: qualquer acesso cai em
-  /producao. Mudanças futuras na folha do motorista são feitas SOMENTE na
-  impressão da página de Produção.
+- O formato **"base + complemento"** aparece **somente** onde a célula contém
+  complemento > 0 (dia com complemento, TOTAL da escola com complemento na
+  semana, total do dia/da semana com complemento de alguma escola).
+- A **soma impressa continua a mesma** de antes — é só uma separação visual;
+  nada muda em produção de fato, entregas, romaneio ou histórico.
+- Complemento zerado por ajuste/feriado (v9.8.7) → célula volta ao número puro
+  (nunca "0 + 10" nem "100 + 0").
+- Instituições avulsas (Produção Extra) não têm complemento → saem como sempre.
 
 ## Arquivos do patch
 
 | Arquivo | Mudança |
 |---|---|
-| `src/app/api/romaneio/route.ts` | **Ajuste 1**: pf_comp vai SEPARADO (agrupado no PCQ) para QUALQUER escola com complemento — removida a restrição creche/bifásica/interior |
-| `src/app/(app)/producao/page.tsx` | **Ajuste 1**: formato "PCQ + PF XX" sem checagem de categoria + **Ajuste 2**: botão "Romaneio →" e import Link removidos |
-| `src/lib/menu-config.ts` | **Ajuste 2**: item "Romaneio" removido do menu principal (desktop + mobile) |
-| `src/app/(app)/dashboard/page.tsx` | **Ajuste 2**: card "Romaneio" e import Truck removidos |
-| `src/app/(app)/romaneio/page.tsx` | **Ajuste 2**: página substituída por `redirect('/producao')` (código antigo no git) |
+| `src/app/api/producao/route.ts` | Itens de PF Complemento saem com flag `complemento: true` (2 blocos: domingo e D-1 ter/qui) — a soma no PF continua igual |
+| `src/lib/producao-utils.ts` | Campo `complemento?: boolean` em `ItemProducao` + helper `formatarPfComComplemento()` (formata "150 + 10") |
+| `src/lib/producao-semana-utils.ts` | Consolidador rastreia `pf_comp`/`total_pf_comp` por escola, por dia e no total geral (subconjunto do pf — soma intacta) |
+| `src/app/(app)/producao/page.tsx` | Folha PF impressa (1ª e 2ª vias): células de dia, coluna TOTAL da escola e linha TOTAL GERAL com o formato separado |
 
 ## Validação e commit
 
-- Testes: `scripts/test-complemento-romaneio-v9109.ts` (45 asserts: ROTA REAL
-  com db mockado — complemento separado p/ FUNDAMENTAL/CRECHE/INTERIOR, PF sem
-  complemento somado, totais, PCQ zerado zera complemento; fonte do menu/
-  botão/card/redirect; preservação v9.10.5–v9.10.8) + regressão completa
-  sincronizada — todos verdes; `tsc --noEmit` 0 erros; `npm run build` OK.
+- Testes: `scripts/test-pf-complemento-v91010.ts` (63 asserts: rota REAL com db
+  mockado — flag nos itens certos, totais somados intactos, v9.8.7 preservada;
+  consolidador REAL — pf_comp por escola/dia/total, extras sem poluir, higiene
+  de decimais; helper REAL — "150 + 10" e casos de borda; fonte — 2 vias, tela
+  intocada, v9.10.9 preservada; 200 semanas aleatórias com 0 violações) +
+  suíte completa de regressão (15 arquivos, todos verdes); `tsc --noEmit`
+  0 erros; `npm run build` OK.
 - Sugestão de commit (rode na raiz do projeto, após conferir o build):
 ```bash
 git add .
-git commit -m "v9.10.9: PCQ + complemento agrupado ('X + PF YY') para todas as unidades na folha do motorista + página /romaneio inativada (menu, botão e card removidos; redirect para /producao; API ativa)"
+git commit -m "v9.10.10: Pão Complemento separado na folha de produção PF ('150 + 10') — células de dia, TOTAL da escola e TOTAL GERAL, nas duas vias"
 git push
 ```
 

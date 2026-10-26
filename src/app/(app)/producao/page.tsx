@@ -29,7 +29,7 @@ import type { ProducaoDia, ItemProducao } from '@/lib/producao-utils'
 import { PF_PRODUCAO_PARA_ENTREGA, ehDiaProducaoDoProduto } from '@/lib/producao-utils'
 // v9.9.1: legenda discreta do PCQ para unidades Busca Própria — 1 forma = 50 pães
 // v9.9.2: formatarFormas — exibição pt-BR (vírgula) das formas nas tabelas de PCQ
-import { ehBuscaPropria, legendaPcqPaes, FORMA_PCQ_PAES, formatarFormas } from '@/lib/producao-utils'
+import { ehBuscaPropria, legendaPcqPaes, FORMA_PCQ_PAES, formatarFormas, formatarPfComComplemento } from '@/lib/producao-utils'
 import { consolidarProducaoSemana } from '@/lib/producao-semana-utils'
 import type { RomaneioMotorista } from '@/lib/romaneio-utils'
 import { agruparExtrasLancheFora } from '@/lib/romaneio-utils'  // v9.10.7
@@ -561,10 +561,16 @@ export default function ProducaoPage() {
                 <span className="print:hidden" style={{ color: '#999', fontSize: '0.85em', marginRight: '0.3em' }}>{escola.ordem_rota}</span>
                 {escola.nome_curto}
               </td>
+              {/* v9.10.10: dia com complemento mostra "base + complemento" (ex.: "150 + 10")
+                  — a soma continua a mesma; sem complemento, número puro como sempre */}
               {DIAS_PRODUCAO.map((d) => (
-                <td key={d} className="print-col-dia">{escola.pf[d] > 0 ? escola.pf[d] : '—'}</td>
+                <td key={d} className="print-col-dia">
+                  {formatarPfComComplemento(escola.pf[d], escola.pf_comp[d])}
+                </td>
               ))}
-              <td className="print-col-total">{escola.total_pf.toLocaleString('pt-BR')}</td>
+              <td className="print-col-total">
+                {formatarPfComComplemento(escola.total_pf, escola.total_pf_comp, (n) => n.toLocaleString('pt-BR'))}
+              </td>
             </tr>
           ))}
           {escolasOutrasPF.length > 0 && (
@@ -578,18 +584,30 @@ export default function ProducaoPage() {
                 <span className="print:hidden" style={{ color: '#999', fontSize: '0.85em', marginRight: '0.3em' }}>{escola.ordem_rota}</span>
                 {escola.nome_curto}
               </td>
+              {/* v9.10.10: mesmo formato das escolas regulares (extras não têm
+                  complemento — pf_comp fica 0 e a célula sai como sempre) */}
               {DIAS_PRODUCAO.map((d) => (
-                <td key={d} className="print-col-dia">{escola.pf[d] > 0 ? escola.pf[d] : '—'}</td>
+                <td key={d} className="print-col-dia">
+                  {formatarPfComComplemento(escola.pf[d], escola.pf_comp[d])}
+                </td>
               ))}
-              <td className="print-col-total">{escola.total_pf.toLocaleString('pt-BR')}</td>
+              <td className="print-col-total">
+                {formatarPfComComplemento(escola.total_pf, escola.total_pf_comp, (n) => n.toLocaleString('pt-BR'))}
+              </td>
             </tr>
           ))}
           <tr className="print-row-total">
             <td className="print-col-escola">TOTAL GERAL ({pfUnit.toUpperCase()})</td>
+            {/* v9.10.10: total do dia desdobra o complemento quando houver
+                (ex.: "1200 + 20") — some com a soma das escolas acima */}
             {DIAS_PRODUCAO.map((d) => (
-              <td key={d} className="print-col-dia">{consolidado.totais_por_dia.pf[d] || '—'}</td>
+              <td key={d} className="print-col-dia">
+                {formatarPfComComplemento(consolidado.totais_por_dia.pf[d] || 0, consolidado.totais_por_dia.pf_comp[d] || 0)}
+              </td>
             ))}
-            <td className="print-col-total">{consolidado.total_pf.toLocaleString('pt-BR')}</td>
+            <td className="print-col-total">
+              {formatarPfComComplemento(consolidado.total_pf, consolidado.total_pf_comp, (n) => n.toLocaleString('pt-BR'))}
+            </td>
           </tr>
         </tbody>
       </table>

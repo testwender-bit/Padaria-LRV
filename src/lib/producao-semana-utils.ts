@@ -23,9 +23,15 @@ export interface EscolaConsolidada {
   // "(N) = pães" (1 forma = 60 pães) na tela e na impressão da produção.
   busca_propria: boolean
   pf: Record<DiaProducao, number>
+  // v9.10.10: parte do PF que é Pão Complemento (item.complemento === true).
+  // É um DESDOBRAMENTO de pf (pf_comp[d] <= pf[d], sempre somado no pf) —
+  // usado pela impressão da folha de produção para mostrar "base + complemento"
+  // separados (ex.: "150 + 10"). Tela e demais consumers continuam lendo pf.
+  pf_comp: Record<DiaProducao, number>
   pcq: Record<DiaProducao, number>
   lanche: Record<DiaProducao, number>
   total_pf: number
+  total_pf_comp: number  // v9.10.10: parte do total_pf que é complemento
   total_pcq: number
   total_lanche: number
 }
@@ -34,10 +40,14 @@ export interface ProducaoConsolidada {
   escolas: EscolaConsolidada[]
   totais_por_dia: {
     pf: Record<DiaProducao, number>
+    // v9.10.10: parte do total do dia que é Pão Complemento (somando todas
+    // as escolas) — impressão mostra "base + complemento" na linha TOTAL GERAL.
+    pf_comp: Record<DiaProducao, number>
     pcq: Record<DiaProducao, number>
     lanche: Record<DiaProducao, number>
   }
   total_pf: number
+  total_pf_comp: number  // v9.10.10: parte do total_pf que é complemento
   total_pcq: number
   total_lanche: number
 }
@@ -52,8 +62,8 @@ export function consolidarProducaoSemana(
 ): ProducaoConsolidada {
   const empty: ProducaoConsolidada = {
     escolas: [],
-    totais_por_dia: { pf: diasVazios(), pcq: diasVazios(), lanche: diasVazios() },
-    total_pf: 0, total_pcq: 0, total_lanche: 0,
+    totais_por_dia: { pf: diasVazios(), pf_comp: diasVazios(), pcq: diasVazios(), lanche: diasVazios() },
+    total_pf: 0, total_pf_comp: 0, total_pcq: 0, total_lanche: 0,
   }
 
   if (!Array.isArray(producao) || producao.length === 0) return empty
@@ -79,9 +89,11 @@ export function consolidarProducaoSemana(
         // o flag vem da escola, não do produto)
         busca_propria: item.busca_propria === true,
         pf: diasVazios(),
+        pf_comp: diasVazios(),  // v9.10.10
         pcq: diasVazios(),
         lanche: diasVazios(),
         total_pf: 0,
+        total_pf_comp: 0,  // v9.10.10
         total_pcq: 0,
         total_lanche: 0,
       }
@@ -109,6 +121,12 @@ export function consolidarProducaoSemana(
       if (item.produto === 'PF' || item.produto === 'PF_COMP') {
         e.pf[diaProd] += item.quantidade
         e.total_pf += item.quantidade
+        // v9.10.10: desdobra a parte do Pão Complemento (o item continua
+        // contando no pf acima — pf_comp é um SUBCONJUNTO de pf, não um extra)
+        if (item.complemento === true) {
+          e.pf_comp[diaProd] += item.quantidade
+          e.total_pf_comp += item.quantidade
+        }
       } else if (item.produto === 'PCQ') {
         e.pcq[diaProd] += item.quantidade
         e.total_pcq += item.quantidade
@@ -127,29 +145,34 @@ export function consolidarProducaoSemana(
   mapa.forEach((e) => {
     DIAS_PRODUCAO.forEach((d) => {
       e.pf[d] = arredondarFormas(e.pf[d])
+      e.pf_comp[d] = arredondarFormas(e.pf_comp[d])  // v9.10.10
       e.pcq[d] = arredondarFormas(e.pcq[d])
       e.lanche[d] = arredondarFormas(e.lanche[d])
     })
     e.total_pf = arredondarFormas(e.total_pf)
+    e.total_pf_comp = arredondarFormas(e.total_pf_comp)  // v9.10.10
     e.total_pcq = arredondarFormas(e.total_pcq)
     e.total_lanche = arredondarFormas(e.total_lanche)
   })
 
   const totais_por_dia = {
     pf: diasVazios(),
+    pf_comp: diasVazios(),  // v9.10.10
     pcq: diasVazios(),
     lanche: diasVazios(),
   }
 
-  let total_pf = 0, total_pcq = 0, total_lanche = 0
+  let total_pf = 0, total_pf_comp = 0, total_pcq = 0, total_lanche = 0
 
   Array.from(mapa.values()).forEach((e) => {
     DIAS_PRODUCAO.forEach((d) => {
       totais_por_dia.pf[d] += e.pf[d]
+      totais_por_dia.pf_comp[d] += e.pf_comp[d]  // v9.10.10
       totais_por_dia.pcq[d] += e.pcq[d]
       totais_por_dia.lanche[d] += e.lanche[d]
     })
     total_pf += e.total_pf
+    total_pf_comp += e.total_pf_comp  // v9.10.10
     total_pcq += e.total_pcq
     total_lanche += e.total_lanche
   })
@@ -158,6 +181,7 @@ export function consolidarProducaoSemana(
   // valores já limpos, a acumulação binária pode reintroduzir resíduo.
   DIAS_PRODUCAO.forEach((d) => {
     totais_por_dia.pf[d] = arredondarFormas(totais_por_dia.pf[d])
+    totais_por_dia.pf_comp[d] = arredondarFormas(totais_por_dia.pf_comp[d])  // v9.10.10
     totais_por_dia.pcq[d] = arredondarFormas(totais_por_dia.pcq[d])
     totais_por_dia.lanche[d] = arredondarFormas(totais_por_dia.lanche[d])
   })
@@ -174,6 +198,7 @@ export function consolidarProducaoSemana(
     escolas,
     totais_por_dia,
     total_pf: arredondarFormas(total_pf),
+    total_pf_comp: arredondarFormas(total_pf_comp),  // v9.10.10
     total_pcq: arredondarFormas(total_pcq),
     total_lanche: arredondarFormas(total_lanche),
   }

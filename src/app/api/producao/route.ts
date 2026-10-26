@@ -211,6 +211,10 @@ export async function GET(request: Request) {
         ordem_pcq: (escola as any).ordem_pcq ?? 0,  // v9.6.3
         busca_propria: escola.busca_propria,
         produto: 'PF',
+        // v9.10.10: flag que identifica o item como PF Complemento — continua
+        // somando no PF (como sempre), mas permite à impressão da produção
+        // mostrar "base + complemento" separados (ex.: "150 + 10").
+        complemento: true,
         quantidade: qtd,
         unidade: 'un',
         dia_entrega: 'segunda',
@@ -459,7 +463,9 @@ export async function GET(request: Request) {
             qtd = 0
           }
 
-          // PF_COMP vai para itensPf como PF (sem sinalizar complemento)
+          // PF_COMP vai para itensPf como PF. v9.10.10: agora com o flag
+          // `complemento: true` — soma no PF como sempre, mas a impressão da
+          // produção usa o flag para mostrar "base + complemento" separados.
           // v9.5.8: dia_entrega indica o dia real de entrega (seg/qua/sex),
           // mas o item é injetado no dia de PRODUÇÃO (dom/ter/qui) — que é
           // o dia_key corrente deste loop.
@@ -473,6 +479,7 @@ export async function GET(request: Request) {
         ordem_pcq: (escola as any).ordem_pcq ?? 0,  // v9.6.3
             busca_propria: escola.busca_propria,
             produto: 'PF',
+            complemento: true,  // v9.10.10
             quantidade: qtd,
             unidade: 'un',
             dia_entrega: entregaDia,
