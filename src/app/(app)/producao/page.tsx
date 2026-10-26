@@ -561,16 +561,17 @@ export default function ProducaoPage() {
                 <span className="print:hidden" style={{ color: '#999', fontSize: '0.85em', marginRight: '0.3em' }}>{escola.ordem_rota}</span>
                 {escola.nome_curto}
               </td>
-              {/* v9.10.10: dia com complemento mostra "base + complemento" (ex.: "150 + 10")
-                  — a soma continua a mesma; sem complemento, número puro como sempre */}
+              {/* v9.10.10 · v9.10.11: dia com complemento mostra "base + complemento"
+                  (ex.: "150 + 10"; creche/qualquer escola com SÓ complemento no
+                  dia mostra "0 + 10") — a soma continua a mesma; sem complemento,
+                  número puro como sempre. Totais ficam em soma pura (abaixo). */}
               {DIAS_PRODUCAO.map((d) => (
                 <td key={d} className="print-col-dia">
                   {formatarPfComComplemento(escola.pf[d], escola.pf_comp[d])}
                 </td>
               ))}
-              <td className="print-col-total">
-                {formatarPfComComplemento(escola.total_pf, escola.total_pf_comp, (n) => n.toLocaleString('pt-BR'))}
-              </td>
+              {/* v9.10.11: coluna TOTAL volta à somatória pura (sem "+ x") */}
+              <td className="print-col-total">{escola.total_pf.toLocaleString('pt-BR')}</td>
             </tr>
           ))}
           {escolasOutrasPF.length > 0 && (
@@ -591,23 +592,19 @@ export default function ProducaoPage() {
                   {formatarPfComComplemento(escola.pf[d], escola.pf_comp[d])}
                 </td>
               ))}
-              <td className="print-col-total">
-                {formatarPfComComplemento(escola.total_pf, escola.total_pf_comp, (n) => n.toLocaleString('pt-BR'))}
-              </td>
+              {/* v9.10.11: idem no bloco Produção Extra — TOTAL puro */}
+              <td className="print-col-total">{escola.total_pf.toLocaleString('pt-BR')}</td>
             </tr>
           ))}
           <tr className="print-row-total">
             <td className="print-col-escola">TOTAL GERAL ({pfUnit.toUpperCase()})</td>
-            {/* v9.10.10: total do dia desdobra o complemento quando houver
-                (ex.: "1200 + 20") — some com a soma das escolas acima */}
+            {/* v9.10.11: linha TOTAL GERAL volta à somatória pura (ex.: "1200") —
+                sem o "+ x" para não poluir; o desdobramento fica nas células
+                de dia das escolas (formato v9.10.10/11 acima) */}
             {DIAS_PRODUCAO.map((d) => (
-              <td key={d} className="print-col-dia">
-                {formatarPfComComplemento(consolidado.totais_por_dia.pf[d] || 0, consolidado.totais_por_dia.pf_comp[d] || 0)}
-              </td>
+              <td key={d} className="print-col-dia">{consolidado.totais_por_dia.pf[d] || '—'}</td>
             ))}
-            <td className="print-col-total">
-              {formatarPfComComplemento(consolidado.total_pf, consolidado.total_pf_comp, (n) => n.toLocaleString('pt-BR'))}
-            </td>
+            <td className="print-col-total">{consolidado.total_pf.toLocaleString('pt-BR')}</td>
           </tr>
         </tbody>
       </table>

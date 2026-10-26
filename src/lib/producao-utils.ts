@@ -70,18 +70,22 @@ export function formatarFormas(valor: number): string {
   return valor.toLocaleString('pt-BR', { maximumFractionDigits: 2 })
 }
 
-// v9.10.10: Formata uma quantidade de Pão Francês que pode conter Pão
-// Complemento para a impressão da folha de produção (ambas as vias).
+// v9.10.10 · v9.10.11: Formata uma quantidade de Pão Francês que pode conter
+// Pão Complemento para a impressão da folha de produção (ambas as vias).
 // O total impresso continua o MESMO (soma base + complemento), mas quando a
 // célula contém complemento ele aparece SEPARADO: "150 + 10" (= 160).
 // Regras:
 //  - total <= 0 → "—" (célula vazia, como sempre).
-//  - complemento > 0 E base (total − complemento) > 0 → "base + complemento".
-//  - complemento > 0 mas base = 0 → mostra só o total (nada a separar;
-//    evita o estranho "0 + 10").
+//  - complemento > 0 → "base + complemento" SEMPRE — v9.10.11: mesmo com
+//    base = 0 (ex.: creche cujo pão vem só do complemento) mostra "0 + 10",
+//    para manter o padrão claro em todas as células com complemento.
+//  - defensivo: se a base desse negativa (dados inconsistentes), cai no
+//    número puro (nunca imprime valor negativo).
 //  - sem complemento → número puro, exatamente como antes.
-// O formatador é injetado para manter o estilo de cada posição da tabela
-// (células de dia usam número puro; coluna TOTAL usa toLocaleString pt-BR).
+// O formatador é injetado para manter o estilo de cada posição da tabela.
+// NOTA v9.10.11: na folha impressa, o helper agora é usado SOMENTE nas
+// células de dia — coluna TOTAL da escola e linha TOTAL GERAL voltaram à
+// somatória pura (toLocaleString), sem o "+ x", para não poluir os totais.
 export function formatarPfComComplemento(
   total: number,
   complemento: number,
@@ -89,7 +93,7 @@ export function formatarPfComComplemento(
 ): string {
   if (!(total > 0)) return '—'
   const base = total - complemento
-  if (complemento > 0 && base > 0) return `${formatar(base)} + ${formatar(complemento)}`
+  if (complemento > 0 && base >= 0) return `${formatar(base)} + ${formatar(complemento)}`
   return formatar(total)
 }
 
