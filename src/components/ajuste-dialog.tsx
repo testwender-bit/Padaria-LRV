@@ -19,6 +19,9 @@ import {
 } from '@/components/ui/select'
 import { PRODUTOS_AJUSTE } from '@/lib/unit-options'
 import { DIAS_SEMANA, DIAS_LABEL } from '@/lib/date-utils'
+// v9.10.12: parse/formatar decimais (PCQ é medido em formas — 0,5 passa a
+// ser aceito; antes o parseInt cortava para 0)
+import { parseQuantidadeDecimal, formatarValorDecimal } from '@/lib/producao-utils'
 import { toast } from 'sonner'
 import { Trash2 } from 'lucide-react'
 
@@ -47,15 +50,18 @@ export function AjusteDialog({
   semana,
   onSaved,
 }: AjusteDialogProps) {
-  const [qtdFinal, setQtdFinal] = useState(quantidadeOriginal)
+  // v9.10.12: a quantidade vive em TEXTO (o usuário digita "0,5" sem o input
+  // resetar no meio) e o número é derivado com parseQuantidadeDecimal.
+  const [qtdTexto, setQtdTexto] = useState(() => formatarValorDecimal(quantidadeOriginal))
   const [motivo, setMotivo] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    setQtdFinal(quantidadeOriginal)
+    setQtdTexto(formatarValorDecimal(quantidadeOriginal))
     setMotivo('')
   }, [quantidadeOriginal, open])
 
+  const qtdFinal = parseQuantidadeDecimal(qtdTexto)
   const ajuste = qtdFinal - quantidadeOriginal
 
   async function handleSave() {
@@ -138,16 +144,18 @@ export function AjusteDialog({
 
           <div>
             <Label>Quantidade Final</Label>
+            {/* v9.10.12: input decimal (vírgula ou ponto) — aceita "0,5" no PCQ */}
             <Input
-              type="number"
-              min={0}
-              value={qtdFinal}
-              onChange={(e) => setQtdFinal(parseInt(e.target.value) || 0)}
+              type="text"
+              inputMode="decimal"
+              value={qtdTexto}
+              onChange={(e) => setQtdTexto(e.target.value)}
+              placeholder="Ex: 2 ou 0,5"
               className="h-10"
             />
             {ajuste !== 0 && (
               <p className={`text-xs mt-1 ${ajuste > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                Delta: {ajuste > 0 ? '+' : ''}{ajuste} ({ajuste > 0 ? 'acréscimo' : 'redução'})
+                Delta: {ajuste > 0 ? '+' : ''}{ajuste.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} ({ajuste > 0 ? 'acréscimo' : 'redução'})
               </p>
             )}
           </div>
@@ -173,7 +181,7 @@ export function AjusteDialog({
             {qtdFinal !== quantidadeOriginal && (
               <Button
                 variant="outline"
-                onClick={() => setQtdFinal(quantidadeOriginal)}
+                onClick={() => setQtdTexto(formatarValorDecimal(quantidadeOriginal))}
                 className="border-amber-200"
               >
                 Resetar

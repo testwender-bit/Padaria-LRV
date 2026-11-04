@@ -29,7 +29,7 @@ import type { ProducaoDia, ItemProducao } from '@/lib/producao-utils'
 import { PF_PRODUCAO_PARA_ENTREGA, ehDiaProducaoDoProduto } from '@/lib/producao-utils'
 // v9.9.1: legenda discreta do PCQ para unidades Busca Própria — 1 forma = 50 pães
 // v9.9.2: formatarFormas — exibição pt-BR (vírgula) das formas nas tabelas de PCQ
-import { ehBuscaPropria, legendaPcqPaes, FORMA_PCQ_PAES, formatarFormas, formatarPfComComplemento } from '@/lib/producao-utils'
+import { ehBuscaPropria, legendaPcqPaes, FORMA_PCQ_PAES, formatarFormas, formatarPfComComplemento, parseQuantidadeDecimal, formatarValorDecimal, mesclarItensPcqExcepcionais, type EscolaPcqHabilitada } from '@/lib/producao-utils'
 import { consolidarProducaoSemana } from '@/lib/producao-semana-utils'
 import type { RomaneioMotorista } from '@/lib/romaneio-utils'
 import { agruparExtrasLancheFora } from '@/lib/romaneio-utils'  // v9.10.7
@@ -69,6 +69,9 @@ export default function ProducaoPage() {
       acao: string
     }>
     dias: ProducaoDia[]
+    // v9.10.12: escolas ATIVAS com PCQ habilitado (recebe_pcq + config) — view
+    // Por Dia lista unidades elegíveis em ter/qui como linhas excepcionais
+    escolas_pcq?: EscolaPcqHabilitada[]
   } | null>(null)
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'dia' | 'semana'>('semana')
@@ -87,6 +90,9 @@ export default function ProducaoPage() {
   const [extraForm, setExtraForm] = useState({
     nome_instituicao: '', produto: 'PF', dia_semana: 'segunda', motorista: '', quantidade: 0, observacao: '',
   })
+  // v9.10.12: quantidade do Inst. Extra vive em TEXTO p/ aceitar decimais
+  // ("0,5" de PCQ) sem o input resetar durante a digitação
+  const [extraQtdTexto, setExtraQtdTexto] = useState('')
   // v9.10.6: lanches cadastrados (página Lanches) — alimentam o select do
   // Inst. Extra: o usuário escolhe Pão Francês, PCQ ou um lanche cadastrado.
   const [lanchesCadastrados, setLanchesCadastrados] = useState<Array<{ id: string; nome: string }>>([])
@@ -141,7 +147,9 @@ export default function ProducaoPage() {
 
   // v9.5: handlers para produção extra
   async function handleSaveExtra() {
-    if (!extraForm.nome_instituicao.trim() || extraForm.quantidade <= 0) {
+    // v9.10.12: quantidade parseada de texto (vírgula/ponto, decimal ok)
+    const qtdExtra = parseQuantidadeDecimal(extraQtdTexto)
+    if (!extraForm.nome_instituicao.trim() || qtdExtra <= 0) {
       toast.error('Preencha nome e quantidade')
       return
     }
@@ -173,7 +181,7 @@ export default function ProducaoPage() {
           lanche_nome,
           dia_semana: extraForm.dia_semana,
           motorista: extraForm.motorista,
-          quantidade: extraForm.quantidade,
+          quantidade: qtdExtra,
           observacao: extraForm.observacao,
           ano,
           semana,
@@ -183,6 +191,7 @@ export default function ProducaoPage() {
         toast.success('Produção extra adicionada!')
         setExtraDialogOpen(false)
         setExtraForm({ nome_instituicao: '', produto: 'PF', dia_semana: 'segunda', motorista: '', quantidade: 0, observacao: '' })
+        setExtraQtdTexto('')
         loadData()
       } else {
         const json = await res.json().catch(() => ({}))
@@ -1278,7 +1287,8 @@ export default function ProducaoPage() {
           </TabsList>
           {diasComExtra.map((dia) => (
             <TabsContent key={dia.data} value={dia.data}>
-              <DiaProducaoCard dia={dia} onAjuste={openAjuste} />
+              {/* v9.10.12: passa as escolas com PCQ habilitado p/ linhas excepcionais */}
+              <DiaProducaoCard dia={dia} onAjuste={openAjuste} escolasPcqHabilitadas={data?.escolas_pcq || []} />
             </TabsContent>
           ))}
         </Tabs>
@@ -1648,12 +1658,13 @@ export default function ProducaoPage() {
               </div>
               <div>
                 <Label className="text-xs">Quantidade</Label>
+                {/* v9.10.12: input decimal (vírgula ou ponto) — aceita "0,5" no PCQ */}
                 <Input
-                  type="number"
-                  min={1}
-                  value={extraForm.quantidade || ''}
-                  onChange={(e) => setExtraForm({ ...extraForm, quantidade: parseInt(e.target.value) || 0 })}
-                  placeholder="0"
+                  type="text"
+                  inputMode="decimal"
+                  value={extraQtdTexto}
+                  onChange={(e) => setExtraQtdTexto(e.target.value)}
+                  placeholder="Ex: 100 ou 0,5"
                 />
               </div>
             </div>
@@ -1746,8 +1757,14 @@ export default function ProducaoPage() {
   )
 }
 
-function DiaProducaoCard({ dia, onAjuste }: { dia: ProducaoDia; onAjuste: (item: ItemProducao) => void }) {
+function DiaProducaoCard({ dia, onAjuste, escolasPcqHabilitadas }: { dia: ProducaoDia; onAjuste: (item: ItemProducao) => void; escolasPcqHabilitadas: EscolaPcqHabilitada[] }) {
   const temProducao = (dia.total_pf + dia.total_pcq + dia.total_lanche) > 0
+  // v9.10.12: PCQ do dia com linhas excepcionais — escolas habilitadas
+  // (recebe_pcq + config) sem item no dia (ter/qui sem ajuste) aparecem com
+  // quantidade "—" para permitir criar produção excepcional com um clique.
+  // Em seg/qua/sex a API já traz todas as elegíveis → nenhuma linha extra.
+  const itensPcqDia = mesclarItensPcqExcepcionais(dia.itens_pcq, escolasPcqHabilitadas, dia.dia_key)
+  const temFantasmaPcq = itensPcqDia.some((i) => i.excepcional === true)
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
@@ -1792,7 +1809,7 @@ function DiaProducaoCard({ dia, onAjuste }: { dia: ProducaoDia; onAjuste: (item:
       )}
 
       {/* PCQ */}
-      {dia.itens_pcq.length > 0 && (
+      {itensPcqDia.length > 0 && (
         <Card className="border-orange-200">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold text-orange-900 flex items-center gap-2"><Package className="w-4 h-4" /> Pão de Cachorro Quente</CardTitle></CardHeader>
           <CardContent className="p-0">
@@ -1805,15 +1822,20 @@ function DiaProducaoCard({ dia, onAjuste }: { dia: ProducaoDia; onAjuste: (item:
               </tr></thead>
               <tbody>
                 {/* v9.9.1: unidades Busca Própria mostram a conversão em pães —
-                    "1 (60)" = 1 forma = 60 pães de cachorro quente */}
-                {dia.itens_pcq.map((item) => {
+                    "1 (60)" = 1 forma = 60 pães de cachorro quente
+                    v9.10.12: lista mesclada com linhas excepcionais (escolas
+                    habilitadas sem produção no dia, quantidade "—") */}
+                {itensPcqDia.map((item) => {
                   const bp = ehBuscaPropria(item)
                   return (
-                  <tr key={item.escola_id} className="border-b border-muted/30 hover:bg-muted/20 cursor-pointer" onClick={() => onAjuste(item)}>
+                  <tr key={item.escola_id} className={`border-b border-muted/30 hover:bg-muted/20 cursor-pointer ${item.excepcional ? 'opacity-70' : ''}`} onClick={() => onAjuste(item)}>
                     <td className="p-2 font-medium">{item.escola_curto}</td>
                     <td className="p-2 text-right font-mono">
                       {item.zerado ? (
                         <span className="line-through text-red-400">{item.quantidade}</span>
+                      ) : item.excepcional ? (
+                        // v9.10.12: linha excepcional — nada programado no dia
+                        <span className="text-muted-foreground">—</span>
                       ) : (
                         <>
                           <span className={item.ajustado ? 'text-amber-600 font-semibold' : ''}>{item.quantidade.toLocaleString('pt-BR')}</span>
@@ -1826,6 +1848,12 @@ function DiaProducaoCard({ dia, onAjuste }: { dia: ProducaoDia; onAjuste: (item:
                     <td className="p-2 text-center">
                       {item.zerado && <Badge variant="destructive" className="text-[10px]"><AlertTriangle className="w-3 h-3 mr-0.5" /> Feriado</Badge>}
                       {item.ajustado && !item.zerado && <Badge className="bg-amber-100 text-amber-700 text-[10px]">Ajustado</Badge>}
+                      {/* v9.10.12: marca a linha excepcional (produção fora do padrão) */}
+                      {item.excepcional && (
+                        <Badge variant="outline" className="text-[10px] text-muted-foreground border-dashed" title="Escola com PCQ habilitado sem produção neste dia — clique em Ajustar para programar produção excepcional">
+                          Excepcional
+                        </Badge>
+                      )}
                     </td>
                     <td className="p-2"><Button variant="ghost" size="sm" className="h-6 text-[10px] text-muted-foreground">Ajustar</Button></td>
                   </tr>
@@ -1842,6 +1870,12 @@ function DiaProducaoCard({ dia, onAjuste }: { dia: ProducaoDia; onAjuste: (item:
             {dia.itens_pcq.some((i) => ehBuscaPropria(i) && !i.zerado && i.quantidade > 0) && (
               <p className="px-2 pb-2 text-[10px] text-muted-foreground">
                 (N) = pães de cachorro quente · 1 forma = {FORMA_PCQ_PAES} pães · unidades Busca Própria
+              </p>
+            )}
+            {/* v9.10.12: nota das linhas excepcionais — como criar produção fora do padrão */}
+            {temFantasmaPcq && (
+              <p className="px-2 pb-2 text-[10px] text-muted-foreground">
+                Escolas com PCQ habilitado aparecem mesmo sem produção neste dia — clique em <strong>Ajustar</strong> para programar uma produção excepcional.
               </p>
             )}
           </CardContent>

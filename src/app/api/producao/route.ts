@@ -641,6 +641,23 @@ export async function GET(request: Request) {
       dias: diasProducao,
       // v9.5.4: produções extras para a página injetar como ItemProducao
       producaoExtra,
+      // v9.10.12: escolas ATIVAS com PCQ habilitado (recebe_pcq + configuração
+      // de PCQ existente — mesmo critério de geração de itens da linha 328).
+      // A view Por Dia usa para listar as unidades elegíveis em dias sem
+      // produção padrão (ter/qui) como linhas "excepcionais" clicáveis, sem
+      // gerar itens zerados aqui (poluição evitada pela v9.10.4 permanece).
+      escolas_pcq: escolas
+        .filter((e: any) => e.recebe_pcq && (e.pcq_quantidades?.length ?? 0) > 0)
+        .map((e: any) => ({
+          id: e.id,
+          nome: e.nome,
+          nome_curto: e.nome_curto,
+          categoria: e.categoria,
+          rota: e.rota,
+          ordem_rota: e.ordem_rota ?? 0,
+          ordem_pcq: (e as any).ordem_pcq ?? 0,
+          busca_propria: e.busca_propria === true,
+        })),
     })
   } catch (error) {
     console.error('Erro ao calcular produção:', error)

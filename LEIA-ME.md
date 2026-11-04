@@ -1,63 +1,62 @@
-# Patch v9.10.11 — Padrão do complemento na folha de produção ("0 + x" + totais limpos)
+# Patch v9.10.12 — Decimais no ajuste de PCQ/Inst. Extra + produção excepcional direto no "Por Dia"
 
-> **Arquivo:** `patch-v9.10.11.zip` · **Requisito:** aplicar por cima da
-> **v9.10.10** (sem mudanças de banco — nada de `prisma db push` nesta versão).
+> **Arquivo:** `patch-v9.10.12.zip` · **Requisito:** aplicar por cima da
+> **v9.10.11** · ⚠️ **ESTA VERSÃO MUDA O SCHEMA — o `prisma db push` é
+> OBRIGATÓRIO** (primeira mudança de banco desde a v9.7.x; sem perda de dados).
 
-**O que resolve (2 refinamentos no formato da v9.10.10):**
+**O que resolve (2 ajustes):**
 
-Refino do desdobramento do Pão Complemento na folha **PRODUÇÃO — PÃO FRANCÊS**
-(1ª e 2ª vias), para um **padrão claro** em todas as células e totais limpos:
+1. **Ajuste de PCQ aceita DECIMAIS** (ex.: **0,5 forma**). Antes o campo
+   cortava com parseInt: digitou "0,5" virava **0**. Aceita vírgula OU ponto
+   ("0,5" / "0.5"), no ajuste de qualquer produto — e também no
+   **Inst. Extra** (produção extra de pão/lanches), que tinha o mesmo corte.
+   Para isso o banco passou a guardar esses valores como **número decimal
+   (Float)**: `Ajuste.qtd_original/ajuste/qtd_final` e
+   `ProducaoExtra.quantidade`. Registros inteiros antigos continuam válidos —
+   nada é perdido.
+2. **View POR DIA mostra escolas com PCQ habilitado mesmo em dias sem
+   produção padrão** (terça/quinta): a escola aparece com quantidade **"—"** e
+   o selo **"Excepcional"** — clicando em **Ajustar** você programa a produção
+   excepcional da hora (ex.: PCQ na quinta para um evento). Ao salvar, a
+   escola some da lista de "excepcionais" e entra como produção normal
+   (mecanismo da v9.10.4). A **view Semanal continua filtrando como está** —
+   nada muda lá.
 
-1. **Escola cujo pão vem SÓ do complemento (base 0 — ex.: creches)** agora
-   mostra **"0 + x"** (ex.: **"0 + 10"** = 10 de complemento, nada da base).
-   Antes a v9.10.10 mostrava só o número ("10") quando não havia pão base;
-   agora TODA célula com complemento segue o mesmo padrão
-   **base + complemento**.
-2. **Coluna TOTAL da escola voltou à somatória pura** (ex.: **"560"**) —
-   não mostra mais "+ 50". O desdobramento fica nas células do dia, onde é
-   útil para a produção.
-3. **Linha TOTAL GERAL também ficou limpa**: totais do dia (ex.: **"1.200"**)
-   e total da semana (ex.: **"8.060"**) em soma pura, sem "+ x" — para não
-   poluir os totais.
-4. **Célula do dia com base + complemento continua igual à v9.10.10**:
-   ex. **"100 + 30"** (soma 130 — nada mudou nos valores, só na apresentação).
-5. Vale para **TODAS as escolas** (creche, fundamental, interior — qualquer
-   uma) e para as **duas vias** da impressão (1ª e 2ª).
-6. **Escolas sem complemento não mudam NADA** (número puro, como sempre) e
-   dia sem produção continua com "—".
-7. **A tela (view Semanal/Por Dia) continua igual** — o formato separado é só
-   na folha impressa.
-8. Regras preservadas: v9.10.9 (formato "X + PF YY" na folha do motorista —
-   PCQ), v9.8.7 (PCQ zerado por ajuste/feriado zera o complemento), extras de
-   instituições avulsas sem complemento saem como sempre.
+**Preservado:** dias padrão (seg/qua/sex) continuam listando todas as escolas
+elegíveis como sempre; escolas sem PCQ habilitado não aparecem; v9.10.4
+(itens excepcionais só quando existe ajuste) intacta; v9.10.9/v9.10.10/
+v9.10.11 (formatos de impressão) intactas.
 
 ## Ordem de aplicação (GitHub Codespace)
 
 Com o terminal aberto **na raiz do projeto** (pasta que contém `package.json`),
-envie o arquivo `patch-v9.10.11.zip` para dentro dela e rode:
+envie o arquivo `patch-v9.10.12.zip` para dentro dela e rode:
 
 ```bash
 # 1) Extrai por cima, sobrescrevendo os arquivos:
-unzip -o patch-v9.10.11.zip
+unzip -o patch-v9.10.12.zip
 
-# 2) Esta versão NÃO altera o schema — NÃO precisa de `prisma db push`.
+# 2) ⚠️ OBRIGATÓRIO NESTA VERSÃO — aplica a mudança de schema (Int → Float):
+npx prisma db push
 
 # 3) Gere o build e reinicie:
 npm run build
 npm run start   # ou o supervisor de sempre
 ```
 
+> O `prisma db push` ajusta as colunas de `Ajuste` e `ProducaoExtra` para
+> número decimal e já atualiza o Prisma Client. É seguro: é um alargamento de
+> tipo (inteiro → decimal), os dados existentes não são tocados.
+
 ## Como conferir
 
-1. Abra **Produção** → **Imprimir**. Na folha **PRODUÇÃO — PÃO FRANCÊS (1ª
-   via)**:
-   - Escola com base + complemento: dia mostra **"100 + 30"**.
-   - Creche (ou qualquer unidade) que recebe pão **só** do complemento: dia
-     mostra **"0 + 10"**.
-   - Coluna **TOTAL** da escola: **"560"** (soma pura, sem "+ 50").
-   - Linha **TOTAL GERAL**: **"1.200"** no dia e **"8.060"** na semana (soma
-     pura).
-2. A **2ª via** (página seguinte) mostra exatamente o mesmo formato.
-3. Escolas **sem** complemento continuam com o número puro (ex. **"150"**).
-4. A folha do motorista (PCQ, no fim da impressão) continua com o formato
-   "2 + PF 20" da v9.10.9 — nada mudou lá.
+1. **Produção** → clique numa célula/forma de PCQ → **Ajustar** → digite
+   **0,5** → o Delta mostra **"+0,5"** → salvar. Na lista a escola mostra
+   **0,5** formas.
+2. **Inst. Extra** → adicionar produção extra → Quantidade **0,5** com produto
+   Pão de Cachorro Quente → salvar → entra no romaneio com 0,5.
+3. **Produção → Por Dia → Quinta**: as escolas com PCQ habilitado aparecem
+   com **"—"** e o selo **"Excepcional"**. Clique em **Ajustar**, digite a
+   quantidade (ex. **2**) e salve: a linha vira produção normal da quinta.
+4. **View Semanal**: continua mostrando apenas o que sempre mostrou (nada
+   mudou).

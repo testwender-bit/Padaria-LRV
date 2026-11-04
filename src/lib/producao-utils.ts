@@ -97,6 +97,85 @@ export function formatarPfComComplemento(
   return formatar(total)
 }
 
+// v9.10.12: Parse tolerante de quantidade digitada — aceita vírgula OU ponto
+// decimal ("0,5" / "0.5" → 0.5), clampa em >= 0 e cai em 0 se inválido.
+// Usado pelo diálogo de Ajuste e pelo Inst. Extra: PCQ é medido em FORMAS e
+// precisa aceitar decimais (0,5 forma = 25 pães), que antes eram cortados
+// pelo parseInt ("0,5" virava 0).
+export function parseQuantidadeDecimal(texto: string): number {
+  const normalizado = String(texto ?? '').trim().replace(',', '.')
+  const n = parseFloat(normalizado)
+  if (!Number.isFinite(n) || n < 0) return 0
+  return n
+}
+
+// v9.10.12: Formata número para EXIBIÇÃO no input decimal pt-BR (vírgula).
+// Inteiros saem sem casa decimal ("2"); 0.5 → "0,5".
+export function formatarValorDecimal(n: number): string {
+  if (!Number.isFinite(n)) return '0'
+  return String(n).replace('.', ',')
+}
+
+// v9.10.12: Mini-descritor da escola com PCQ habilitado — vem da API
+// /api/producao no campo `escolas_pcq` (escolas ATIVAS com recebe_pcq = true
+// e configuração de PCQ existente). A view Por Dia usa para listar unidades
+// elegíveis mesmo em dias sem produção padrão (ter/qui), permitindo criar
+// produção excepcional com um clique, sem poluir a API de itens.
+export interface EscolaPcqHabilitada {
+  id: string
+  nome: string
+  nome_curto: string
+  categoria: string
+  rota: string
+  ordem_rota: number
+  ordem_pcq: number
+  busca_propria: boolean
+}
+
+// v9.10.12: Mescla os itens de PCQ do dia com linhas "excepcionais" das escolas
+// habilitadas que ficaram sem item no dia. Casos:
+//  - seg/qua/sex (dias padrão): a API já gera item para TODAS as elegíveis
+//    (v9.7.3, inclusive zeradas) → nenhum fantasma é criado, lista intocada.
+//  - ter/qui (dias excepcionais, v9.10.4): a API só gera item p/ escola COM
+//    ajuste → as demais elegíveis ganham linha fantasma (quantidade 0 + flag
+//    `excepcional`), clicável para criar o ajuste que materializa a produção.
+//  - domingo: PCQ não tem produção nem excepcional → lista intocada.
+// A lista final é ordenada por ordem_pcq → nome_curto (mesmo critério da view
+// Semanal e da impressão), com extras (ordem_pcq 9999) por último.
+export function mesclarItensPcqExcepcionais(
+  itens: ItemProducao[],
+  escolasHabilitadas: EscolaPcqHabilitada[],
+  diaKey: string
+): ItemProducao[] {
+  const lista = [...(itens || [])]
+  if (diaKey === 'domingo') return lista
+  const presentes = new Set(lista.map((i) => i.escola_id))
+  for (const e of escolasHabilitadas || []) {
+    if (!e || !e.id || presentes.has(e.id)) continue
+    lista.push({
+      escola_id: e.id,
+      escola_nome: e.nome,
+      escola_curto: e.nome_curto,
+      categoria: e.categoria,
+      rota: e.rota,
+      ordem_rota: e.ordem_rota ?? 0,
+      ordem_pcq: e.ordem_pcq ?? 0,
+      busca_propria: e.busca_propria === true,
+      produto: 'PCQ',
+      quantidade: 0,
+      unidade: 'formas',
+      dia_entrega: diaKey,  // PCQ é D-0: produção = entrega
+      excepcional: true,
+    })
+  }
+  return lista.sort((a, b) => {
+    const oa = (a as any).ordem_pcq ?? 0
+    const ob = (b as any).ordem_pcq ?? 0
+    if (oa !== ob) return oa - ob
+    return (a.escola_curto || '').localeCompare(b.escola_curto || '')
+  })
+}
+
 // Dia de produção do LANCHE = MESMO DIA de entrega (D-0)
 export const LANCHE_PRODUCAO_PARA_ENTREGA: Record<string, DiaSemana> = {
   segunda: 'segunda',
@@ -233,6 +312,10 @@ export interface ItemProducao {
   ajustado?: boolean
   ajuste_motivo?: string  // v9.7.4: motivo do ajuste (para exibir na UI)
   ajuste_qtd_original?: number  // v9.7.4: qtd original antes do ajuste
+  // v9.10.12: linha EXCEPCIONAL da view Por Dia — escola habilitada p/ PCQ
+  // sem produção no dia (ter/qui), quantidade 0, clicável p/ criar ajuste.
+  // NÃO é item de produção real: some quando o ajuste/produção existir.
+  excepcional?: boolean
   zerado?: boolean
   feriado_nome?: string
 }

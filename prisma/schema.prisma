@@ -227,9 +227,13 @@ model Ajuste {
   escola_id    String
   dia_semana   String  // segunda, terca, quarta, quinta, sexta
   produto      String  // PF, PCQ, LANCHE, PF_COMP
-  qtd_original Int     @default(0)
-  ajuste       Int     @default(0) // delta (+/-)
-  qtd_final   Int     @default(0)
+  // v9.10.12: Float para aceitar decimais no ajuste (ex.: 0,5 forma de PCQ —
+  // PCQ é medido em formas e já era Float na config; o ajuste ficava preso em
+  // inteiro e arredondava o 0,5 para 0). Int → Float é widening seguro: os
+  // inteiros existentes continuam válidos.
+  qtd_original Float   @default(0)
+  ajuste       Float   @default(0) // delta (+/-)
+  qtd_final    Float   @default(0)
   motivo       String?
 
   escola Escola @relation(fields: [escola_id], references: [id], onDelete: Cascade)
@@ -258,7 +262,9 @@ model ProducaoExtra {
   // (regular/bifásico), o extra aparece "separadinho" na folha de produção de
   // Lanches, fora dos totais do lanche normal.
   lanche_nome      String?
-  quantidade       Int      @default(0)
+  // v9.10.12: Float para aceitar decimais no Inst. Extra (ex.: 0,5 forma de
+  // PCQ para um evento). Int → Float é widening seguro.
+  quantidade       Float    @default(0)
   observacao       String?
   criado_em        DateTime @default(now())
 
