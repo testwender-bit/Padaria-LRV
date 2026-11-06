@@ -22,6 +22,9 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
 import { dataISO } from '@/lib/date-utils'
+// v9.10.13: mesmo quadro de tarefas do banner da Produção — modo LEITURA
+// (a marcação das tarefas é feita na Produção); quebras de linha preservadas
+import { AvisoConteudo } from '@/components/aviso-conteudo'
 
 interface DashboardData {
   totalEscolas: number
@@ -166,9 +169,10 @@ export default function DashboardPage() {
           {data?.obs && (
             <div className="flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-              <div>
+              <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-amber-800">Aviso da Semana</p>
-                <p className="text-sm text-amber-700 mt-1">{data.obs}</p>
+                {/* v9.10.13: quadro de tarefas em modo leitura (marcação é na Produção) */}
+                <AvisoConteudo obs={data.obs} className="text-sm text-amber-700 mt-1" />
               </div>
             </div>
           )}

@@ -22,7 +22,12 @@ import {
   Edit2,
   Save,
   CalendarOff,
+  ListChecks,
 } from 'lucide-react'
+// v9.10.13: quadro de tarefas do aviso — checklist clicável no banner +
+// quebras de linha preservadas (antes o texto saía tudo corrido)
+import { AvisoConteudo } from '@/components/aviso-conteudo'
+import { alternarTarefa, converterLinhasEmTarefas } from '@/lib/aviso-utils'
 // v9.10.9: import Link removido — só servia ao botão "Romaneio →" (inativado)
 import { formatarData, numeroSemana, anoSemana, inicioSemana, fimSemana, formatarPeriodoSemana, dataISO, DIAS_SEMANA, DIAS_LABEL_CURTO, DIAS_PRODUCAO, DIAS_LABEL_CURTO_PRODUCAO, type DiaSemana, type DiaProducao } from '@/lib/date-utils'
 import type { ProducaoDia, ItemProducao } from '@/lib/producao-utils'
@@ -208,6 +213,35 @@ export default function ProducaoPage() {
         loadData()
       }
     } catch { toast.error('Erro ao remover') }
+  }
+
+  // v9.10.13: marcar/desmarcar tarefa do quadro de avisos (checklist) —
+  // atualização otimista + PATCH /api/cardapio (mesmo fluxo do editar aviso;
+  // sem reload completo para o clique não "piscar" a página toda)
+  async function alternarTarefaAviso(indice: number) {
+    if (!data || !data.obs || !data.cardapio_id) return
+    const novoObs = alternarTarefa(data.obs, indice)
+    if (novoObs === data.obs) return
+    const obsAnterior = data.obs
+    setData({ ...data, obs: novoObs })
+    try {
+      const res = await fetch('/api/cardapio', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cardapio_id: data.cardapio_id,
+          obs: novoObs,
+        }),
+      })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        toast.error(json.error || 'Erro ao salvar tarefa')
+        setData({ ...data, obs: obsAnterior })
+      }
+    } catch {
+      toast.error('Erro de conexão')
+      setData({ ...data, obs: obsAnterior })
+    }
   }
 
   // v9.7.5: abrir diálogo de edição do "Aviso da Semana"
@@ -1226,7 +1260,13 @@ export default function ProducaoPage() {
               {data.obs && (
                 <div>
                   <p className="text-sm font-semibold text-amber-800">Aviso da Semana {data.semana}</p>
-                  <p className="text-sm text-amber-700">{data.obs}</p>
+                  {/* v9.10.13: quadro de tarefas — linhas "[ ]" viram checklist clicável
+                      (marca como feita e salva na hora); texto comum mantém as quebras */}
+                  <AvisoConteudo
+                    obs={data.obs}
+                    onAlternarTarefa={alternarTarefaAviso}
+                    className="text-sm text-amber-700 mt-0.5"
+                  />
                 </div>
               )}
               {/* v9.7.5: Alerta de feriados da semana */}
@@ -1710,11 +1750,32 @@ export default function ProducaoPage() {
               <Label className="text-xs">Mensagem do aviso</Label>
               <textarea
                 className="w-full min-h-[120px] p-2 text-sm rounded-md border border-input bg-background resize-y focus:outline-none focus:ring-2 focus:ring-[#1A3A5C]/30"
-                placeholder="Ex: Semana com feriado na quinta — produção reduzida. Reunião pedagógica sexta à tarde."
+                placeholder={'Ex: Semana com feriado na quinta — produção reduzida.\n[ ] Separar formas da creche na quinta\n[ ] Levar balança para a calibração'}
                 value={avisoEditando}
                 onChange={(e) => setAvisoEditando(e.target.value)}
                 autoFocus
               />
+              {/* v9.10.13: dica de checklist + conversão em 1 clique — cada linha
+                  não-vazia ganha o prefixo "[ ] " e vira tarefa marcável no banner */}
+              <div className="flex items-start justify-between gap-2 mt-1.5">
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  Dica: comece uma linha com{' '}
+                  <code className="font-mono bg-muted px-1 rounded">[ ]</code>{' '}
+                  para criar uma tarefa — a equipe marca como feita direto no banner (fica riscada).
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 shrink-0 text-xs"
+                  disabled={!avisoEditando.trim() || avisoSalvando}
+                  onClick={() => setAvisoEditando(converterLinhasEmTarefas(avisoEditando))}
+                  title="Prefixa cada linha com [ ] para virar tarefa marcável"
+                >
+                  <ListChecks className="w-3.5 h-3.5 mr-1" />
+                  Virar tarefas
+                </Button>
+              </div>
             </div>
             {/* v9.7.5: mostrar feriados da semana como informação para o usuário */}
             {data?.feriados_semana && data.feriados_semana.length > 0 && (
