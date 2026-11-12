@@ -32,6 +32,9 @@ import { alternarTarefa, converterLinhasEmTarefas } from '@/lib/aviso-utils'
 import { formatarData, numeroSemana, anoSemana, inicioSemana, fimSemana, formatarPeriodoSemana, dataISO, DIAS_SEMANA, DIAS_LABEL_CURTO, DIAS_PRODUCAO, DIAS_LABEL_CURTO_PRODUCAO, type DiaSemana, type DiaProducao } from '@/lib/date-utils'
 import type { ProducaoDia, ItemProducao } from '@/lib/producao-utils'
 import { PF_PRODUCAO_PARA_ENTREGA, ehDiaProducaoDoProduto } from '@/lib/producao-utils'
+// v9.10.14: 2ª via da folha de PF virou GUIA DE SEPARAÇÃO — manhã = pão
+// comum (entregas da manhã), tarde = complemento (sai junto com o PCQ)
+import { montarGuiaSeparacao, formatarDataCurta, diaProduzidoLabel } from '@/lib/separacao-utils'
 // v9.9.1: legenda discreta do PCQ para unidades Busca Própria — 1 forma = 50 pães
 // v9.9.2: formatarFormas — exibição pt-BR (vírgula) das formas nas tabelas de PCQ
 import { ehBuscaPropria, legendaPcqPaes, FORMA_PCQ_PAES, formatarFormas, formatarPfComComplemento, parseQuantidadeDecimal, formatarValorDecimal, mesclarItensPcqExcepcionais, type EscolaPcqHabilitada } from '@/lib/producao-utils'
@@ -52,6 +55,15 @@ function entregaFromProducao(diaProd: DiaProducao, produto: string): string {
     return PF_PRODUCAO_PARA_ENTREGA[diaProd] || diaProd
   }
   return diaProd
+}
+
+// v9.10.14: rótulo completo dos dias de entrega no título da guia de separação
+const DIAS_LABEL_GUIA: Record<DiaSemana, string> = {
+  segunda: 'SEGUNDA-FEIRA',
+  terca: 'TERÇA-FEIRA',
+  quarta: 'QUARTA-FEIRA',
+  quinta: 'QUINTA-FEIRA',
+  sexta: 'SEXTA-FEIRA',
 }
 
 export default function ProducaoPage() {
@@ -549,6 +561,10 @@ export default function ProducaoPage() {
     sexta: dataISO(addDays(inicio, 4)),
   }
 
+  // v9.10.14: dados da GUIA DE SEPARAÇÃO (2ª via do PF) — mesmo consolidador
+  // da folha: manhã = base (pf − pf_comp), tarde = complemento (pf_comp)
+  const guiaSeparacao = montarGuiaSeparacao(escolasPF, datasEntrega)
+
   // ---------- Componente de impressão da página PF ----------
   const printPFPage = (copyLabel?: string) => (
     <div>
@@ -658,6 +674,112 @@ export default function ProducaoPage() {
     </div>
   )
 
+  // ---------- v9.10.14: PÁGINA 2 — GUIA DE SEPARAÇÃO (substitui a 2ª via) ----------
+  // Os padeiros misturavam o pão comum (manhã) com o complemento (tarde) na
+  // hora de despachar. A guia lista, por DIA DE ENTREGA, o que separar de
+  // MANHÃ (pão comum) e à TARDE (complemento, que sai junto com o PCQ), com
+  // quadrinho para marcar cada linha conferida.
+  const printGuiaSeparacao = () => (
+    <div>
+      <div className="print-doc-header">
+        <div className="print-doc-header-left">
+          <div className="print-doc-logo"><img src="/brasao.jpg" alt="Brasão" /></div>
+          <div className="print-doc-title-block">
+            <div className="print-doc-title">GUIA DE SEPARAÇÃO — PÃO FRANCÊS</div>
+            <div className="print-doc-subtitle">Padaria Escolar Municipal — Prefeitura de Lucas do Rio Verde / MT</div>
+            <div className="print-doc-subtitle">Separar por escola, quantidade e PERÍODO — manhã e tarde NÃO se misturam</div>
+          </div>
+        </div>
+        <div className="print-doc-header-right">
+          <div className="print-doc-gerado">GERADO EM</div>
+          <div className="print-doc-gerado-date">{geradoEm}</div>
+        </div>
+      </div>
+
+      <div className="print-info-block">
+        <div className="print-info-left">
+          <div className="print-info-semana">SEMANA {data.semana} / {data.ano}</div>
+          <div className="print-info-periodo">{formatarPeriodoSemana(inicioSemana(inicio), fimSemana(inicio))}</div>
+        </div>
+        <div className="print-info-right">
+          <div className="print-info-inline">
+            <span className="print-info-item"><span className="print-info-label">PÃO:</span> {data.nomePao}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* A regra que resolve a confusão, logo no topo */}
+      <div className="print-feriado">
+        MANHÃ = pão francês comum (entregas da manhã) · TARDE = PÃO COMPLEMENTO (sai junto com o PCQ). Separe em caixas diferentes e marque cada linha conferida.
+      </div>
+
+      {guiaSeparacao.length === 0 && (
+        <div className="print-feriado">Nenhum pão francês a separar nesta semana.</div>
+      )}
+
+      {guiaSeparacao.map((dia) => (
+        <div key={dia.dia_entrega}>
+          <div className="print-section-header">
+            <span className="print-section-title-text">
+              {DIAS_LABEL_GUIA[dia.dia_entrega]} · {formatarDataCurta(dia.data)}
+              <span style={{ color: '#ddd', fontSize: '9pt', fontWeight: 400, textTransform: 'none' }}>
+                {' '}— pão produzido {diaProduzidoLabel(dia.dia_producao)}
+              </span>
+            </span>
+            <span className="print-section-total">Total: {dia.total_dia.toLocaleString('pt-BR')} {pfUnit}</span>
+          </div>
+          <table className="print-table">
+            <thead>
+              <tr>
+                <th className="print-col-guia-escola">ESCOLA / UNIDADE</th>
+                <th className="print-col-guia-qtd">QTD</th>
+                <th className="print-col-guia-check">CONFERIDO</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="print-row-separator-black">
+                <td colSpan={3}>MANHÃ — PÃO FRANCÊS COMUM ({dia.manha.total.toLocaleString('pt-BR')} {pfUnit})</td>
+              </tr>
+              {dia.manha.linhas.length === 0 && (
+                <tr><td colSpan={3} className="print-guia-vazio">— nada a separar de manhã —</td></tr>
+              )}
+              {dia.manha.linhas.map((l) => (
+                <tr key={`m-${dia.dia_entrega}-${l.id}`}>
+                  <td className="print-col-guia-escola">
+                    {l.nome_curto}
+                    {l.busca_propria && <span className="print-guia-tag"> · busca própria</span>}
+                    {l.extra && <span className="print-guia-tag"> · extra</span>}
+                  </td>
+                  <td className="print-col-guia-qtd">{l.quantidade.toLocaleString('pt-BR')}</td>
+                  <td className="print-col-guia-check"><span className="print-check" /></td>
+                </tr>
+              ))}
+              <tr className="print-row-separator">
+                <td colSpan={3}>TARDE — PÃO COMPLEMENTO ({dia.tarde.total.toLocaleString('pt-BR')} {pfUnit})</td>
+              </tr>
+              {dia.tarde.linhas.length === 0 && (
+                <tr><td colSpan={3} className="print-guia-vazio">— nada a separar à tarde —</td></tr>
+              )}
+              {dia.tarde.linhas.map((l) => (
+                <tr key={`t-${dia.dia_entrega}-${l.id}`}>
+                  <td className="print-col-guia-escola">
+                    {l.nome_curto}
+                    {l.busca_propria && <span className="print-guia-tag"> · busca própria</span>}
+                    {l.extra && <span className="print-guia-tag"> · extra</span>}
+                  </td>
+                  <td className="print-col-guia-qtd">{l.quantidade.toLocaleString('pt-BR')}</td>
+                  <td className="print-col-guia-check"><span className="print-check" /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+
+      <div className="print-footer">Sistema de Gestão da Padaria Escolar Municipal — Lucas do Rio Verde / MT</div>
+    </div>
+  )
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
 
@@ -667,9 +789,12 @@ export default function ProducaoPage() {
         {/* ==================== PÁGINA 1: PÃO FRANCÊS (1ª via) ==================== */}
         {printPFPage('1ª via')}
 
-        {/* ==================== PÁGINA 2: PÃO FRANCÊS (2ª via) ==================== */}
+        {/* ==================== PÁGINA 2: GUIA DE SEPARAÇÃO ====================
+            v9.10.14: era a 2ª via da folha de PF (cópia da 1ª). Virou guia de
+            separação: dia → escola → quantidade → período (manhã = pão comum,
+            tarde = complemento), porque os padeiros mandavam tudo junto. */}
         <div className="print-page-break">
-          {printPFPage('2ª via')}
+          {printGuiaSeparacao()}
         </div>
 
         {/* ==================== PÁGINA 3: PCQ ==================== */}

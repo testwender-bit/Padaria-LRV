@@ -1,66 +1,54 @@
-# Patch v9.10.13 — Quadro de Tarefas no Aviso da Semana (checklist marcável + parágrafos preservados)
+# Patch v9.10.14 — Guia de Separação no lugar da 2ª via do Pão Francês
 
-> **Arquivo:** `patch-v9.10.13.zip` · **Requisito:** aplicar por cima da
-> **v9.10.12** · ✅ **SEM mudança de schema** — não precisa `prisma db push`.
+> **Arquivo:** `patch-v9.10.14.zip` · **Requisito:** aplicar por cima da
+> **v9.10.13** · ✅ **SEM mudança de schema** — não precisa `prisma db push`.
 
-**O que resolve (2 melhorias no quadro de avisos da Produção):**
+**O que resolve:** os padeiros estavam misturando o **pão francês comum** (que
+sai nas entregas da **manhã**) com o **pão complemento** (que sai à **tarde**,
+junto com a entrega do PCQ). Na folha de produção o complemento já aparece
+separado ("150 + 10"), mas na correria do despacho tudo acabava indo junto
+na caixa da manhã.
 
-1. **Aviso vira QUADRO DE TAREFAS (checklist).** No diálogo de edição do
-   aviso, qualquer linha que começar com **`[ ]`** aparece no banner como uma
-   **caixinha clicável** — a equipe clica e a tarefa fica **marcada como feita**
-   (riscada, caixinha verde) na hora, sem recarregar a página. Um selo
-   **"Tarefas: x/y concluídas"** resume o progresso (fica verde quando tudo
-   está feito). Exemplo de aviso:
+**A mudança:** a 2ª via da folha de Pão Francês (que era só uma cópia da 1ª)
+virou uma **GUIA DE SEPARAÇÃO** — uma lista de conferência para pendurar na
+bancada, organizada por **dia de entrega**:
 
-   ```
-   Semana com feriado na quinta — produção reduzida.
-   [ ] Separar formas da creche na quinta
-   [x] Levar balança para a calibração
-   ```
+1. **Um bloco por dia** (SEGUNDA · 09/11 — pão produzido na madrugada de
+   segunda; QUARTA · 11/11 — produzido na terça; SEXTA · 13/11 — produzido
+   na quinta), com o total do dia no cabeçalho.
+2. Dentro de cada dia, **dois períodos bem separados**:
+   - **MANHÃ — PÃO FRANCÊS COMUM**: escolas da entrega da manhã, na mesma
+     ordem da rota (as instituições do Inst. Extra ficam por último com o
+     rótulo "extra", e unidades de busca própria com o rótulo "busca própria").
+   - **TARDE — PÃO COMPLEMENTO**: só as escolas com complemento, **na mesma
+     ordem da folha do motorista do PCQ** (o complemento viaja com o PCQ),
+     para carregar a caixa na sequência certa.
+3. Cada linha tem **escola + quantidade + quadrinho para marcar** quando
+   terminar de separar — e o aviso no topo da folha: manhã e tarde **não se
+   misturam**; separe em caixas diferentes.
+4. Escola zerada por feriado/ajuste **não aparece na lista** (a guia é lista
+   de separação, não tabela de conferência) e dias sem pão viram bloco.
 
-   Para facilitar, o diálogo ganhou o botão **"Virar tarefas"**: converte
-   todas as linhas do texto em tarefas de uma vez. Marcar/desmarcar salva
-   direto no mesmo campo de sempre (obs do cardápio da semana) — se a conexão
-   falhar, a marcação volta atrás com aviso.
-
-2. **Parágrafos não somem mais.** Antes o banner juntava tudo numa linha só,
-   mesmo digitando parágrafo de baixo na edição. Agora **cada linha digitada
-   aparece como um parágrafo próprio**, tanto no banner da **Produção** quanto
-   no do **Dashboard**.
-
-**Preservado:** avisos de texto puro continuam funcionando exatamente como
-estão (o checklist é opcional — só vira tarefa quem tiver `[ ]`); no
-**Dashboard** o quadro é só leitura (a marcação é feita na Produção); o banner
-continua **fora da impressão** (v9.8.2); placeholder "Nenhum aviso" (v9.9.0);
-edição via diálogo (v9.7.5); nada muda em produção/romaneio/impressões.
+**Intocadas:** 1ª via da folha de PF (com o "150 + 10" das células), folha de
+PCQ, romaneio dos motoristas, tela Semanal/Por Dia — nada mudou nelas. A guia
+é derivada do MESMO consolidador da produção: qualquer ajuste/feriado já
+reflete nela automaticamente.
 
 ## Ordem de aplicação (GitHub Codespace)
 
-Com o terminal aberto **na raiz do projeto** (pasta que contém `package.json`),
-envie o arquivo `patch-v9.10.13.zip` para dentro dela e rode:
+Com o terminal aberto na pasta do projeto:
 
 ```bash
-# 1) Extrai por cima, sobrescrevendo os arquivos:
-unzip -o patch-v9.10.13.zip
-
-# 2) Gere o build e reinicie:
+unzip -o patch-v9.10.14.zip
 npm run build
-npm run start   # ou o supervisor de sempre
-
-# 3) Versiona:
-git add .
-git commit -m "v9.10.13: quadro de tarefas no aviso da semana (checklist + parágrafos)"
-git push
+npm run start
 ```
 
-## Como conferir
+Depois confirme em **Produção → Imprimir**: a página 2 agora sai com o título
+"GUIA DE SEPARAÇÃO — PÃO FRANCÊS". Sem `db push`, sem migração.
 
-1. **Produção** → no banner "Aviso da Semana", clique no lápis ✏️ para editar.
-2. Escreva um aviso com linhas começando em `[ ]` (ou cole um texto e clique
-   **"Virar tarefas"**) → **Salvar Aviso**.
-3. No banner: cada linha `[ ]` virou uma **caixinha**. Clique nela → fica
-   **riscada/verde** e o selo sobe para "1/2 concluídas". Recarregue a página —
-   a marcação continua salva.
-4. **Dashboard**: o mesmo aviso mostra as caixinhas (só leitura, sem clique).
-5. Texto sem `[ ]` continua aparecendo normal — agora respeitando os
-   parágrafos que você digitou.
+Para registrar no git:
+
+```bash
+git add . && git commit -m "v9.10.14" && git push
+```

@@ -481,6 +481,51 @@
     color: #000;
     font-weight: 600;
   }
+
+  /* ============================================================
+     v9.10.14 — GUIA DE SEPARAÇÃO (2ª via do Pão Francês)
+     Lista de separação por dia: escola | quantidade | conferido.
+     Tabela de 3 colunas com layout próprio (a print-table padrão
+     tem 8 colunas de dias).
+     ============================================================ */
+  .print-col-guia-escola {
+    width: 62%;
+    text-align: left;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .print-col-guia-qtd {
+    width: 18%;
+    text-align: right;
+    font-weight: 700;
+  }
+  .print-col-guia-check {
+    width: 20%;
+    text-align: center;
+  }
+  /* Quadrinho de conferência — padeiro marca ao separar cada linha */
+  .print-check {
+    display: inline-block;
+    width: 4mm;
+    height: 4mm;
+    border: 1pt solid #000;
+    vertical-align: middle;
+  }
+  /* Rótulo menor junto ao nome (busca própria / extra) */
+  .print-guia-tag {
+    font-size: 8pt;
+    color: #555;
+    font-weight: 400;
+  }
+  /* Linha vazia dos blocos ("nada a separar") */
+  table.print-table td.print-guia-vazio {
+    text-align: center;
+    color: #888 !important;
+    font-style: italic;
+    font-size: 9pt;
+  }
 }
 
 /* ============================================================
@@ -1317,7 +1362,7 @@
        centrado — presença clara sem cobrir cantos com conteúdo denso */
     width: 130mm !important;
     height: auto !important;
-    opacity: 0.12 !important;
+    opacity: 0.08 !important;
     /* por cima do conteúdo (fundo branco das células não o esconde);
        pointer-events none → nunca intercepta cliques/seleção */
     z-index: 2147483647 !important;
