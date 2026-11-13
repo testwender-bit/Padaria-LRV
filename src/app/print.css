@@ -357,8 +357,8 @@
     background: #f5f5f5 !important;
   }
 
-  /* Separator row (instituições) */
-  table.print-table tr.print-row-separator td {
+  /* Separator row (instituições / tarde complemento) */
+  table.print-table tbody tr.print-row-separator td {
     background: #555 !important;
     color: white !important;
     font-weight: 700;
@@ -373,8 +373,8 @@
   }
 
   /* v9.5.2: Variante com texto PRETO para o cabeçalho "Produção Extra" */
-  table.print-table tr.print-row-separator-black td {
-    background: #555 !important;
+  table.print-table tbody tr.print-row-separator-black td {
+    background: #d9d9d9 !important;
     color: #000 !important;
     font-weight: 700;
     text-transform: none;
@@ -388,7 +388,7 @@
   }
 
   /* Total row */
-  table.print-table tr.print-row-total td {
+  table.print-table tbody tr.print-row-total td {
     background: #ccc !important;
     color: #000 !important;
     font-weight: 800;
@@ -402,7 +402,7 @@
   }
 
   /* Subtotal row */
-  table.print-table tr.print-row-subtotal td {
+  table.print-table tbody tr.print-row-subtotal td {
     background: #ddd !important;
     font-weight: 700;
     color: #000 !important;
@@ -483,39 +483,68 @@
   }
 
   /* ============================================================
-     v9.10.14 — GUIA DE SEPARAÇÃO (2ª via do Pão Francês)
-     Lista de separação por dia: escola | quantidade | conferido.
-     Tabela de 3 colunas com layout próprio (a print-table padrão
-     tem 8 colunas de dias).
+     GUIA DE SEPARAÇÃO — 1 FOLHA A4 (MANHÃ vs TARDE, SEM CHECKBOX)
+     Matriz semanal por dia de entrega (7 colunas alinhadas)
      ============================================================ */
+  .print-guia-page .print-doc-header {
+    margin-bottom: 2mm;
+    padding-bottom: 1.5mm;
+  }
+  .print-guia-page .print-info-block {
+    margin-bottom: 1.5mm;
+    padding: 1mm 0;
+  }
+  .print-guia-rule {
+    background: #fff;
+    border: 1pt solid #000;
+    border-left: 3pt solid #000;
+    padding: 1mm 2.5mm;
+    margin: 1mm 0 1.5mm 0;
+    font-size: 9pt;
+    color: #000;
+    line-height: 1.25;
+  }
+  .print-guia-section-manha {
+    background: #000 !important;
+    color: #fff !important;
+    margin: 1.5mm 0 1mm 0 !important;
+    padding: 1mm 2.5mm !important;
+  }
+  .print-guia-section-tarde {
+    background: #333 !important;
+    color: #fff !important;
+    margin: 2.5mm 0 1mm 0 !important;
+    padding: 1mm 2.5mm !important;
+  }
+  table.print-table.print-guia-table th {
+    padding: 0.65mm 1mm;
+    font-size: 8.5pt;
+  }
+  table.print-table.print-guia-table td {
+    padding: 0.45mm 1mm;
+    font-size: 9.5pt;
+    line-height: 1.1;
+  }
   .print-col-guia-escola {
-    width: 62%;
-    text-align: left;
+    width: 33%;
+    text-align: left !important;
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .print-col-guia-qtd {
-    width: 18%;
-    text-align: right;
+  .print-col-guia-dia {
+    width: 11%;
+    text-align: center !important;
+  }
+  .print-col-guia-total {
+    width: 12%;
+    text-align: right !important;
     font-weight: 700;
-  }
-  .print-col-guia-check {
-    width: 20%;
-    text-align: center;
-  }
-  /* Quadrinho de conferência — padeiro marca ao separar cada linha */
-  .print-check {
-    display: inline-block;
-    width: 4mm;
-    height: 4mm;
-    border: 1pt solid #000;
-    vertical-align: middle;
   }
   /* Rótulo menor junto ao nome (busca própria / extra) */
   .print-guia-tag {
-    font-size: 8pt;
+    font-size: 7.5pt;
     color: #555;
     font-weight: 400;
   }
@@ -525,6 +554,10 @@
     color: #888 !important;
     font-style: italic;
     font-size: 9pt;
+  }
+  .print-guia-page .print-footer {
+    margin-top: 2mm;
+    padding-top: 1mm;
   }
 }
 
@@ -1291,43 +1324,7 @@
   .print-only {
     display: none !important;
   }
-  /* v8: Feriados — estilos de tela */
-  .sp-th-dia-feriado {
-    background: #fef2f2 !important;
-    border-bottom: 2px solid #dc2626 !important;
-  }
-  .sp-dia-feriado {
-    display: block;
-    font-size: 7px;
-    color: #dc2626;
-    font-weight: 700;
-    margin-top: 2px;
-    line-height: 1.2;
-  }
-  .sp-td-dia-feriado {
-    background: #fef2f2 !important;
-  }
-  .sp-feriado-cell {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4px;
-    text-align: center;
-  }
-  .sp-feriado-icon { font-size: 14px; margin-bottom: 2px; }
-  .sp-feriado-text {
-    font-size: 8px;
-    font-weight: 700;
-    color: #dc2626;
-    text-transform: uppercase;
-  }
-  .sp-feriado-name {
-    font-size: 7px;
-    color: #991b1b;
-    margin-top: 1px;
-    line-height: 1.2;
-  }
+
 }
 
 /* ============================================================

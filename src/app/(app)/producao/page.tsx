@@ -32,9 +32,8 @@ import { alternarTarefa, converterLinhasEmTarefas } from '@/lib/aviso-utils'
 import { formatarData, numeroSemana, anoSemana, inicioSemana, fimSemana, formatarPeriodoSemana, dataISO, DIAS_SEMANA, DIAS_LABEL_CURTO, DIAS_PRODUCAO, DIAS_LABEL_CURTO_PRODUCAO, type DiaSemana, type DiaProducao } from '@/lib/date-utils'
 import type { ProducaoDia, ItemProducao } from '@/lib/producao-utils'
 import { PF_PRODUCAO_PARA_ENTREGA, ehDiaProducaoDoProduto } from '@/lib/producao-utils'
-// v9.10.14: 2ª via da folha de PF virou GUIA DE SEPARAÇÃO — manhã = pão
-// comum (entregas da manhã), tarde = complemento (sai junto com o PCQ)
-import { montarGuiaSeparacao, formatarDataCurta, diaProduzidoLabel } from '@/lib/separacao-utils'
+// Guia de Separação em 1 folha: Manhã (Entregas da Manhã) vs Tarde (Pão Complemento)
+import { montarGuiaSeparacao, formatarDataCurta } from '@/lib/separacao-utils'
 // v9.9.1: legenda discreta do PCQ para unidades Busca Própria — 1 forma = 50 pães
 // v9.9.2: formatarFormas — exibição pt-BR (vírgula) das formas nas tabelas de PCQ
 import { ehBuscaPropria, legendaPcqPaes, FORMA_PCQ_PAES, formatarFormas, formatarPfComComplemento, parseQuantidadeDecimal, formatarValorDecimal, mesclarItensPcqExcepcionais, type EscolaPcqHabilitada } from '@/lib/producao-utils'
@@ -58,13 +57,6 @@ function entregaFromProducao(diaProd: DiaProducao, produto: string): string {
 }
 
 // v9.10.14: rótulo completo dos dias de entrega no título da guia de separação
-const DIAS_LABEL_GUIA: Record<DiaSemana, string> = {
-  segunda: 'SEGUNDA-FEIRA',
-  terca: 'TERÇA-FEIRA',
-  quarta: 'QUARTA-FEIRA',
-  quinta: 'QUINTA-FEIRA',
-  sexta: 'SEXTA-FEIRA',
-}
 
 export default function ProducaoPage() {
   const [data, setData] = useState<{
@@ -561,9 +553,8 @@ export default function ProducaoPage() {
     sexta: dataISO(addDays(inicio, 4)),
   }
 
-  // v9.10.14: dados da GUIA DE SEPARAÇÃO (2ª via do PF) — mesmo consolidador
-  // da folha: manhã = base (pf − pf_comp), tarde = complemento (pf_comp)
-  const guiaSeparacao = montarGuiaSeparacao(escolasPF, datasEntrega)
+  // Guia de Separação (1 folha): Manhã (Entregas da Manhã) vs Tarde (Pão Complemento)
+  const guiaSeparacao = montarGuiaSeparacao(escolasPF)
 
   // ---------- Componente de impressão da página PF ----------
   const printPFPage = (copyLabel?: string) => (
@@ -674,20 +665,16 @@ export default function ProducaoPage() {
     </div>
   )
 
-  // ---------- v9.10.14: PÁGINA 2 — GUIA DE SEPARAÇÃO (substitui a 2ª via) ----------
-  // Os padeiros misturavam o pão comum (manhã) com o complemento (tarde) na
-  // hora de despachar. A guia lista, por DIA DE ENTREGA, o que separar de
-  // MANHÃ (pão comum) e à TARDE (complemento, que sai junto com o PCQ), com
-  // quadrinho para marcar cada linha conferida.
+  // ---------- GUIA DE SEPARAÇÃO EM 1 FOLHA — MANHÃ (NORMAL) vs TARDE (COMPLEMENTO) ----------
   const printGuiaSeparacao = () => (
-    <div>
+    <div className="print-guia-page">
       <div className="print-doc-header">
         <div className="print-doc-header-left">
           <div className="print-doc-logo"><img src="/brasao.jpg" alt="Brasão" /></div>
           <div className="print-doc-title-block">
             <div className="print-doc-title">GUIA DE SEPARAÇÃO — PÃO FRANCÊS</div>
             <div className="print-doc-subtitle">Padaria Escolar Municipal — Prefeitura de Lucas do Rio Verde / MT</div>
-            <div className="print-doc-subtitle">Separar por escola, quantidade e PERÍODO — manhã e tarde NÃO se misturam</div>
+            <div className="print-doc-subtitle">Separação por período de embalagem (dias de entrega)</div>
           </div>
         </div>
         <div className="print-doc-header-right">
@@ -704,77 +691,137 @@ export default function ProducaoPage() {
         <div className="print-info-right">
           <div className="print-info-inline">
             <span className="print-info-item"><span className="print-info-label">PÃO:</span> {data.nomePao}</span>
+            <span className="print-info-item print-info-divider"><span className="print-info-label">TOTAL:</span> {guiaSeparacao.total_geral.toLocaleString('pt-BR')} {pfUnit}</span>
           </div>
         </div>
       </div>
 
-      {/* A regra que resolve a confusão, logo no topo */}
-      <div className="print-feriado">
-        MANHÃ = pão francês comum (entregas da manhã) · TARDE = PÃO COMPLEMENTO (sai junto com o PCQ). Separe em caixas diferentes e marque cada linha conferida.
+      <div className="print-guia-rule">
+        <strong>EMBALAGEM:</strong> <strong>Manhã</strong> = pão das entregas da manhã · <strong>Tarde</strong> = Pão Complemento (não misturar — sai junto com o PCQ)
       </div>
 
-      {guiaSeparacao.length === 0 && (
-        <div className="print-feriado">Nenhum pão francês a separar nesta semana.</div>
-      )}
+      {/* BLOCO 1: MANHÃ — ENTREGAS DA MANHÃ */}
+      <div className="print-section-header print-guia-section-manha">
+        <span className="print-section-title-text">MANHÃ — ENTREGAS DA MANHÃ</span>
+        <span className="print-section-total">Subtotal Manhã: {guiaSeparacao.manha.total.toLocaleString('pt-BR')} {pfUnit}</span>
+      </div>
+      <table className="print-table print-guia-table">
+        <thead>
+          <tr>
+            <th className="print-col-guia-escola">ESCOLA / UNIDADE</th>
+            {DIAS_SEMANA.map((d) => (
+              <th key={d} className="print-col-guia-dia">
+                {DIAS_LABEL_CURTO[d]} {formatarDataCurta(datasEntrega[d])}
+              </th>
+            ))}
+            <th className="print-col-guia-total">TOTAL</th>
+          </tr>
+        </thead>
+        <tbody>
+          {guiaSeparacao.manha.regulares.length === 0 && guiaSeparacao.manha.extras.length === 0 && (
+            <tr><td colSpan={7} className="print-guia-vazio">— nenhuma entrega para embalar pela manhã nesta semana —</td></tr>
+          )}
+          {guiaSeparacao.manha.regulares.map((l) => (
+            <tr key={`gm-${l.id}`}>
+              <td className="print-col-guia-escola">
+                {l.nome_curto}
+                {l.busca_propria && <span className="print-guia-tag"> · busca própria</span>}
+              </td>
+              {DIAS_SEMANA.map((d) => (
+                <td key={d} className="print-col-guia-dia">
+                  {l.dias[d] > 0 ? l.dias[d].toLocaleString('pt-BR') : '—'}
+                </td>
+              ))}
+              <td className="print-col-guia-total print-col-total">{l.total.toLocaleString('pt-BR')}</td>
+            </tr>
+          ))}
+          {guiaSeparacao.manha.extras.length > 0 && (
+            <tr className="print-row-separator-black">
+              <td colSpan={7}>Produção Extra (Manhã)</td>
+            </tr>
+          )}
+          {guiaSeparacao.manha.extras.map((l) => (
+            <tr key={`gme-${l.id}`}>
+              <td className="print-col-guia-escola">
+                {l.nome_curto}
+                {l.busca_propria && <span className="print-guia-tag"> · busca própria</span>}
+              </td>
+              {DIAS_SEMANA.map((d) => (
+                <td key={d} className="print-col-guia-dia">
+                  {l.dias[d] > 0 ? l.dias[d].toLocaleString('pt-BR') : '—'}
+                </td>
+              ))}
+              <td className="print-col-guia-total print-col-total">{l.total.toLocaleString('pt-BR')}</td>
+            </tr>
+          ))}
+          <tr className="print-row-subtotal">
+            <td className="print-col-guia-escola">SUBTOTAL MANHÃ ({pfUnit.toUpperCase()})</td>
+            {DIAS_SEMANA.map((d) => (
+              <td key={d} className="print-col-guia-dia">
+                {guiaSeparacao.manha.totais_dia[d] > 0 ? guiaSeparacao.manha.totais_dia[d].toLocaleString('pt-BR') : '—'}
+              </td>
+            ))}
+            <td className="print-col-guia-total print-col-total">{guiaSeparacao.manha.total.toLocaleString('pt-BR')}</td>
+          </tr>
+        </tbody>
+      </table>
 
-      {guiaSeparacao.map((dia) => (
-        <div key={dia.dia_entrega}>
-          <div className="print-section-header">
-            <span className="print-section-title-text">
-              {DIAS_LABEL_GUIA[dia.dia_entrega]} · {formatarDataCurta(dia.data)}
-              <span style={{ color: '#ddd', fontSize: '9pt', fontWeight: 400, textTransform: 'none' }}>
-                {' '}— pão produzido {diaProduzidoLabel(dia.dia_producao)}
-              </span>
-            </span>
-            <span className="print-section-total">Total: {dia.total_dia.toLocaleString('pt-BR')} {pfUnit}</span>
-          </div>
-          <table className="print-table">
-            <thead>
-              <tr>
-                <th className="print-col-guia-escola">ESCOLA / UNIDADE</th>
-                <th className="print-col-guia-qtd">QTD</th>
-                <th className="print-col-guia-check">CONFERIDO</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="print-row-separator-black">
-                <td colSpan={3}>MANHÃ — PÃO FRANCÊS COMUM ({dia.manha.total.toLocaleString('pt-BR')} {pfUnit})</td>
-              </tr>
-              {dia.manha.linhas.length === 0 && (
-                <tr><td colSpan={3} className="print-guia-vazio">— nada a separar de manhã —</td></tr>
-              )}
-              {dia.manha.linhas.map((l) => (
-                <tr key={`m-${dia.dia_entrega}-${l.id}`}>
-                  <td className="print-col-guia-escola">
-                    {l.nome_curto}
-                    {l.busca_propria && <span className="print-guia-tag"> · busca própria</span>}
-                    {l.extra && <span className="print-guia-tag"> · extra</span>}
-                  </td>
-                  <td className="print-col-guia-qtd">{l.quantidade.toLocaleString('pt-BR')}</td>
-                  <td className="print-col-guia-check"><span className="print-check" /></td>
-                </tr>
+      {/* BLOCO 2: TARDE — PÃO COMPLEMENTO */}
+      <div className="print-section-header print-section-spacer print-guia-section-tarde">
+        <span className="print-section-title-text">TARDE — PÃO COMPLEMENTO (SAI COM PCQ)</span>
+        <span className="print-section-total">Subtotal Tarde: {guiaSeparacao.tarde.total.toLocaleString('pt-BR')} {pfUnit}</span>
+      </div>
+      <table className="print-table print-guia-table">
+        <thead>
+          <tr>
+            <th className="print-col-guia-escola">ESCOLA / UNIDADE</th>
+            {DIAS_SEMANA.map((d) => (
+              <th key={d} className="print-col-guia-dia">
+                {DIAS_LABEL_CURTO[d]} {formatarDataCurta(datasEntrega[d])}
+              </th>
+            ))}
+            <th className="print-col-guia-total">TOTAL</th>
+          </tr>
+        </thead>
+        <tbody>
+          {guiaSeparacao.tarde.linhas.length === 0 && (
+            <tr><td colSpan={7} className="print-guia-vazio">— nenhum pão complemento para embalar à tarde nesta semana —</td></tr>
+          )}
+          {guiaSeparacao.tarde.linhas.map((l) => (
+            <tr key={`gt-${l.id}`}>
+              <td className="print-col-guia-escola">
+                {l.nome_curto}
+                {l.busca_propria && <span className="print-guia-tag"> · busca própria</span>}
+                {l.extra && <span className="print-guia-tag"> · extra</span>}
+              </td>
+              {DIAS_SEMANA.map((d) => (
+                <td key={d} className="print-col-guia-dia">
+                  {l.dias[d] > 0 ? l.dias[d].toLocaleString('pt-BR') : '—'}
+                </td>
               ))}
-              <tr className="print-row-separator">
-                <td colSpan={3}>TARDE — PÃO COMPLEMENTO ({dia.tarde.total.toLocaleString('pt-BR')} {pfUnit})</td>
-              </tr>
-              {dia.tarde.linhas.length === 0 && (
-                <tr><td colSpan={3} className="print-guia-vazio">— nada a separar à tarde —</td></tr>
-              )}
-              {dia.tarde.linhas.map((l) => (
-                <tr key={`t-${dia.dia_entrega}-${l.id}`}>
-                  <td className="print-col-guia-escola">
-                    {l.nome_curto}
-                    {l.busca_propria && <span className="print-guia-tag"> · busca própria</span>}
-                    {l.extra && <span className="print-guia-tag"> · extra</span>}
-                  </td>
-                  <td className="print-col-guia-qtd">{l.quantidade.toLocaleString('pt-BR')}</td>
-                  <td className="print-col-guia-check"><span className="print-check" /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
+              <td className="print-col-guia-total print-col-total">{l.total.toLocaleString('pt-BR')}</td>
+            </tr>
+          ))}
+          <tr className="print-row-subtotal">
+            <td className="print-col-guia-escola">SUBTOTAL TARDE ({pfUnit.toUpperCase()})</td>
+            {DIAS_SEMANA.map((d) => (
+              <td key={d} className="print-col-guia-dia">
+                {guiaSeparacao.tarde.totais_dia[d] > 0 ? guiaSeparacao.tarde.totais_dia[d].toLocaleString('pt-BR') : '—'}
+              </td>
+            ))}
+            <td className="print-col-guia-total print-col-total">{guiaSeparacao.tarde.total.toLocaleString('pt-BR')}</td>
+          </tr>
+          <tr className="print-row-total">
+            <td className="print-col-guia-escola">TOTAL GERAL ({pfUnit.toUpperCase()})</td>
+            {DIAS_SEMANA.map((d) => (
+              <td key={d} className="print-col-guia-dia">
+                {guiaSeparacao.totais_dia_geral[d] > 0 ? guiaSeparacao.totais_dia_geral[d].toLocaleString('pt-BR') : '—'}
+              </td>
+            ))}
+            <td className="print-col-guia-total print-col-total">{guiaSeparacao.total_geral.toLocaleString('pt-BR')}</td>
+          </tr>
+        </tbody>
+      </table>
 
       <div className="print-footer">Sistema de Gestão da Padaria Escolar Municipal — Lucas do Rio Verde / MT</div>
     </div>
