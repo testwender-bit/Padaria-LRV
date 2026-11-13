@@ -487,43 +487,113 @@
      Matriz semanal por dia de entrega (7 colunas alinhadas)
      ============================================================ */
   .print-guia-page .print-doc-header {
-    margin-bottom: 2mm;
-    padding-bottom: 1.5mm;
+    margin-bottom: 1mm;
+    padding-bottom: 0.8mm;
+    align-items: center;
+  }
+  .print-guia-page .print-doc-logo {
+    height: 9mm;
+    margin-top: 0;
+  }
+  .print-guia-page .print-doc-logo img {
+    height: 9mm !important;
+    max-width: 9mm !important;
+    max-height: 9mm !important;
+  }
+  .print-guia-page .print-doc-title {
+    font-size: 13pt;
+    line-height: 1.1;
+    margin-bottom: 0.2mm;
+  }
+  .print-guia-page .print-doc-subtitle {
+    font-size: 8.5pt;
+    line-height: 1.15;
+  }
+  .print-guia-page .print-doc-gerado,
+  .print-guia-page .print-doc-gerado-date {
+    font-size: 8.5pt;
+    line-height: 1.15;
+    margin-top: 0;
   }
   .print-guia-page .print-info-block {
-    margin-bottom: 1.5mm;
-    padding: 1mm 0;
+    margin-bottom: 0.8mm;
+    padding: 0.5mm 0;
+    align-items: center;
+  }
+  .print-guia-info-line {
+    display: flex !important;
+    align-items: baseline;
+    gap: 1.5mm;
+    white-space: nowrap;
+  }
+  .print-guia-page .print-info-semana {
+    font-size: 9.5pt;
+  }
+  .print-guia-info-sep {
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #555;
+  }
+  .print-guia-page .print-info-periodo {
+    font-size: 10pt;
+    font-weight: 600;
+    margin-top: 0;
+  }
+  .print-guia-page .print-info-divider::before {
+    margin: 0 1.2mm 0 1.8mm;
   }
   .print-guia-rule {
     background: #fff;
     border: 1pt solid #000;
     border-left: 3pt solid #000;
-    padding: 1mm 2.5mm;
-    margin: 1mm 0 1.5mm 0;
-    font-size: 9pt;
+    padding: 0.5mm 2mm;
+    margin: 0.5mm 0 1mm 0;
+    font-size: 8.5pt;
     color: #000;
-    line-height: 1.25;
+    line-height: 1.15;
   }
   .print-guia-section-manha {
     background: #000 !important;
     color: #fff !important;
-    margin: 1.5mm 0 1mm 0 !important;
-    padding: 1mm 2.5mm !important;
+    margin: 1mm 0 0.5mm 0 !important;
+    padding: 0.65mm 1.8mm !important;
+    gap: 3mm;
   }
   .print-guia-section-tarde {
     background: #333 !important;
     color: #fff !important;
-    margin: 2.5mm 0 1mm 0 !important;
-    padding: 1mm 2.5mm !important;
+    margin: 1.4mm 0 0.5mm 0 !important;
+    padding: 0.65mm 1.8mm !important;
+    gap: 3mm;
+  }
+  .print-guia-page .print-section-title-text,
+  .print-guia-page .print-section-total {
+    font-size: 15pt;
+    line-height: 1.08;
+    letter-spacing: 0;
+    white-space: nowrap;
   }
   table.print-table.print-guia-table th {
-    padding: 0.65mm 1mm;
+    padding: 0.45mm 0.8mm;
     font-size: 8.5pt;
+    line-height: 1.05;
+    white-space: nowrap;
   }
   table.print-table.print-guia-table td {
-    padding: 0.45mm 1mm;
+    padding: 0.2mm 0.8mm;
     font-size: 9.5pt;
-    line-height: 1.1;
+    line-height: 1.05;
+  }
+  table.print-table.print-guia-table tbody tr.print-row-separator-black td,
+  table.print-table.print-guia-table tbody tr.print-row-subtotal td {
+    padding: 0.35mm 0.8mm;
+    font-size: 9.5pt;
+    line-height: 1.05;
+  }
+  table.print-table.print-guia-table tbody tr.print-row-total td {
+    padding: 0.45mm 0.8mm;
+    font-size: 10pt;
+    line-height: 1.05;
   }
   .print-col-guia-escola {
     width: 33%;
@@ -536,11 +606,13 @@
   .print-col-guia-dia {
     width: 11%;
     text-align: center !important;
+    white-space: nowrap;
   }
   .print-col-guia-total {
     width: 12%;
     text-align: right !important;
     font-weight: 700;
+    white-space: nowrap;
   }
   /* Rótulo menor junto ao nome (busca própria / extra) */
   .print-guia-tag {
@@ -556,8 +628,9 @@
     font-size: 9pt;
   }
   .print-guia-page .print-footer {
-    margin-top: 2mm;
-    padding-top: 1mm;
+    margin-top: 1mm;
+    padding-top: 0.6mm;
+    font-size: 7.5pt;
   }
 }
 

@@ -674,7 +674,6 @@ export default function ProducaoPage() {
           <div className="print-doc-title-block">
             <div className="print-doc-title">GUIA DE SEPARAÇÃO — PÃO FRANCÊS</div>
             <div className="print-doc-subtitle">Padaria Escolar Municipal — Prefeitura de Lucas do Rio Verde / MT</div>
-            <div className="print-doc-subtitle">Separação por período de embalagem (dias de entrega)</div>
           </div>
         </div>
         <div className="print-doc-header-right">
@@ -685,8 +684,11 @@ export default function ProducaoPage() {
 
       <div className="print-info-block">
         <div className="print-info-left">
-          <div className="print-info-semana">SEMANA {data.semana} / {data.ano}</div>
-          <div className="print-info-periodo">{formatarPeriodoSemana(inicioSemana(inicio), fimSemana(inicio))}</div>
+          <div className="print-guia-info-line">
+            <span className="print-info-semana">SEMANA {data.semana} / {data.ano}</span>
+            <span className="print-guia-info-sep">·</span>
+            <span className="print-info-periodo">{formatarPeriodoSemana(inicioSemana(inicio), fimSemana(inicio))}</span>
+          </div>
         </div>
         <div className="print-info-right">
           <div className="print-info-inline">
