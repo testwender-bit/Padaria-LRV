@@ -161,9 +161,17 @@ export async function GET(request: Request) {
       })
     }
 
-    // v9.5.8: PF COMPLEMENTO para entrega de SEGUNDA — produção no DOMINGO (D-1).
-    // O Comp Seg é pão francês complementar (creches), com entrega na segunda,
-    // então a produção é no domingo (mesma regra D-1 do PF regular).
+    // v9.5.8: PF COMPLEMENTO para entrega de SEGUNDA — produção D-1.
+    // O Comp Seg é pão francês complementar (creches), com entrega na segunda.
+    // v9.10.15: este bloco ("domingo") é a MADRUGADA DE SEGUNDA desde a v9.7.3
+    // ("Seg Mad") — a padaria NÃO produz mais no domingo. Feriado no DOMINGO
+    // não cancela nada (não há produção nem entrega no domingo): o que cancela
+    // o complemento de segunda é feriado na SEGUNDA, coberto pelo check de
+    // ENTREGA abaixo (e pela cadeia v9.8.7: PCQ de segunda zerado → comp zerado).
+    // Antes havia um check de produção no domingoStr — com feriado caindo no
+    // domingo (ex.: Proclamação da República 15/11/2026) o complemento de
+    // segunda inteiro sumia da produção, enquanto a ficha do motorista (que só
+    // checa a entrega) mantinha "2 + PF x" — produção e romaneio divergiam.
     for (const escola of escolas) {
       if (!escola.recebe_pcq) continue
       const pcqQ = escola.pcq_quantidades[0]
@@ -172,22 +180,10 @@ export async function GET(request: Request) {
       if (qtdComp <= 0) continue
 
       const ajusteKey = `${escola.id}_segunda_PF_COMP`
-      let zeradoComp = false
-      let feriadoNomeComp = ''
-      // Check feriado no dia de PRODUÇÃO (domingo)
-      const checkProdComp = produtoZerado(feriadosMap, domingoStr, escola.categoria, 'PF_COMP')
-      if (checkProdComp.zerado) {
-        zeradoComp = true
-        feriadoNomeComp = checkProdComp.feriado
-      }
-      // Check feriado no dia de ENTREGA (segunda)
-      if (!zeradoComp) {
-        const checkEnt = produtoZerado(feriadosMap, segundaStr, escola.categoria, 'PF_COMP')
-        if (checkEnt.zerado) {
-          zeradoComp = true
-          feriadoNomeComp = checkEnt.feriado
-        }
-      }
+      // v9.10.15: check ÚNICO no dia de ENTREGA (segunda) — igual ao PF base
+      // deste bloco e igual à ficha do motorista. SEM check de produção no
+      // domingo: a produção acontece na madrugada de segunda, não no domingo.
+      const { zerado: zeradoComp, feriado: feriadoNomeComp } = produtoZerado(feriadosMap, segundaStr, escola.categoria, 'PF_COMP')
 
       let qtd = ajustesMap.has(ajusteKey) ? ajustesMap.get(ajusteKey)! : (zeradoComp ? 0 : qtdComp)
 
