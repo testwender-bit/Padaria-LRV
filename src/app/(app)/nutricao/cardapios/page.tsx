@@ -14,6 +14,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { BookOpen, Plus, Pencil, Copy, FileText, CheckCircle, Search, RefreshCw, X, Users, Layers, Repeat, ShoppingCart, Trash2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { CATEGORIAS_ESCOLA_NUTRI, FASES_ESCOLARES } from '@/lib/nutricao-utils'
+// v9.10.17: abas do filtro por ano (a aba do ano corrente é sempre a padrão)
+import { abasAnoCardapios } from '@/lib/cardapio-ux-utils'
 
 interface Escola {
   id: string
@@ -125,6 +127,9 @@ export default function CardapiosPage() {
   const [search, setSearch] = useState('')
   const [filterCategoria, setFilterCategoria] = useState('all')
   const [filterStatus, setFilterStatus] = useState('all')
+  // v9.10.17: filtro por ANO — começa no ano corrente e "acompanha o ano":
+  // ao virar 2027, a aba 2027 passa a ser a main automaticamente.
+  const [filterAno, setFilterAno] = useState<string>(String(new Date().getFullYear()))
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState<FormState>(emptyForm)
@@ -171,12 +176,16 @@ export default function CardapiosPage() {
     loadData()
   }, [loadData])
 
+  // v9.10.17: abas de ano (Todos + anos existentes + ano corrente, mais novos primeiro)
+  const abasAno = abasAnoCardapios(cardapios.map(c => c.ano), new Date().getFullYear())
+
   const filtered = cardapios.filter((c) => {
     const matchSearch = c.nome.toLowerCase().includes(search.toLowerCase()) ||
       (c.escola?.nome || '').toLowerCase().includes(search.toLowerCase())
     const matchCategoria = filterCategoria === 'all' || c.categoria_escola === filterCategoria
     const matchStatus = filterStatus === 'all' || c.status === filterStatus
-    return matchSearch && matchCategoria && matchStatus
+    const matchAno = filterAno === 'all' || c.ano === Number(filterAno)
+    return matchSearch && matchCategoria && matchStatus && matchAno
   })
 
   function openNewDialog() {
@@ -368,6 +377,37 @@ export default function CardapiosPage() {
         </motion.div>
       )}
 
+      {/* v9.10.17: Abas de ANO — separa 2026 de 2027; a aba do ano corrente é a inicial
+          ("acompanha o ano": em 2027 a aba 2027 já abre como main, sem ninguém mexer) */}
+      {cardapios.length > 0 && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.07 }} className="flex items-center gap-1.5 flex-wrap">
+          {abasAno.map((aba) => {
+            const count = aba.key === 'all'
+              ? cardapios.length
+              : cardapios.filter(c => c.ano === Number(aba.key)).length
+            const active = filterAno === aba.key
+            return (
+              <button
+                key={aba.key}
+                onClick={() => setFilterAno(aba.key)}
+                className={`px-3 py-1 rounded-full border text-xs font-medium transition-colors ${
+                  active
+                    ? 'bg-[#1A3A5C] text-white border-[#1A3A5C]'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-[#1A3A5C]/30 hover:bg-[#1A3A5C]/5'
+                }`}
+              >
+                {aba.key === 'all' ? 'Todos' : aba.label} ({count})
+              </button>
+            )
+          })}
+          <span className="text-[10px] text-muted-foreground ml-1">
+            {filterAno === 'all'
+              ? 'mostrando todos os anos'
+              : `mostrando só ${filterAno} · a aba do ano atual é sempre a inicial`}
+          </span>
+        </motion.div>
+      )}
+
       {/* Filters */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }} className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
@@ -417,8 +457,24 @@ export default function CardapiosPage() {
         <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.length === 0 ? (
             <div className="col-span-full text-center py-8 text-muted-foreground">
-              {search || filterCategoria !== 'all' || filterStatus !== 'all'
-                ? 'Nenhum cardápio encontrado com esse filtro.'
+              {search || filterCategoria !== 'all' || filterStatus !== 'all' || filterAno !== 'all'
+                ? (
+                  <>
+                    Nenhum cardápio encontrado com esse filtro.
+                    {/* v9.10.17: filtro de ano isolado (ex. aba do ano sem cardápios) → atalho para Todos */}
+                    {!search && filterCategoria === 'all' && filterStatus === 'all' && filterAno !== 'all' && (
+                      <span className="block mt-2">
+                        Não há cardápios de <b>{filterAno}</b> ainda.{' '}
+                        <button
+                          onClick={() => setFilterAno('all')}
+                          className="underline text-[#1A3A5C] hover:text-blue-700 font-medium"
+                        >
+                          Ver todos os anos
+                        </button>
+                      </span>
+                    )}
+                  </>
+                )
                 : 'Nenhum cardápio cadastrado.'}
             </div>
           ) : (

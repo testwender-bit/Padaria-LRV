@@ -15,9 +15,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
-  ArrowLeft, FileText, Save, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search,
+  ArrowLeft, FileText, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search,
   Trash2, RefreshCw, AlertTriangle, CheckCircle, XCircle, Menu, X, Clock, Users,
-  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, GitCompare, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, Flame, Replace, ArrowRight, BarChart3, ArrowLeftRight, CalendarSync
+  Copy, Check, Repeat, Layers, Star, Zap, GripVertical, Smartphone, Unlock, Calendar, CalendarOff, Pencil, Clock as ClockIcon, Flame, Replace, ArrowRight, BarChart3, ArrowLeftRight, CalendarSync,
+  HelpCircle, MousePointerClick
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -53,6 +54,9 @@ import { PREPARACAO_CATEGORIAS, getCategoriaInfo } from '@/lib/preparacao-catego
 import { detectarCicloReal } from '@/lib/cardapio-ciclo-utils'
 import { PreparacaoFormDialog, type PreparacaoLite } from '@/components/preparacao-form-dialog'
 import { parseHorarioToMinutes, ordenarPorHorario, contarHorarios, temMultiplosHorarios } from '@/lib/horario-utils'
+// v9.10.17: helpers de UX (cópia 1→N, mover várias, abas de ano) + manual de ajuda
+import { mapearCopiasDias, prepararMovimentos } from '@/lib/cardapio-ux-utils'
+import { AjudaCardapioDialog } from '@/components/ajuda-cardapio-dialog'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -621,6 +625,17 @@ export default function CardapioEditorPage() {
   const [modoTrocaDia, setModoTrocaDia] = useState(false)
   const [trocaDiaPrimeiro, setTrocaDiaPrimeiro] = useState<string | null>(null)
   const [trocandoDia, setTrocandoDia] = useState(false)
+  // ── v9.10.17: Modo Mover Várias — marque N preparações e mova todas p/ outro dia ──
+  // modoMover         → ferramenta ativa (botão "Mover várias" na barra da semana)
+  // moverSelecionados → ids dos itens marcados (clique marca/desmarca)
+  // movendo           → requisições em andamento (evita duplo clique)
+  const [modoMover, setModoMover] = useState(false)
+  const [moverSelecionados, setMoverSelecionados] = useState<Set<string>>(new Set())
+  const [movendo, setMovendo] = useState(false)
+  // v9.10.17: dialog "Ajuda" — manual visual do editor
+  const [ajudaDialogOpen, setAjudaDialogOpen] = useState(false)
+  // v9.10.17: ref do campo de busca de preparações (limpa + refocus após selecionar)
+  const addPrepSearchRef = useRef<HTMLInputElement | null>(null)
   // Modo mobile: mostra apenas 1 dia por vez (picker no topo)
   const [mobileDayView, setMobileDayView] = useState<string>('segunda')
   // Porções com edição inline em andamento (item_id)
@@ -840,16 +855,18 @@ export default function CardapioEditorPage() {
         setCurrentSemana(Number(e.key))
       }
       // v9.10.2: ESC cancela o Modo Troca | v9.10.3: e o Modo Trocar Dia
-      else if (e.key === 'Escape' && (modoTroca || modoTrocaDia)) {
+      // | v9.10.17: e o Modo Mover Várias
+      else if (e.key === 'Escape' && (modoTroca || modoTrocaDia || modoMover)) {
         setModoTroca(false)
         setTrocaPrimeiro(null)
         setModoTrocaDia(false)
         setTrocaDiaPrimeiro(null)
+        sairModoMover()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [addDialogOpen, copyDialogOpen, faseDialogOpen, cardapio, modoTroca, modoTrocaDia])
+  }, [addDialogOpen, copyDialogOpen, faseDialogOpen, cardapio, modoTroca, modoTrocaDia, modoMover])
 
   // Refeições for the current category (with schedule info)
   // v8.7: ORDENA POR HORÁRIO CRONOLÓGICO (não por tipo_refeicao.ordem).
@@ -1064,6 +1081,18 @@ export default function CardapioEditorPage() {
       else next.add(prepId)
       return next
     })
+  }
+
+  // v9.10.17: escolher preparação com a barra de busca preenchida limpa a busca
+  // e devolve o cursor ao campo — pronto para digitar a próxima (ex.: "pão" →
+  // escolheu → já digita "suco"). Desmarcar NÃO limpa (mantém o filtro atual).
+  function togglePrepSelectionComBusca(prepId: string) {
+    const estavaSelecionada = addSelectedPrepIds.has(prepId)
+    togglePrepSelection(prepId)
+    if (!estavaSelecionada && addPrepSearch.trim()) {
+      setAddPrepSearch('')
+      requestAnimationFrame(() => addPrepSearchRef.current?.focus())
+    }
   }
 
   // v9.9.4: salva o slot sincronizando a seleção —
@@ -1912,6 +1941,123 @@ export default function CardapioEditorPage() {
     }
   }
 
+  // ── v9.10.17: Modo Mover Várias — marque quantas preparações quiser e
+  // mova TODAS para outro dia de uma vez (cada uma mantém a sua refeição).
+  // Fluxo: botão "Mover várias" na barra da semana ativa o modo → cliques
+  // nas preparações marcam/desmarcam (anel verde) → clique no cabeçalho do
+  // dia de destino → mover-item sequencial (a API mescla duplicatas e
+  // devolve action moved/merged) → reload p/ sincronizar os ids novos.
+  function sairModoMover() {
+    setModoMover(false)
+    setMoverSelecionados(new Set())
+  }
+
+  function entrarModoMover() {
+    sairModoTroca()
+    sairModoTrocaDia()
+    setModoMover(true)
+    setMoverSelecionados(new Set())
+  }
+
+  function handleMoverItemClick(item: CardapioItem) {
+    if (movendo) return
+    setMoverSelecionados(prev => {
+      const next = new Set(prev)
+      if (next.has(item.id)) next.delete(item.id)
+      else next.add(item.id)
+      return next
+    })
+  }
+
+  function handleMoverDestino(diaValue: string) {
+    if (movendo) return
+    if (moverSelecionados.size === 0) {
+      toast.info('Modo mover: primeiro clique nas preparações que quer mover')
+      return
+    }
+    executarMoverVarios(diaValue)
+  }
+
+  async function executarMoverVarios(destinoDia: string) {
+    if (!semanaAtual || moverSelecionados.size === 0) return
+
+    // Itens marcados com o dia de origem (todos estão na semana visível)
+    const itensSelecionados: Array<{ item_id: string; tipo_refeicao_id: string; dia_origem: string; nome: string }> = []
+    for (const dia of semanaAtual.dias) {
+      for (const item of dia.itens) {
+        if (moverSelecionados.has(item.id)) {
+          itensSelecionados.push({
+            item_id: item.id,
+            tipo_refeicao_id: item.tipo_refeicao_id,
+            dia_origem: dia.dia_semana,
+            nome: item.preparacao.nome,
+          })
+        }
+      }
+    }
+    const { movimentos, ignoradosMesmoDia } = prepararMovimentos(itensSelecionados, destinoDia, currentSemana)
+    if (movimentos.length === 0) {
+      toast.info('Nada para mover — as preparações marcadas já estão no dia de destino')
+      return
+    }
+
+    setMovendo(true)
+    let movidos = 0
+    let mesclados = 0
+    try {
+      for (const m of movimentos) {
+        const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/mover-item`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            item_id: m.item_id,
+            destino: {
+              semana_numero: m.semana_numero,
+              dia_semana: m.dia_semana,
+              tipo_refeicao_id: m.tipo_refeicao_id,
+            },
+          }),
+        })
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}))
+          throw new Error(errData.error || 'Erro ao mover')
+        }
+        const data = await res.json()
+        if (data.action === 'merged') mesclados++
+        else movidos++
+      }
+
+      // A API apaga e recria os itens (ids NOVOS) — recarrega o cardápio para
+      // sincronizar os ids locais (mesmo cuidado do executarTrocaDia).
+      const cardRes = await fetch(`/api/nutricao/cardapios/${cardapioId}`)
+      if (cardRes.ok) setCardapio(await cardRes.json())
+
+      const partes = [
+        `${movidos} movida(s)`,
+        mesclados > 0 ? `${mesclados} mesclada(s) (já existia na refeição)` : null,
+        ignoradosMesmoDia > 0 ? `${ignoradosMesmoDia} já estava(m) no dia de destino` : null,
+      ].filter(Boolean)
+      toast.success(`Movidas para ${diaLabel(destinoDia)}: ${partes.join(' · ')}`)
+
+      // v8: marca a semana como diferenciada (se for cardápio de escola)
+      if (cardapio?.escola_id && cardapio?.cardapio_base_id) {
+        handleDiferenciarSemana(currentSemana, true)
+      }
+
+      sairModoMover()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao mover preparações')
+      // Falha parcial já moveu parte dos itens (ids mudaram) — sincroniza
+      try {
+        const cardRes = await fetch(`/api/nutricao/cardapios/${cardapioId}`)
+        if (cardRes.ok) setCardapio(await cardRes.json())
+      } catch { /* silencioso */ }
+      sairModoMover()
+    } finally {
+      setMovendo(false)
+    }
+  }
+
   // v8: Duplicar item (Alt+Drag) — cria cópia no destino sem remover origem
   async function handleDuplicateItem(item: CardapioItem, destinoSemana: number, destinoDia: string, destinoTipoRefeicaoId: string) {
     // Não duplica para o mesmo slot — dá feedback claro para o usuário
@@ -2136,24 +2282,9 @@ export default function CardapioEditorPage() {
     }
   }
 
-  async function handleSave() {
-    if (!cardapio) return
-    setSaving(true)
-    try {
-      const res = await fetch(`/api/nutricao/cardapios/${cardapioId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fase_escolar: selectedFase }),
-      })
-      if (!res.ok) throw new Error('Erro ao salvar')
-      toast.success('Cardápio salvo')
-      loadData()
-    } catch {
-      toast.error('Erro ao salvar cardápio')
-    } finally {
-      setSaving(false)
-    }
-  }
+  // v9.10.17: handleSave removido — o antigo botão "Salvar" do topo só
+  // reenviava a fase_escolar JÁ salva pela própria caixa (handleSaveFase),
+  // ou seja, não tinha função real. Toda ação da tela salva na hora.
 
   // v8: Excluir cardápio
   async function handleDeleteCardapio() {
@@ -2207,43 +2338,32 @@ export default function CardapioEditorPage() {
     setCopyDestinoDias(new Set(copyOrigemDias))
   }
 
+  // v9.10.17: preset "Semana inteira" — marca os 5 dias na origem e no destino.
+  // Se a semana destino for a MESMA da origem, pula para a seguinte
+  // (origem == destino no mesmo dia daria conflito na cópia).
+  function copiarSemanaInteira() {
+    setCopyOrigemDias(new Set(DIAS_SEMANA_NUTRI.map(d => d.value)))
+    setCopyDestinoDias(new Set(DIAS_SEMANA_NUTRI.map(d => d.value)))
+    if (copyDestinoSemana === copyOrigemSemana) {
+      setCopyDestinoSemana(copyDestinoSemana >= totalSemanas ? 1 : copyDestinoSemana + 1)
+    }
+  }
+
   async function handleCopyDays() {
-    if (copyOrigemDias.size === 0 || copyDestinoDias.size === 0) {
-      toast.error('Selecione pelo menos um dia de origem e um de destino')
+    // v9.10.17: mapeamento centralizado na lib — par-a-par (N→N) OU
+    // um-para-muitos (1 dia de origem → TODOS os destinos marcados).
+    const mapa = mapearCopiasDias([...copyOrigemDias], [...copyDestinoDias], copyOrigemSemana, copyDestinoSemana)
+    if (mapa.erro || mapa.origens.length === 0) {
+      toast.error(mapa.erro || 'Selecione pelo menos um dia de origem e um de destino')
       return
     }
-
-    // Build the mapping: origin days → destination days (sequential by weekday order)
-    const origemSorted = DIAS_SEMANA_NUTRI.filter(d => copyOrigemDias.has(d.value))
-    const destinoSorted = DIAS_SEMANA_NUTRI.filter(d => copyDestinoDias.has(d.value))
-
-    if (origemSorted.length !== destinoSorted.length) {
-      toast.error('Selecione a mesma quantidade de dias na origem e no destino')
-      return
-    }
-
-    // Check for same source == destination
-    const hasConflict = origemSorted.some((o, i) =>
-      o.value === destinoSorted[i].value && copyOrigemSemana === copyDestinoSemana
-    )
-    if (hasConflict) {
-      toast.error('Pelo menos um dia de origem é igual ao destino')
-      return
-    }
-
-    const origens = origemSorted.map((o, i) => ({
-      origem_semana: copyOrigemSemana,
-      origem_dia: o.value,
-      destino_semana: copyDestinoSemana,
-      destino_dia: destinoSorted[i].value,
-    }))
 
     setCopying(true)
     try {
       const res = await fetch(`/api/nutricao/cardapios/${cardapioId}/copiar-dia`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ origens, limpar_destino: true }),
+        body: JSON.stringify({ origens: mapa.origens, limpar_destino: true }),
       })
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}))
@@ -2368,6 +2488,10 @@ export default function CardapioEditorPage() {
   const totalSemanas = cardapio.semanas.length || 22
   const faseInfo = FASES_ESCOLARES.find(f => f.value === cardapio.fase_escolar)
 
+  // v9.10.17: pré-visualização do mapeamento de cópia (par-a-par ou 1→N) —
+  // recalculado a cada render com os estados atuais do dialog
+  const mapaCopia = mapearCopiasDias([...copyOrigemDias], [...copyDestinoDias], copyOrigemSemana, copyDestinoSemana)
+
   // v9.9.5: render de uma linha de preparação — usado no bloco "Selecionadas" (topo) e nos grupos por categoria
   const renderPrepRow = (p: Preparacao) => {
     // v9.6.4: respeita override manual de alergenos
@@ -2389,8 +2513,9 @@ export default function CardapioEditorPage() {
         key={p.id}
         onClick={(e) => {
           // v9.9.4: linha inteira clicável para marcar/desmarcar
+          // v9.10.17: ao SELECIONAR, limpa a busca e devolve o foco ao campo
           e.preventDefault()
-          togglePrepSelection(p.id)
+          togglePrepSelectionComBusca(p.id)
         }}
         className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer transition-colors text-xs ${
           addSelectedPrepIds.has(p.id)
@@ -2511,6 +2636,26 @@ export default function CardapioEditorPage() {
           </button>
         </div>
       )}
+      {/* v9.10.17: Banner do Modo Mover Várias (marque N preparações → dia de destino) */}
+      {modoMover && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white text-xs px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
+          <MousePointerClick className="w-3.5 h-3.5 flex-shrink-0" />
+          {movendo ? (
+            <span>Movendo preparações...</span>
+          ) : moverSelecionados.size > 0 ? (
+            <span><b className="font-bold">{moverSelecionados.size}</b> marcada(s) — agora clique no cabeçalho do <b className="font-bold">dia de destino</b></span>
+          ) : (
+            <span><b className="font-bold">Modo mover:</b> clique nas preparações (marque várias) e depois no dia de destino — todas movem juntas</span>
+          )}
+          <button
+            onClick={sairModoMover}
+            className="ml-1 w-4 h-4 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center flex-shrink-0"
+            title="Cancelar modo mover (ESC)"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
       {/* Top Bar */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
@@ -2580,14 +2725,8 @@ export default function CardapioEditorPage() {
             </Button>
           </Link>
 
-          {/* Botão Comparar com Base (somente se for instância de escola) */}
-          {cardapio.escola_id && (
-            <Link href={`/nutricao/cardapios/${cardapioId}/comparar`}>
-              <Button variant="outline" size="sm" className="text-xs h-8 border-blue-200 text-blue-700 hover:bg-blue-50">
-                <GitCompare className="w-3 h-3 mr-1" /> Comparar c/ Base
-              </Button>
-            </Link>
-          )}
+          {/* v9.10.17: Botão "Comparar c/ Base" removido do editor (a comparação
+              continua disponível na lista de cardápios, página /comparar) */}
 
           {/* Botão Clonar em Lote (somente se for base) — mantido para compat. */}
           {!cardapio.escola_id && (
@@ -2618,16 +2757,8 @@ export default function CardapioEditorPage() {
             <Replace className="w-3 h-3 mr-1" /> Substituir
           </Button>
 
-          {/* v9.9.9: Analisador de Repetições — identifica preparações repetitivas */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs h-8 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-            onClick={openRepDialog}
-            title="Identifica preparações repetitivas: 2× no mesmo dia, dias seguidos, concentração no mesmo dia da semana e pouca variedade por refeição"
-          >
-            <BarChart3 className="w-3 h-3 mr-1" /> Repetições
-          </Button>
+          {/* v9.10.17: Analisador de Repetições movido para JUNTO DO RESUMO
+              NUTRICIONAL (sidebar) — botão pequeno no cabeçalho do resumo */}
 
           {/* v9.10.0: Gerar Ciclo — repete as semanas montadas até completar as 22 do semestre */}
           <Button
@@ -2654,8 +2785,17 @@ export default function CardapioEditorPage() {
               <CheckCircle className="w-3 h-3 mr-1" /> Aprovar
             </Button>
           )}
-          <Button size="sm" onClick={handleSave} disabled={saving} className="bg-[#1A3A5C] hover:bg-[#1A3A5C]/90 text-xs">
-            <Save className="w-3 h-3 mr-1" /> Salvar
+          {/* v9.10.17: botão "Salvar" removido — toda ação da tela já salva na
+              hora (não existe estado pendente aqui); o manual de ajuda explica */}
+          {/* v9.10.17: Ajuda — manual visual completo de como usar o editor */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-8 border-gray-300 text-gray-600 hover:bg-gray-50"
+            onClick={() => setAjudaDialogOpen(true)}
+            title="Manual de uso do editor de cardápio"
+          >
+            <HelpCircle className="w-3 h-3 mr-1" /> Ajuda
           </Button>
           <Button
             size="sm"
@@ -2708,6 +2848,19 @@ export default function CardapioEditorPage() {
               {semanaAtual.diferenciada ? 'Restaurar' : 'Diferenciar'}
             </Button>
           )}
+          {/* v9.10.17: Modo Mover Várias — marque N preparações e mova todas p/ outro dia */}
+          <button
+            onClick={() => modoMover ? sairModoMover() : entrarModoMover()}
+            className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-medium transition-colors ml-2 flex-shrink-0 ${
+              modoMover
+                ? 'bg-emerald-600 border-emerald-600 text-white'
+                : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+            }`}
+            title="Marque várias preparações e clique no dia de destino — todas movem de uma vez (ESC cancela)"
+          >
+            <MousePointerClick className="w-3 h-3" />
+            {modoMover ? 'Cancelar mover' : 'Mover várias'}
+          </button>
           {/* Legenda semáforo */}
           <div className="hidden md:flex items-center gap-2 ml-3 pl-3 border-l border-gray-200">
             <span className="text-[9px] text-muted-foreground">Semáforo:</span>
@@ -2856,19 +3009,30 @@ export default function CardapioEditorPage() {
                       ? 'border-violet-400 ring-2 ring-violet-300'
                       : modoTrocaDia
                         ? 'border-violet-200'
-                        : 'border-gray-200'
+                        : modoMover
+                          ? 'border-emerald-300 ring-1 ring-emerald-200'
+                          : 'border-gray-200'
                   }`}
                 >
                   {/* Day Header with Copy button + traffic-light dot
-                      v9.10.3: no Modo Trocar Dia o cabeçalho inteiro é clicável */}
+                      v9.10.3: no Modo Trocar Dia o cabeçalho inteiro é clicável
+                      v9.10.17: no Modo Mover Várias o cabeçalho é o DESTINO */}
                   <div
-                    onClick={modoTrocaDia ? () => handleDiaHeaderClick(dia.value) : undefined}
+                    onClick={
+                      modoTrocaDia
+                        ? () => handleDiaHeaderClick(dia.value)
+                        : modoMover
+                          ? () => handleMoverDestino(dia.value)
+                          : undefined
+                    }
                     className={`text-white py-1.5 px-2 flex items-center justify-between transition-colors ${
                       trocaDiaPrimeiro === dia.value
-                        ? `bg-violet-700 ${modoTrocaDia ? 'cursor-pointer hover:bg-violet-600' : ''}`
+                        ? `bg-violet-700 ${(modoTrocaDia || modoMover) ? 'cursor-pointer hover:bg-violet-600' : ''}`
                         : modoTrocaDia
                           ? 'bg-[#1A3A5C] cursor-pointer hover:bg-violet-700'
-                          : 'bg-[#1A3A5C]'
+                          : modoMover
+                            ? 'bg-[#1A3A5C] cursor-pointer hover:bg-emerald-700'
+                            : 'bg-[#1A3A5C]'
                     }`}
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
@@ -2891,10 +3055,11 @@ export default function CardapioEditorPage() {
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {/* v9.10.2: Trocar preparações — clique em 2 e elas trocam de lugar
-                          v9.10.3: no Modo Trocar Dia fica inerte (clique cai no cabeçalho = seleciona o dia) */}
+                          v9.10.3: no Modo Trocar Dia fica inerte (clique cai no cabeçalho = seleciona o dia)
+                          v9.10.17: idem no Modo Mover Várias */}
                       <button
-                        onClick={() => { if (modoTroca) { sairModoTroca() } else { sairModoTrocaDia(); setModoTroca(true); setTrocaPrimeiro(null) } }}
-                        className={`transition-colors ${modoTroca ? 'text-violet-300 hover:text-violet-200' : modoTrocaDia ? 'text-white/40 pointer-events-none' : 'text-white/70 hover:text-white'}`}
+                        onClick={() => { if (modoTroca) { sairModoTroca() } else { sairModoMover(); sairModoTrocaDia(); setModoTroca(true); setTrocaPrimeiro(null) } }}
+                        className={`transition-colors ${modoTroca ? 'text-violet-300 hover:text-violet-200' : (modoTrocaDia || modoMover) ? 'text-white/40 pointer-events-none' : 'text-white/70 hover:text-white'}`}
                         title="Trocar preparações: clique em uma, depois em outra — elas trocam de lugar"
                       >
                         <ArrowLeftRight className="w-3 h-3" />
@@ -2902,14 +3067,14 @@ export default function CardapioEditorPage() {
                       {/* v9.10.3: Trocar o DIA inteiro — clique aqui, depois em outro dia */}
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDiaHeaderClick(dia.value) }}
-                        className={`transition-colors flex-shrink-0 ${modoTrocaDia ? 'text-indigo-200 hover:text-white' : 'text-white/70 hover:text-white'}`}
+                        className={`transition-colors flex-shrink-0 ${modoTrocaDia ? 'text-indigo-200 hover:text-white' : modoMover ? 'text-white/40 pointer-events-none' : 'text-white/70 hover:text-white'}`}
                         title="Trocar o dia inteiro: clique aqui, depois em outro dia — todas as preparações trocam de lugar"
                       >
                         <CalendarSync className="w-3 h-3" />
                       </button>
                       <button
                         onClick={() => openCopyDialog(dia.value, currentSemana)}
-                        className={`transition-colors flex-shrink-0 ${modoTrocaDia ? 'text-white/40 pointer-events-none' : 'text-white/70 hover:text-white'}`}
+                        className={`transition-colors flex-shrink-0 ${(modoTrocaDia || modoMover) ? 'text-white/40 pointer-events-none' : 'text-white/70 hover:text-white'}`}
                         title="Copiar refeições para outro dia"
                       >
                         <Copy className="w-3 h-3" />
@@ -2993,8 +3158,14 @@ export default function CardapioEditorPage() {
                             <div
                               key={item.id}
                               id={`cardapio-item-${item.id}`}
-                              draggable={!modoTroca && !modoTrocaDia}
-                              onClick={modoTroca ? () => handleTrocaClick(item) : undefined}
+                              draggable={!modoTroca && !modoTrocaDia && !modoMover}
+                              onClick={
+                                modoTroca
+                                  ? () => handleTrocaClick(item)
+                                  : modoMover
+                                    ? () => handleMoverItemClick(item)
+                                    : undefined
+                              }
                               onDragStart={(e) => {
                                 setDraggedItem(item)
                                 // ⚠️ 'copyMove' permite que o navegador mostre cursor de cópia (Alt) OU de mover
@@ -3010,28 +3181,38 @@ export default function CardapioEditorPage() {
                               className={`flex items-center gap-1 mb-1 p-1 rounded bg-white border text-[10px] group transition-all ${
                                 modoTroca
                                   ? 'cursor-pointer hover:border-violet-400 hover:bg-violet-50/50'
-                                  : modoTrocaDia
-                                    ? 'cursor-default'
-                                    : 'cursor-grab active:cursor-grabbing'
+                                  : modoMover
+                                    ? 'cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/50'
+                                    : modoTrocaDia
+                                      ? 'cursor-default'
+                                      : 'cursor-grab active:cursor-grabbing'
                               } ${
                                 draggedItem?.id === item.id ? 'opacity-50' :
                                 // v9.10.2: 1ª preparação selecionada no Modo Troca
                                 trocaPrimeiro?.id === item.id
                                   ? 'border-violet-500 ring-2 ring-violet-300 bg-violet-50'
-                                  : locDestaqueItemId === item.id ? 'border-amber-400 ring-2 ring-amber-300 bg-amber-50' : 'border-gray-100'
+                                  : // v9.10.17: preparação marcada no Modo Mover Várias
+                                  moverSelecionados.has(item.id)
+                                    ? 'border-emerald-500 ring-2 ring-emerald-300 bg-emerald-50'
+                                    : locDestaqueItemId === item.id ? 'border-amber-400 ring-2 ring-amber-300 bg-amber-50' : 'border-gray-100'
                               }`}
                               title={modoTroca
                                 ? (trocaPrimeiro?.id === item.id
                                   ? '1ª selecionada — clique nela novamente para cancelar'
                                   : 'Clique para trocar de lugar com outra preparação')
-                                : modoTrocaDia
-                                  ? 'Modo trocar dia ativo — clique no cabeçalho dos dias'
-                                  : 'Arraste para mover • Alt+Arraste para duplicar'}
+                                : modoMover
+                                  ? (moverSelecionados.has(item.id)
+                                    ? 'Marcada para mover — clique para desmarcar'
+                                    : 'Clique para marcar; depois clique no cabeçalho do dia de destino')
+                                  : modoTrocaDia
+                                    ? 'Modo trocar dia ativo — clique no cabeçalho dos dias'
+                                    : 'Arraste para mover • Alt+Arraste para duplicar'}
                             >
                               <GripVertical className="w-2.5 h-2.5 text-gray-300 flex-shrink-0 group-hover:text-gray-400" />
                               <span className="flex-1 truncate font-medium">{item.preparacao.nome}</span>
-                              {/* v8: Botões up/down para reordenar dentro do slot (escondidos no Modo Troca — v9.10.2) */}
-                              {!modoTroca && (
+                              {/* v8: Botões up/down para reordenar dentro do slot
+                                  (escondidos no Modo Troca — v9.10.2 — e no Modo Mover Várias — v9.10.17) */}
+                              {!modoTroca && !modoMover && (
                               <div className="flex flex-col flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleReordenarItem(item.id, 'up') }}
@@ -3058,8 +3239,9 @@ export default function CardapioEditorPage() {
                                   {item.porcoes}×
                                 </span>
                               )}
-                              {/* v9.10.2: botão remover escondido no Modo Troca (clique = selecionar para troca) */}
-                              {!modoTroca && (
+                              {/* v9.10.2: botão remover escondido no Modo Troca (clique = selecionar para troca)
+                                  v9.10.17: e no Modo Mover Várias (clique = marcar/desmarcar) */}
+                              {!modoTroca && !modoMover && (
                               <button
                                 onClick={() => handleRemoveItem(item.id)}
                                 className="text-red-300 hover:text-red-500 ml-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -3120,9 +3302,22 @@ export default function CardapioEditorPage() {
             >
               <Card className="border-[#1A3A5C]/10 sticky top-4">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold text-[#1A3A5C]">
-                    Resumo Nutricional — Semana {currentSemana}
-                  </CardTitle>
+                  {/* v9.10.17: botão "Repetições" agora mora junto do resumo nutricional
+                      (sucinto, sem mudar o resto do visual — antes no topo da tela) */}
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="text-sm font-semibold text-[#1A3A5C]">
+                      Resumo Nutricional — Semana {currentSemana}
+                    </CardTitle>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-1.5 text-[10px] border-indigo-200 text-indigo-700 hover:bg-indigo-50 flex-shrink-0"
+                      onClick={openRepDialog}
+                      title="Analisador de repetições: 2× no mesmo dia, dias seguidos, dia fixo e variedade por refeição"
+                    >
+                      <BarChart3 className="w-3 h-3 mr-0.5" /> Repetições
+                    </Button>
+                  </div>
                   <div className="text-[10px] text-muted-foreground">
                     Cálculo para: <span className="font-medium" style={{ color: faseInfo?.cor || '#1A3A5C' }}>{faseInfo?.label} ({faseInfo?.faixa})</span>
                   </div>
@@ -3298,6 +3493,7 @@ export default function CardapioEditorPage() {
                 value={addPrepSearch}
                 onChange={(e) => setAddPrepSearch(e.target.value)}
                 className="pl-8 h-8 text-xs"
+                ref={addPrepSearchRef}
                 autoFocus
               />
             </div>
@@ -4070,6 +4266,15 @@ export default function CardapioEditorPage() {
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-muted-foreground uppercase">Destino</p>
                 <div className="flex items-center gap-2">
+                  {/* v9.10.17: preset "Semana inteira" (5 dias, semana seguinte se igual) */}
+                  <button
+                    onClick={copiarSemanaInteira}
+                    className="text-[10px] text-[#1A3A5C] hover:underline font-medium"
+                    title="Marca os 5 dias na origem e no destino; se a semana destino for a mesma, usa a seguinte"
+                  >
+                    Semana inteira
+                  </button>
+                  <span className="text-gray-300">|</span>
                   <button
                     onClick={matchDestinoToOrigem}
                     className="text-[10px] text-[#1A3A5C] hover:underline font-medium"
@@ -4130,40 +4335,47 @@ export default function CardapioEditorPage() {
               </div>
             </div>
 
-            {/* ── Mapping preview ── */}
-            {copyOrigemDias.size > 0 && copyDestinoDias.size > 0 && copyOrigemDias.size === copyDestinoDias.size && (
+            {/* ── Mapping preview (v9.10.17: par-a-par OU 1→N via mapearCopiasDias) ── */}
+            {mapaCopia.origens.length > 0 && (
               <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-100">
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-1.5">Mapeamento</p>
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-1.5">
+                  Mapeamento{mapaCopia.modo === 'um-para-muitos' ? ' — 1 dia → vários' : ''}
+                </p>
                 <div className="space-y-0.5">
-                  {DIAS_SEMANA_NUTRI
-                    .filter(d => copyOrigemDias.has(d.value))
-                    .map((o, i) => {
-                      const destSorted = DIAS_SEMANA_NUTRI.filter(d => copyDestinoDias.has(d.value))
-                      const dest = destSorted[i]
-                      const isConflict = o.value === dest?.value && copyOrigemSemana === copyDestinoSemana
-                      return (
-                        <div key={o.value} className={`text-[10px] flex items-center gap-1.5 ${isConflict ? 'text-red-500' : 'text-gray-600'}`}>
-                          <span className="font-medium">{o.label}</span>
-                          <span className="text-gray-300">→</span>
-                          <span className={isConflict ? 'font-medium' : ''}>{dest?.label || '?'}</span>
-                          {isConflict && <AlertTriangle className="w-3 h-3" />}
-                        </div>
-                      )
-                    })}
+                  {mapaCopia.origens.map((o, i) => {
+                    const isConflict = o.origem_dia === o.destino_dia && o.origem_semana === o.destino_semana
+                    return (
+                      <div key={i} className={`text-[10px] flex items-center gap-1.5 ${isConflict ? 'text-red-500' : 'text-gray-600'}`}>
+                        <span className="font-medium">{diaLabel(o.origem_dia)}</span>
+                        <span className="text-gray-300">→</span>
+                        <span className={isConflict ? 'font-medium' : ''}>{diaLabel(o.destino_dia)}</span>
+                        {isConflict && <AlertTriangle className="w-3 h-3" />}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
 
-            {/* Count mismatch warning */}
-            {copyOrigemDias.size > 0 && copyDestinoDias.size > 0 && copyOrigemDias.size !== copyDestinoDias.size && (
+            {/* v9.10.17: bloqueio real do mapeamento (ex.: 2 origem × 3 destino) */}
+            {copyOrigemDias.size > 0 && copyDestinoDias.size > 0 && mapaCopia.erro && (
               <p className="text-xs text-amber-600 flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
-                Selecione a mesma quantidade de dias ({copyOrigemDias.size} origem ≠ {copyDestinoDias.size} destino)
+                {mapaCopia.erro}
+              </p>
+            )}
+
+            {/* v9.10.17: aviso amigável do modo 1→N */}
+            {mapaCopia.modo === 'um-para-muitos' && mapaCopia.origens.length > 1 && (
+              <p className="text-[10px] text-emerald-700 flex items-center gap-1">
+                <Check className="w-3 h-3" />
+                O dia {diaLabel(mapaCopia.origens[0].origem_dia)} será copiado para os {copyDestinoDias.size} dias de destino
               </p>
             )}
 
             <p className="text-[10px] text-muted-foreground">
-              As refeições dos dias de destino serão substituídas. Os dias são mapeados na ordem: 1° dia origem → 1° dia destino, etc.
+              As refeições dos dias de destino serão substituídas. Padrão: 1° dia origem → 1° dia destino;
+              com <b>apenas 1 dia de origem</b>, ele vai para TODOS os destinos marcados.
             </p>
           </div>
           <DialogFooter className="gap-2">
@@ -4171,10 +4383,10 @@ export default function CardapioEditorPage() {
             <Button
               size="sm"
               onClick={handleCopyDays}
-              disabled={copying || copyOrigemDias.size === 0 || copyDestinoDias.size === 0 || copyOrigemDias.size !== copyDestinoDias.size}
+              disabled={copying || mapaCopia.origens.length === 0}
               className="bg-[#1A3A5C] hover:bg-[#1A3A5C]/90"
             >
-              {copying ? 'Copiando...' : `Copiar ${copyOrigemDias.size} dia(s)`}
+              {copying ? 'Copiando...' : `Copiar ${copyOrigemDias.size} → ${copyDestinoDias.size} dia(s)`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -4426,6 +4638,9 @@ export default function CardapioEditorPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ═══ v9.10.17: Ajuda — manual visual completo do editor de cardápio ═══ */}
+      <AjudaCardapioDialog open={ajudaDialogOpen} onOpenChange={setAjudaDialogOpen} />
     </div>
   )
 }
